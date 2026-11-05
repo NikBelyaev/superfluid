@@ -1,0 +1,8 @@
+node_modules
+dist
+release
+test-results
+pnpm-lock.yaml
+packages/ghostty
+IMPLEMENTATION_PLAN.md
+PLAN_REVIEW.md

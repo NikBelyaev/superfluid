@@ -1,0 +1,70 @@
+/* Adapted from T3 Code index.css and appearanceFonts.ts, MIT.
+   Source revision and original snippets: UI_REVIEW.md; license: THIRD_PARTY_NOTICES.md. */
+:root {
+  color-scheme: light;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Inter Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace;
+  --text-sm: 0.875rem;
+  --text-xs: 0.75rem;
+  --text-2xs: 0.6875rem;
+  --text-detail: 0.8125rem;
+  --font-size-code: 13px;
+  --font-size-editor: 14px;
+  --diffs-font-family: var(--font-mono);
+  --diffs-header-font-family: var(--font-sans);
+  --diffs-font-size: var(--font-size-code);
+  --radius: 0.5rem;
+  --control-radius: 0.5rem;
+  --sidebar-content-inset: 0.5rem;
+  --sidebar-control-gap: 0.5rem;
+  --sidebar-row-content-inset: 0.625rem;
+  --command-shell-inset: 0.5rem;
+  --command-content-inset: 1rem;
+  --floating-content-inset: 0.75rem;
+  --background: oklch(99.2% 0 0);
+  --foreground: #18181b;
+  --secondary-foreground: #27272a;
+  --card: #fff;
+  --popover: #fff;
+  --primary: oklch(0.488 0.217 264);
+  --primary-foreground: #fff;
+  --muted: #fafafa;
+  --muted-foreground: #71717a;
+  --control-muted-foreground: #52525b;
+  --accent: #f4f4f5;
+  --accent-foreground: var(--foreground);
+  --border: #e4e4e7;
+  --input: #d4d4d8;
+  --ring: var(--primary);
+  --sidebar: #fafafa;
+  --sidebar-row-hover: var(--background);
+  --sidebar-row-active: #fff;
+  --success-foreground: #047857;
+  --error-foreground: #b91c1c;
+  --warning-foreground: #92400e;
+  --warning-surface: #fffbeb;
+  --app-scrollbar-width: 6px;
+  --app-scrollbar-thumb: rgb(217 217 217);
+  --app-scrollbar-thumb-hover: rgb(191 191 191);
+  --shadow-popover: 0 4px 16px rgb(0 0 0 / 8%);
+  --shadow-dialog: 0 24px 64px -24px rgb(0 0 0 / 32%);
+  --workspace-topbar-height: 52px;
+  --worktree-strip-height: 36px;
+  --statusbar-height: 24px;
+}
+
+::-webkit-scrollbar {
+  width: var(--app-scrollbar-width);
+  height: var(--app-scrollbar-width);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--app-scrollbar-thumb);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--app-scrollbar-thumb-hover);
+}

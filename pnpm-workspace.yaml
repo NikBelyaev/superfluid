@@ -1,0 +1,11 @@
+packages:
+  - .
+allowBuilds:
+  electron: true
+  esbuild: true
+  node-pty: true
+  electron-winstaller: false
+minimumReleaseAgeExclude:
+  - electron@45.2.3
+overrides:
+  dompurify: 3.4.17

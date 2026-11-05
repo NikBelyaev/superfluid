@@ -1,0 +1,10 @@
+node_modules/
+dist/
+release/
+.superfluid-data/
+test-results/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
