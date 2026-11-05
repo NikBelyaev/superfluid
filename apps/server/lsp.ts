@@ -1,11 +1,12 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createRequire } from 'node:module';
+import { tyExecutable } from '../../packages/ty/runtime';
 import type { Session, AppEvent } from '../../packages/contracts';
 import type { Store } from './store';
+import { command } from './process';
 
-const require = createRequire(import.meta.url);
 export class LanguageServers {
   private servers = new Map<string, Server>();
   constructor(
@@ -33,6 +34,12 @@ export class LanguageServers {
     this.servers.get(id)?.close();
     this.servers.delete(id);
   }
+  changed(id: string, path: string, event: 'rename' | 'change') {
+    void this.servers
+      .get(id)
+      ?.changed(path, event)
+      .catch(() => {});
+  }
   close() {
     for (const s of this.servers.values()) s.close();
     this.servers.clear();
@@ -52,17 +59,16 @@ class Server {
   private generation = Date.now();
   private closed = false;
   private stderr = '';
+  private pythonEnvironment = '';
   get available() {
     return !this.closed;
   }
   private settings() {
     return {
-      pythonPath: this.session.python,
-      analysis: {
-        diagnosticMode: 'openFilesOnly',
-        autoSearchPaths: true,
-        typeCheckingMode: 'basic',
-      },
+      diagnosticMode: 'openFilesOnly',
+      configuration: { environment: { python: this.pythonEnvironment } },
+      // shortcut: Enable auto-imports when Monaco supports completion resolve and extra edits.
+      completions: { autoImport: false },
     };
   }
   constructor(
@@ -70,14 +76,11 @@ class Server {
     private notify: (event: AppEvent) => void,
     drafts: () => ReturnType<Store['drafts']>,
   ) {
-    this.child = spawn(
-      process.env.SF_NODE_EXEC_PATH || process.execPath,
-      [
-        require.resolve('pyright/langserver.index.js').replace('app.asar/', 'app.asar.unpacked/'),
-        '--stdio',
-      ],
-      { cwd: session.path, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, stdio: 'pipe' },
-    );
+    this.child = spawn(tyExecutable, ['server'], {
+      cwd: session.path,
+      env: process.env,
+      stdio: 'pipe',
+    });
     this.child.stdout.on('data', (chunk) => {
       try {
         this.receive(chunk);
@@ -102,34 +105,42 @@ class Server {
       sessionId: session.id,
       status: 'Warming Python intelligence…',
     });
-    this.ready = this.requestRaw('initialize', {
-      processId: process.pid,
-      rootUri: pathToFileURL(session.path).href,
-      workspaceFolders: [
-        {
-          uri: pathToFileURL(session.path).href,
-          name: session.branch || session.path.split('/').at(-1) || 'Project',
-        },
-      ],
-      capabilities: {
-        textDocument: {
-          completion: { completionItem: { snippetSupport: true } },
-          publishDiagnostics: { versionSupport: true },
-        },
-        workspace: {
-          configuration: true,
-          workspaceFolders: true,
-          workspaceEdit: { documentChanges: true },
-        },
-      },
-      initializationOptions: {},
-    }).then(() => {
-      this.send('initialized', {});
-      this.send('workspace/didChangeConfiguration', { settings: { python: this.settings() } });
-      for (const d of drafts()) this.openRaw(d.path, d.text, d.version);
-      this.notify({ type: 'lsp.status', sessionId: session.id, status: 'Python ready' });
-    });
-    this.ready.catch(() => {});
+    this.ready = command(session.python, ['-c', 'import sys; print(sys.prefix)'], {
+      cwd: session.path,
+    })
+      .then((python) => {
+        this.pythonEnvironment = python.trim();
+        return this.requestRaw('initialize', {
+          processId: process.pid,
+          rootUri: pathToFileURL(session.path).href,
+          workspaceFolders: [
+            {
+              uri: pathToFileURL(session.path).href,
+              name: session.branch || session.path.split('/').at(-1) || 'Project',
+            },
+          ],
+          capabilities: {
+            textDocument: {
+              completion: { completionItem: { snippetSupport: true } },
+              publishDiagnostics: { versionSupport: true },
+            },
+            workspace: {
+              configuration: true,
+              workspaceFolders: true,
+              workspaceEdit: { documentChanges: true },
+              // shortcut: Environment changes need interpreter re-selection until we watch site-packages.
+              didChangeWatchedFiles: { dynamicRegistration: true },
+            },
+          },
+          initializationOptions: {},
+        });
+      })
+      .then(() => {
+        this.send('initialized', {});
+        for (const d of drafts()) this.openRaw(d.path, d.text, d.version);
+        this.notify({ type: 'lsp.status', sessionId: session.id, status: 'Python ready' });
+      });
+    this.ready.catch((error) => this.fail(error));
   }
   private write(message: unknown) {
     if (this.closed || !this.child.stdin.writable)
@@ -205,13 +216,7 @@ class Server {
         const settings = this.settings();
         const result =
           message.method === 'workspace/configuration' && Array.isArray(message.params?.items)
-            ? message.params.items.map((item: any) =>
-                item.section === 'python.analysis'
-                  ? settings.analysis
-                  : item.section === 'python'
-                    ? settings
-                    : { python: settings },
-              )
+            ? message.params.items.map((item: any) => (item.section === 'ty' ? settings : null))
             : message.method === 'workspace/workspaceFolders'
               ? [
                   {
@@ -258,6 +263,20 @@ class Server {
   async request(method: string, params: unknown) {
     await this.ready;
     return this.requestRaw(method, params);
+  }
+  async changed(path: string, event: 'rename' | 'change') {
+    await this.ready;
+    const file = join(this.session.path, path);
+    const type =
+      event === 'change'
+        ? 2
+        : await stat(file).then(
+            () => 1,
+            () => 3,
+          );
+    this.send('workspace/didChangeWatchedFiles', {
+      changes: [{ uri: pathToFileURL(file).href, type }],
+    });
   }
   private fail(error: Error) {
     for (const task of this.pending.values()) {

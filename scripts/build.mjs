@@ -31,3 +31,4 @@ await Promise.all([
   ...(process.argv.includes('--backend-only') ? [] : [viteBuild()]),
 ]);
 await cp('packages/ghostty/vendor', 'dist/vendor', { recursive: true });
+await cp('packages/ty/vendor', 'dist/vendor', { recursive: true });

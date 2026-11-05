@@ -95,7 +95,7 @@ export default function Workspace() {
           if (!doc) return;
           monaco.editor.setModelMarkers(
             doc.model,
-            'pyright',
+            'ty',
             e.diagnostics.map((d) => ({
               startLineNumber: d.range.start.line + 1,
               startColumn: d.range.start.character + 1,
@@ -108,7 +108,7 @@ export default function Workspace() {
                   : d.severity === 2
                     ? monaco.MarkerSeverity.Warning
                     : monaco.MarkerSeverity.Info,
-              source: 'Pyright',
+              source: 'ty',
               code: String(d.code ?? ''),
             })),
           );

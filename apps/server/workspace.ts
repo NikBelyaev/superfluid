@@ -57,9 +57,10 @@ export class Workspace {
     }
     try {
       const item: { watcher: FSWatcher; timer?: ReturnType<typeof setTimeout> } = {
-        watcher: watch(s.path, { recursive: true }, (_event, path) => {
+        watcher: watch(s.path, { recursive: true }, (event, path) => {
           if (path && /(?:^|\/)(?:node_modules|\.venv|__pycache__|\.ruff_cache)(?:\/|$)/.test(path))
             return;
+          if (path) this.lsp.changed(s.id, path, event);
           if (item.timer) return;
           item.timer = setTimeout(() => {
             item.timer = undefined;
@@ -366,6 +367,7 @@ export class Workspace {
         break;
       case 'lsp.open':
         await within(s!.path, input.path);
+        this.observe(s!);
         await (await this.lsp.get(s!)).open(input.path, input.text, input.version);
         result = null;
         break;

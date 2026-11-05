@@ -26,6 +26,7 @@ await build({
   packages: 'external',
 });
 await cp('packages/ghostty/vendor', 'dist/vendor', { recursive: true });
+await cp('packages/ty/vendor', 'dist/vendor', { recursive: true });
 const server = await createServer();
 await server.listen();
 const env = { ...process.env, SF_DEV_URL: 'http://127.0.0.1:5176' };
