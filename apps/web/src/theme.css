@@ -21,7 +21,7 @@
   --command-shell-inset: 0.5rem;
   --command-content-inset: 1rem;
   --floating-content-inset: 0.75rem;
-  --background: oklch(99.2% 0 0);
+  --background: #fcfcfc;
   --foreground: #18181b;
   --secondary-foreground: #27272a;
   --card: #fff;
@@ -41,6 +41,7 @@
   --sidebar-row-active: #fff;
   --success-foreground: #047857;
   --error-foreground: #b91c1c;
+  --pr-foreground: #7e22ce;
   --warning-foreground: #92400e;
   --warning-surface: #fffbeb;
   --app-scrollbar-width: 6px;
@@ -51,6 +52,69 @@
   --workspace-topbar-height: 52px;
   --worktree-strip-height: 36px;
   --statusbar-height: 24px;
+}
+
+:root[data-color-scheme='dark'],
+.appearance-palette[data-color-scheme='dark'] {
+  color-scheme: dark;
+  --background: #1e1e1e;
+  --foreground: #d4d4d4;
+  --secondary-foreground: #e5e5e5;
+  --card: #252526;
+  --popover: #252526;
+  --primary: #75a7fa;
+  --primary-foreground: #18181b;
+  --muted: #252526;
+  --muted-foreground: #a1a1aa;
+  --control-muted-foreground: #b4b4bc;
+  --accent: #333337;
+  --border: #3f3f46;
+  --input: #52525b;
+  --sidebar: #252526;
+  --sidebar-row-active: #333337;
+  --success-foreground: #6ee7b7;
+  --error-foreground: #fca5a5;
+  --pr-foreground: #c084fc;
+  --warning-foreground: #fcd34d;
+  --warning-surface: #3a3020;
+  --app-scrollbar-thumb: #4d4d52;
+  --app-scrollbar-thumb-hover: #68686f;
+  --shadow-popover: 0 4px 16px rgb(0 0 0 / 24%);
+}
+.appearance-palette[data-theme='darcula'][data-color-scheme='light'] {
+  color-scheme: light;
+  --background: #ffffff;
+  --foreground: #303030;
+  --secondary-foreground: #303030;
+  --primary: #3574f0;
+  --card: #f7f7f7;
+  --sidebar: #f0f0f0;
+  --accent: #e6e9ef;
+  --border: #d3d5db;
+  --muted: #f7f7f7;
+}
+.appearance-palette[data-theme='darcula'][data-color-scheme='dark'] {
+  --background: #2b2b2b;
+  --foreground: #a9b7c6;
+  --secondary-foreground: #c4ccd6;
+  --card: #313335;
+  --popover: #313335;
+  --primary: #88b9ec;
+  --muted: #313335;
+  --muted-foreground: #a2a6ad;
+  --control-muted-foreground: #b6bbc4;
+  --accent: #3c3f41;
+  --border: #484b4e;
+  --input: #62666b;
+  --sidebar: #313335;
+  --sidebar-row-active: #3c3f41;
+}
+.appearance-palette[data-theme='monaco'][data-color-scheme='light'] {
+  --background: #ffffff;
+  --foreground: #18181b;
+  --card: #ffffff;
+  --primary: #245fdb;
+  --border: #e4e4e7;
 }
 
 ::-webkit-scrollbar {

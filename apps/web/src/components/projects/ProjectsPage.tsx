@@ -1,6 +1,6 @@
 import { desktop } from '~/rpc/desktop';
 import { useState } from 'react';
-import { ChevronRight, FolderOpen, GitBranch, Plus, Search, Star } from 'lucide-react';
+import { ChevronRight, FolderOpen, GitBranch, Plus, Search, Settings, Star } from 'lucide-react';
 import { useApp } from '~/state/workspaceStore';
 
 export function ProjectsPage() {
@@ -45,6 +45,13 @@ export function ProjectsPage() {
           Open a project
         </button>
         <div className="spacer" />
+        <button
+          className="welcome-nav-item"
+          onClick={() => useApp.setState({ modal: { kind: 'settings' } })}
+        >
+          <Settings size={17} />
+          Settings
+        </button>
         <div className="welcome-version">
           Superfluid <span>0.1 alpha</span>
         </div>

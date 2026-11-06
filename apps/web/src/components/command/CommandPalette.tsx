@@ -16,6 +16,7 @@ export default function CommandPalette() {
   const generation = useRef(0),
     session = currentSession();
   const commands = [
+    { name: 'Settings: Appearance', run: () => useApp.setState({ modal: { kind: 'settings' } }) },
     { name: 'New worktree', run: () => useApp.setState({ modal: { kind: 'worktree' } }) },
     { name: 'New terminal', run: () => session && void runAction(session) },
     { name: 'Show changes', run: () => showSurface({ kind: 'diff' }) },

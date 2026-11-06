@@ -12,15 +12,19 @@ import { TerminalNameDialog } from '~/components/terminal/TerminalNameDialog';
 import { GitReviewDialog } from '~/components/vcs/GitReviewDialog';
 import { InterpreterDialog } from '~/components/python/InterpreterDialog';
 import { RenameSymbolDialog } from '~/components/editor/RenameSymbolDialog';
+import { SettingsLayout } from '~/components/settings/SettingsLayout';
+import { SettingsSkeleton } from '~/components/settings/SettingsSkeleton';
 
 const Launcher = lazy(() =>
   import('~/components/surfaces/SurfaceLauncher').then((m) => ({ default: m.SurfaceLauncher })),
 );
+const SettingsPage = lazy(() => import('~/components/settings/SettingsPage'));
 
 export default function DialogHost() {
   const modal = useApp((a) => a.modal);
   if (!modal) return null;
   const titles = {
+    settings: 'Settings',
     action: 'Project action',
     worktree: 'New worktree',
     git: 'Publish changes',
@@ -42,14 +46,28 @@ export default function DialogHost() {
     >
       <Dialog.Portal>
         <Dialog.Backdrop className="modal-backdrop" />
-        <Dialog.Popup className={`modal ${modal.kind === 'launcher' ? 'launcher-modal' : ''}`}>
-          <div className="modal-heading">
-            <Dialog.Title>{titles[modal.kind]}</Dialog.Title>
-            <Dialog.Close className="icon-button" aria-label="Close dialog">
-              <X size={17} />
-            </Dialog.Close>
-          </div>
-          {modal.kind === 'action' ? (
+        <Dialog.Popup
+          className={
+            modal.kind === 'settings'
+              ? 'fixed top-1/2 left-1/2 z-[101] flex h-[760px] max-h-[calc(100dvh-64px)] w-[1100px] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-(--shadow-dialog) outline-none'
+              : `modal ${modal.kind === 'launcher' ? 'launcher-modal' : ''}`
+          }
+        >
+          {modal.kind !== 'settings' && (
+            <div className="modal-heading">
+              <Dialog.Title>{titles[modal.kind]}</Dialog.Title>
+              <Dialog.Close className="icon-button" aria-label="Close dialog">
+                <X size={17} />
+              </Dialog.Close>
+            </div>
+          )}
+          {modal.kind === 'settings' ? (
+            <SettingsLayout>
+              <Suspense fallback={<SettingsSkeleton />}>
+                <SettingsPage />
+              </Suspense>
+            </SettingsLayout>
+          ) : modal.kind === 'action' ? (
             <ProjectActionDialog action={modal.action} />
           ) : modal.kind === 'worktree' ? (
             <NewWorktreeDialog />
