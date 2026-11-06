@@ -7,6 +7,12 @@ export function useAppShortcuts() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.isComposing) return;
+      if (e.metaKey && e.code === 'Comma') {
+        e.preventDefault();
+        useApp.setState({ modal: { kind: 'settings' }, palette: null });
+        return;
+      }
+      if (useApp.getState().modal?.kind === 'settings') return;
       if (!useApp.getState().projectId) {
         if (e.metaKey && e.code === 'KeyP') {
           e.preventDefault();

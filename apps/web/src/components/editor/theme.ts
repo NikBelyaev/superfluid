@@ -1,24 +1,26 @@
 import { monaco } from '~/state/editor/Documents';
 
-monaco.editor.defineTheme('superfluid-light', {
+monaco.editor.defineTheme('darcula-light', {
   base: 'vs',
   inherit: true,
   rules: [
-    { token: 'comment', foreground: '71717A' },
-    { token: 'keyword', foreground: '8056A4' },
-    { token: 'string', foreground: '397857' },
-    { token: 'number', foreground: 'B15F29' },
+    { token: 'comment', foreground: '808080', fontStyle: 'italic' },
+    { token: 'keyword', foreground: '000080', fontStyle: 'bold' },
+    { token: 'string', foreground: '008000' },
+    { token: 'number', foreground: '0000FF' },
   ],
-  colors: {
-    'editor.background': '#FFFFFF',
-    'editor.foreground': '#18181B',
-    'editorLineNumber.foreground': '#71717A',
-    'editorLineNumber.activeForeground': '#27272A',
-    'editor.lineHighlightBackground': '#FAFAFA',
-    'editor.selectionBackground': '#DDE9FF',
-    'editorCursor.foreground': '#245FDB',
-    'editorIndentGuide.background1': '#F4F4F5',
-    'editorWidget.background': '#FFFFFF',
-    'editorWidget.border': '#E4E4E7',
-  },
+  colors: {},
+});
+
+monaco.editor.defineTheme('darcula-dark', {
+  base: 'vs-dark',
+  inherit: true,
+  rules: [
+    { token: 'comment', foreground: '808080', fontStyle: 'italic' },
+    { token: 'keyword', foreground: 'CC7832' },
+    { token: 'string', foreground: '6A8759' },
+    { token: 'number', foreground: '6897BB' },
+    { token: 'type.identifier', foreground: 'A9B7C6' },
+  ],
+  colors: {},
 });

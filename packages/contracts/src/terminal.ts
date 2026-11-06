@@ -2,6 +2,17 @@ import { z } from 'zod';
 import type { GhosttySnapshot, GhosttyRow } from '@superfluid/ghostty/core';
 import { id, path } from './schema';
 
+const terminalColor = z.object({
+  r: z.int().min(0).max(255),
+  g: z.int().min(0).max(255),
+  b: z.int().min(0).max(255),
+});
+export const terminalThemeSchema = z.object({
+  foreground: terminalColor,
+  background: terminalColor,
+  cursor: terminalColor,
+});
+
 export const actionSchema = z.object({
   id: id.optional(),
   projectId: id,
@@ -59,6 +70,7 @@ export const terminalRequests = {
       'select',
       'copy',
       'rename',
+      'theme',
     ]),
     data: z.unknown().optional(),
   }),

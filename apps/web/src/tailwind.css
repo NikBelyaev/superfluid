@@ -23,3 +23,24 @@
   --color-diff-addition-foreground: var(--success-foreground);
   --color-diff-deletion-foreground: var(--error-foreground);
 }
+
+/* Adapted from T3 Code (MIT), commit 337c5858c33bc7f8f6dfd391a2c279fa0f7e4d17. */
+@theme {
+  --animate-skeleton: skeleton 2.4s infinite;
+  @keyframes skeleton {
+    /* Stepped ramps avoid repainting every frame on high-refresh displays. */
+    0%,
+    42% {
+      opacity: 1;
+      animation-timing-function: steps(4);
+    }
+    50%,
+    92% {
+      opacity: 0.55;
+      animation-timing-function: steps(4);
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+}

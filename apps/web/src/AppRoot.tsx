@@ -6,10 +6,12 @@ import CommandPalette from '~/components/command/CommandPalette';
 import { ProjectsPage } from '~/components/projects/ProjectsPage';
 import { useAppShortcuts } from '~/shortcuts/useAppShortcuts';
 import { useWorkspaceEvents } from '~/hooks/useWorkspaceEvents';
+import { useAppearanceSync } from '~/hooks/useAppearanceSync';
 
 const Workspace = lazy(() => import('~/components/workspace/Workspace'));
 
 export default function App() {
+  useAppearanceSync();
   const project = useApp((a) => a.projectId),
     error = useApp((a) => a.error),
     busy = useApp((a) => a.busy);

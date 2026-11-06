@@ -3,8 +3,10 @@ import { FileDiff, Virtualizer } from '@pierre/diffs/react';
 import type { parsePatchFiles } from '@pierre/diffs';
 import DiffWorker from '~/components/diffs/diff.worker?worker';
 import { diffOptions } from './diffOptions';
+import { resolveAppearance, useAppearance, useSystemDark } from '~/state/appearance';
 
 export function Patch({ patch, split = false }: { patch: string; split?: boolean }) {
+  const { scheme } = resolveAppearance(useAppearance(), useSystemDark());
   const [files, setFiles] = useState<ReturnType<typeof parsePatchFiles>[number]['files']>([]),
     [error, setError] = useState(''),
     [loading, setLoading] = useState(true);
@@ -33,7 +35,7 @@ export function Patch({ patch, split = false }: { patch: string; split?: boolean
           <FileDiff
             key={index}
             fileDiff={file}
-            options={{ ...diffOptions, diffStyle: split ? 'split' : 'unified' }}
+            options={{ ...diffOptions, themeType: scheme, diffStyle: split ? 'split' : 'unified' }}
           />
         ))}
       </div>

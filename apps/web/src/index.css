@@ -135,7 +135,7 @@ select:focus-visible,
 }
 .button.primary {
   background: var(--primary);
-  color: white;
+  color: var(--primary-foreground);
   border-color: var(--primary);
 }
 .button.primary:hover {
@@ -155,7 +155,7 @@ select:focus-visible,
 kbd {
   font: 500 12px/20px var(--font-sans);
   color: var(--control-muted-foreground);
-  background: rgb(24 24 27 / 7%);
+  background: color-mix(in srgb, var(--foreground) 7%, transparent);
   border-radius: 4px;
   padding: 0 4px;
   white-space: nowrap;
@@ -533,7 +533,7 @@ kbd {
   flex: 1;
   min-height: 0;
   position: relative;
-  background: white;
+  background: var(--background);
 }
 .activity-rail {
   width: 40px;
@@ -1366,7 +1366,7 @@ kbd {
   align-items: center;
   gap: 5px;
   font-size: var(--text-xs);
-  color: #7e22ce;
+  color: var(--pr-foreground);
 }
 .pr-heading h2 {
   font-size: 16px;
@@ -1378,9 +1378,9 @@ kbd {
 .pr-state {
   font-size: var(--text-2xs);
   padding: 2px 6px;
-  border: 1px solid #e9d5ff;
+  border: 1px solid color-mix(in srgb, var(--pr-foreground) 25%, var(--border));
   border-radius: 4px;
-  color: #7e22ce;
+  color: var(--pr-foreground);
   text-transform: capitalize;
 }
 .pr-state.open {
@@ -1563,7 +1563,7 @@ kbd {
   width: 7px;
   height: 7px;
   border: 1px solid var(--muted-foreground);
-  background: white;
+  background: var(--card);
   border-radius: 50%;
 }
 .timeline-item strong {
@@ -1745,7 +1745,7 @@ kbd {
   font-size: var(--text-detail);
   color: var(--error-foreground);
   line-height: 20px;
-  background: #fef2f2;
+  background: color-mix(in srgb, var(--error-foreground) 10%, var(--card));
   border-radius: 5px;
   padding: 9px 11px;
   margin-top: 13px;
