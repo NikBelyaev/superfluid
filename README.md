@@ -118,5 +118,3 @@ CI для macOS подготовлен в `.github/workflows/ci.yml`; его у�
 - `apps/web/src`: интерфейс, Monaco, worktree state, recovery scheduler, Canvas терминала, diff worker.
 - `packages/contracts/src`: схемы входящих запросов и типы событий.
 - `packages/ghostty`: адаптированные части T3 Code и Ghostty WASM.
-
-Заимствования, версии и лицензии указаны в [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -1,6 +1,6 @@
 # superfluid
 
-<!-- Adapted from pingdotgg/t3code/AGENTS.md at 0ea3c0243fb5b3c07bb8c2bad01c1d3d0f5fde35 (MIT). License: THIRD_PARTY_NOTICES.md. -->
+<!-- Adapted from pingdotgg/t3code/AGENTS.md at 0ea3c0243fb5b3c07bb8c2bad01c1d3d0f5fde35 (MIT). -->
 
 superfluid is a lightweight Python IDE for working in multiple Git branches and worktrees at once. An Electron app wraps the React/Vite client and a local Node workspace backend.
 

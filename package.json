@@ -27,8 +27,7 @@
     },
     "files": [
       "dist/**",
-      "package.json",
-      "THIRD_PARTY_NOTICES.md"
+      "package.json"
     ],
     "asarUnpack": [
       "node_modules/node-pty/**",

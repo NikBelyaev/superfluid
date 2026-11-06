@@ -1,5 +1,5 @@
 // Adapted from T3 Code (MIT), commit 337c5858c33bc7f8f6dfd391a2c279fa0f7e4d17.
-// Copyright (c) 2026 T3 Tools Inc. See THIRD_PARTY_NOTICES.md.
+// Copyright (c) 2026 T3 Tools Inc.
 const US_SHIFTED_TO_UNSHIFTED_KEYS = new Map([..."~!@#$%^&*()_+{}|:\"<>?"].map((key, i) => [key, "`1234567890-=[]\\;',./"[i]!]));
 
 // This order mirrors GhosttyKey in ghostty/vt/key/event.h. The values are
