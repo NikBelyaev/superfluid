@@ -1114,12 +1114,61 @@ kbd {
   font-size: var(--text-xs);
   line-height: 18px;
 }
+.lineage .island-row {
+  color: var(--muted-foreground);
+}
+.lineage .island-row > svg {
+  color: currentColor;
+}
 .lineage .current {
   background: var(--sidebar);
-  color: var(--muted-foreground);
+  color: color-mix(in srgb, var(--foreground) 80%, var(--card));
 }
 .lineage .island-row small {
   margin: 0;
+}
+.lineage-list {
+  max-height: 102px;
+  overflow-y: auto;
+}
+.lineage-list::-webkit-scrollbar {
+  width: 3px;
+}
+.lineage-list::-webkit-scrollbar-button {
+  display: none;
+}
+.lineage-list:hover {
+  --app-scrollbar-thumb: var(--app-scrollbar-thumb-hover);
+}
+.lineage-row {
+  position: relative;
+}
+.lineage-row:is(:hover, :focus-within) .island-row {
+  background: var(--sidebar);
+  color: var(--foreground);
+  padding-right: 34px;
+}
+.lineage-remove {
+  position: absolute;
+  inset-block: 0;
+  right: 6px;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+  visibility: hidden;
+}
+.lineage-row:hover .lineage-remove,
+.lineage-row:focus-within .lineage-remove {
+  visibility: visible;
+}
+.lineage-row:hover small,
+.lineage-row:focus-within small {
+  display: none;
+}
+.lineage-remove:hover {
+  color: var(--foreground);
 }
 .operation-state {
   font-size: var(--text-xs);
