@@ -638,12 +638,38 @@ kbd {
   margin: 0 6px;
   line-height: 20px;
 }
+.tree-branch {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+.tree-branch > .tree-row {
+  position: sticky;
+  pointer-events: auto;
+}
+.tree-row.sticky {
+  margin: 0;
+  padding-right: 18px;
+  border-radius: 0;
+  background: var(--sidebar);
+}
 .tree-row:hover {
   background: var(--accent);
 }
 .tree-row.selected {
   background: var(--accent);
   color: var(--foreground);
+}
+.tree-twist {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 28px;
+  margin: 0 -4px;
+  padding: 0;
 }
 .tree-indent {
   width: 12px;
