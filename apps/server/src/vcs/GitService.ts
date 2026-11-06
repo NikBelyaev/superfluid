@@ -27,7 +27,7 @@ function hostingRepo(remote: string) {
   }
 }
 
-export function parseStatus(output: string): Omit<GitStatus, 'branches' | 'repo'> {
+export function parseStatus(output: string): Omit<GitStatus, 'branches' | 'repo' | 'changes'> {
   let branch = '',
     head = '',
     upstream = '',
@@ -105,19 +105,63 @@ export class GitService {
             files: [],
             branches: [],
             repo: false,
+            changes: { insertions: 0, deletions: 0 },
           };
         const [raw, branches] = await Promise.all([
-          git(s.path, ['--no-optional-locks', 'status', '--porcelain=v2', '--branch', '-z'], {
-            timeout: 5000,
-          }),
+          git(
+            s.path,
+            [
+              '--no-optional-locks',
+              'status',
+              '--porcelain=v2',
+              '--branch',
+              '--untracked-files=all',
+              '-z',
+            ],
+            {
+              timeout: 5000,
+            },
+          ),
           git(
             s.path,
             ['for-each-ref', '--format=%(refname:short)', 'refs/heads/', 'refs/remotes/'],
             { timeout: 5000 },
           ),
         ]);
+        const status = parseStatus(raw),
+          changes = { insertions: 0, deletions: 0 };
+        const count = (numstat: string) => {
+          for (const match of numstat.matchAll(/^(\d+)\t(\d+)\t/gm)) {
+            changes.insertions += Number(match[1]);
+            changes.deletions += Number(match[2]);
+          }
+        };
+        if (status.files.some((file) => file.index !== '?')) {
+          const base =
+            status.head === '(initial)'
+              ? (await git(s.path, ['hash-object', '-t', 'tree', '--stdin'], { input: '' })).trim()
+              : status.head;
+          count(
+            await git(
+              s.path,
+              ['diff', '--numstat', '--no-ext-diff', '--find-renames', base, '--'],
+              { timeout: 5000 },
+            ),
+          );
+        }
+        for (const file of status.files) {
+          if (file.index === '?')
+            count(
+              await git(
+                s.path,
+                ['diff', '--no-index', '--numstat', '--no-ext-diff', '--', '/dev/null', file.path],
+                { accept: [1], timeout: 5000 },
+              ),
+            );
+        }
         return {
-          ...parseStatus(raw),
+          ...status,
+          changes,
           branches: branches.trim().split('\n').filter(Boolean).slice(0, 1000),
           repo: true,
         };

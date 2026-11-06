@@ -6,6 +6,8 @@ UI tokens and recipes in apps/web/src/theme.css and style.css are adapted from t
 
 AGENTS.md is adapted from pingdotgg/t3code/AGENTS.md at commit 0ea3c0243fb5b3c07bb8c2bad01c1d3d0f5fde35. Product-specific instructions, local commands, and names are adapted for superfluid; the T3 MIT notice below applies to the retained text.
 
+The Changes row in apps/web/src/components/vcs/SourceControlSection.tsx is adapted from apps/web/src/components/GitActionsControl.tsx at T3 Code commit 337c5858c33bc7f8f6dfd391a2c279fa0f7e4d17. Tailwind classes use local theme tokens and totals come from the local Git status service.
+
 ## T3 Code
 
 MIT License
