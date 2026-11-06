@@ -1,10 +1,10 @@
 import { build } from 'esbuild';
 import { build as viteBuild } from 'vite';
-import { mkdir, cp } from 'node:fs/promises';
+import { mkdir, cp, rm } from 'node:fs/promises';
 await mkdir('dist', { recursive: true });
 await Promise.all([
   build({
-    entryPoints: { main: 'apps/desktop/main.ts', preload: 'apps/desktop/preload.ts' },
+    entryPoints: { main: 'apps/desktop/src/main.ts', preload: 'apps/desktop/src/preload.ts' },
     outdir: 'dist',
     outExtension: { '.js': '.cjs' },
     bundle: true,
@@ -16,8 +16,8 @@ await Promise.all([
   }),
   build({
     entryPoints: {
-      backend: 'apps/server/index.ts',
-      'terminal-worker': 'apps/server/terminal-worker.ts',
+      backend: 'apps/server/src/main.ts',
+      'terminal-worker': 'apps/server/src/terminal/terminal-worker.ts',
     },
     outdir: 'dist',
     outExtension: { '.js': '.mjs' },
@@ -30,5 +30,5 @@ await Promise.all([
   }),
   ...(process.argv.includes('--backend-only') ? [] : [viteBuild()]),
 ]);
+await rm('dist/vendor', { recursive: true, force: true });
 await cp('packages/ghostty/vendor', 'dist/vendor', { recursive: true });
-await cp('packages/ty/vendor', 'dist/vendor', { recursive: true });

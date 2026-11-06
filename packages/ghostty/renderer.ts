@@ -4,7 +4,7 @@ import type {
   GhosttyCell,
   GhosttyColor,
   GhosttySnapshot,
-} from "./core";
+} from "@superfluid/ghostty/core";
 
 export interface GhosttyCellMetrics {
   readonly width: number;
