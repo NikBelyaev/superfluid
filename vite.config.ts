@@ -1,8 +1,18 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { fileURLToPath } from 'node:url';
 export default defineConfig({
   logLevel: 'warn',
   root: 'apps/web',
+  resolve: {
+    alias: {
+      '~': fileURLToPath(new URL('./apps/web/src', import.meta.url)),
+      '@superfluid/contracts': fileURLToPath(
+        new URL('./packages/contracts/src/index.ts', import.meta.url),
+      ),
+      '@superfluid/ghostty': fileURLToPath(new URL('./packages/ghostty', import.meta.url)),
+    },
+  },
   // The diff worker needs its package prepared before the first surface opens.
   optimizeDeps: { include: ['@pierre/diffs'] },
   base: './',

@@ -5,40 +5,58 @@ import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
-import { git } from '../apps/server/process';
+import { git } from '../apps/server/src/vcs/gitCommand';
 
 const require = createRequire(import.meta.url);
+
 const executablePath = process.env.SF_EXECUTABLE || require('electron');
+
 const launchArgs = process.env.SF_EXECUTABLE ? [] : [resolve('.')];
+
 const temp = await mkdtemp(join(tmpdir(), 'superfluid-electron-'));
+
 const project = join(temp, 'fluid-lab');
+
 await mkdir(project);
+
 await writeFile(
   join(project, 'models.py'),
   'class Store:\n    def count(self) -> int:\n        return 42\n',
 );
+
 await writeFile(
   join(project, 'main.py'),
   'from models import Store\n\nstore = Store()\nprint(store.count())\n',
 );
+
 await writeFile(
   join(project, 'README.md'),
   '# Fluid lab\n\nA real Python fixture for Superfluid.\n',
 );
+
 await writeFile(join(project, 'bom.py'), '\ufeffvalue = 1\r\n');
+
 await git(project, ['init', '-b', 'main']);
+
 await git(project, ['config', 'user.name', 'Superfluid Test']);
+
 await git(project, ['config', 'user.email', 'test@superfluid.invalid']);
+
 await git(project, ['add', '.']);
+
 await git(project, ['commit', '-m', 'Initial fixture']);
+
 await git(project, [
   'remote',
   'add',
   'origin',
   'https://github.com/superfluid-tests/fluid-lab.git',
 ]);
+
 const bin = join(temp, 'bin');
+
 await mkdir(bin);
+
 const prFixture = {
   number: 15,
   title: 'Keep each worktree independent',
@@ -74,8 +92,10 @@ const prFixture = {
     { name: 'Electron smoke', conclusion: 'SUCCESS' },
   ],
 };
+
 const prPatch =
   'diff --git a/models.py b/models.py\nindex 1234567..abcdef0 100644\n--- a/models.py\n+++ b/models.py\n@@ -1,3 +1,3 @@\n-class Store:\n+class Inventory:\n     def count(self) -> int:\n         return 42\n';
+
 await writeFile(
   join(bin, 'gh'),
   '#!/usr/bin/env node\n' +
@@ -84,30 +104,43 @@ await writeFile(
     `else if(args[1]==='diff') process.stdout.write(${JSON.stringify(prPatch)}); else process.exit(2);\n`,
   { mode: 0o755 },
 );
+
 await mkdir('test-results', { recursive: true });
+
 const launchEnv: Record<string, string> = Object.fromEntries(
   Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
 );
+
 launchEnv.SF_DATA_DIR = join(temp, 'data');
+
 launchEnv.SF_TEST = '1';
+
 launchEnv.PATH = bin + ':' + launchEnv.PATH;
+
 if (process.env.SF_EXECUTABLE) launchEnv.SF_DEV_URL = 'https://untrusted.invalid';
+
 delete launchEnv.ELECTRON_RUN_AS_NODE;
+
 let app = await electron.launch({
   executablePath,
   args: [...launchArgs, '--project=' + project],
   env: launchEnv,
   timeout: 30000,
 });
+
 let nativeOutput = '';
+
 let appProcess = app.process();
+
 const captureNativeOutput = () => {
   appProcess = app.process();
   appProcess.stderr?.on('data', (chunk) => {
     nativeOutput = (nativeOutput + chunk.toString()).slice(-16384);
   });
 };
+
 captureNativeOutput();
+
 async function closeApp() {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -129,9 +162,13 @@ async function closeApp() {
     if (timer) clearTimeout(timer);
   }
 }
+
 const errors: string[] = [];
+
 let preview: Server | undefined;
+
 let failed = false;
+
 try {
   const page = await app.firstWindow();
   if (process.env.SF_EXECUTABLE) assert.ok(page.url().startsWith('superfluid://app/'));

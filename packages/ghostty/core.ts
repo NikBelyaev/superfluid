@@ -6,8 +6,8 @@ import {
   ghosttyKeyForEvent,
   ghosttyUnshiftedCodepoint,
   loadGhosttyKeyboardLayoutMap,
-} from "./keyCodes";
-import { GhosttyRuntime, loadGhosttyRuntime } from "./runtime";
+} from "@superfluid/ghostty/keyCodes";
+import { GhosttyRuntime, loadGhosttyRuntime } from "@superfluid/ghostty/runtime";
 
 const GHOSTTY_SUCCESS = 0;
 const GHOSTTY_OUT_OF_SPACE = -3;

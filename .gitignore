@@ -5,7 +5,6 @@ release/
 test-results/
 *.log
 .DS_Store
-packages/ty/vendor/
 .env
 .env.*
 !.env.example

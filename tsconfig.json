@@ -11,7 +11,12 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "types": ["node", "vite/client"],
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "~/*": ["./apps/web/src/*"],
+      "@superfluid/contracts": ["./packages/contracts/src/index.ts"],
+      "@superfluid/ghostty/*": ["./packages/ghostty/*"]
+    }
   },
   "include": ["apps", "packages", "tests", "vite.config.ts"]
 }
