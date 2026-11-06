@@ -2,7 +2,7 @@
 
 Ghostty adapters in packages/ghostty are adapted from pingdotgg/t3code at commit 337c5858c33bc7f8f6dfd391a2c279fa0f7e4d17. Changes: Node WASM loading, local keyboard mapping, renderer type-only imports, 5,000-row retention.
 
-UI tokens and recipes in apps/web/src/theme.css and style.css are adapted from the same T3 Code revision: apps/web/src/appearanceFonts.ts, index.css, components/chat/threadDetailsPanelStyles.ts, ThreadDetailsSection.tsx, ThreadDetailsCard.tsx, RightPanelTabs.tsx, and components/ui/{button,input,menu,kbd,toggle-group}.tsx. Font stacks and Pierre hooks retain the source values; Tailwind recipes are translated to plain CSS, with opaque surfaces and IDE-specific layout. Exact original snippets and adaptation details are in UI_REVIEW.md. The T3 MIT notice below applies to these portions as well. No font binaries are copied.
+UI tokens and recipes in apps/web/src/theme.css and style.css are adapted from the same T3 Code revision: apps/web/src/appearanceFonts.ts, index.css, components/chat/threadDetailsPanelStyles.ts, ThreadDetailsSection.tsx, ThreadDetailsCard.tsx, RightPanelTabs.tsx, and components/ui/{button,input,menu,kbd,toggle-group}.tsx. Font stacks and Pierre hooks retain the source values; Tailwind recipes are translated to plain CSS, with opaque surfaces and IDE-specific layout. The T3 MIT notice below applies to these portions as well. No font binaries are copied.
 
 AGENTS.md is adapted from pingdotgg/t3code/AGENTS.md at commit 0ea3c0243fb5b3c07bb8c2bad01c1d3d0f5fde35. Product-specific instructions, local commands, and names are adapted for superfluid; the T3 MIT notice below applies to the retained text.
 
