@@ -1,5 +1,5 @@
 import { monaco } from '~/state/editor/Documents';
-import { useApp, type Location } from '~/state/workspaceStore';
+import { useApp, resolveLocationSymbol, type Location } from '~/state/workspaceStore';
 import type { Session } from '@superfluid/contracts';
 
 export async function navigate(
@@ -31,8 +31,10 @@ export async function navigate(
       !history.length ||
       history.at(-1)?.path !== origin.path ||
       history.at(-1)?.line !== origin.line
-    )
+    ) {
       history.push(origin);
+      void resolveLocationSymbol(session.id, origin);
+    }
     app.setView({ history, historyIndex: history.length - 1 }, session.id);
   }
   await app.openFile(path, line, column, true);

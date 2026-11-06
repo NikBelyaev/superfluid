@@ -124,6 +124,7 @@ class Server {
       capabilities: {
         textDocument: {
           completion: { completionItem: { snippetSupport: true } },
+          documentSymbol: { hierarchicalDocumentSymbolSupport: true },
           publishDiagnostics: { versionSupport: true },
         },
         workspace: {

@@ -30,6 +30,12 @@ test('Python definitions use unsaved overlays after language server eviction', a
       });
       assert.ok(result?.length > 0, JSON.stringify(result));
       assert.match(result[0].uri, /models\.py$/);
+      const symbols = await server.request('textDocument/documentSymbol', {
+        textDocument: { uri: pathToFileURL(join(root, 'models.py')).href },
+      });
+      assert.equal(symbols[0].name, 'Recovered');
+      assert.equal(symbols[0].children?.[0]?.name, 'size');
+      assert.deepEqual(symbols[0].children[0].range.start, { line: 1, character: 4 });
       const renamed = await server.request('textDocument/rename', {
         textDocument: { uri: pathToFileURL(join(root, 'main.py')).href },
         position: { line: 1, character: 5 },
