@@ -1,5 +1,5 @@
 import { desktop } from '~/rpc/desktop';
-import { ChevronDown, GitBranch, GitCompareArrows, GitPullRequest } from 'lucide-react';
+import { ChevronDown, FileDiff, GitBranch, GitPullRequest } from 'lucide-react';
 import { Menu } from '@base-ui/react/menu';
 import type { Session } from '@superfluid/contracts';
 import { showSurface, useApp } from '~/state/workspaceStore';
@@ -63,9 +63,24 @@ export function SourceControlSection({ session }: { session: Session }) {
         </Menu.Root>
       </div>
       <button className="island-row" onClick={() => showSurface({ kind: 'diff' })}>
-        <GitCompareArrows size={14} />
+        <FileDiff className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         <span>Changes</span>
-        <span className="change-count">{status?.files.length ?? 0} files</span>
+        <span className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-xs leading-5 font-normal whitespace-nowrap tabular-nums">
+          <span
+            className={
+              status?.changes.insertions ? 'text-diff-addition-foreground' : 'text-muted-foreground'
+            }
+          >
+            +{(status?.changes.insertions ?? 0).toLocaleString('en-US')}
+          </span>
+          <span
+            className={
+              status?.changes.deletions ? 'text-diff-deletion-foreground' : 'text-muted-foreground'
+            }
+          >
+            -{(status?.changes.deletions ?? 0).toLocaleString('en-US')}
+          </span>
+        </span>
       </button>
       {operation && operation.phase !== 'completed' && (
         <div className={`operation-state ${operation.error ? 'error-text' : ''}`}>

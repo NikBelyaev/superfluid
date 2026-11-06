@@ -1,7 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { Component, type ReactNode } from 'react';
 import App from '~/AppRoot';
-import '~/index.css';
+import '~/tailwind.css';
 
 class Boundary extends Component<{ children: ReactNode }, { error: string | null }> {
   state = { error: null as string | null };

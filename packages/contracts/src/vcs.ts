@@ -18,6 +18,7 @@ export interface GitStatus {
   files: GitFile[];
   branches: string[];
   repo: boolean;
+  changes: { insertions: number; deletions: number };
 }
 
 export interface Operation {

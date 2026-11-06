@@ -21,6 +21,32 @@ test('porcelain parsing preserves whitespace and rename paths', () => {
   assert.equal(result.files[2].path, 'brand new.py');
 });
 
+test('status totals count staged, unstaged and untracked lines without counting binary files', async () => {
+  const root = await repository(),
+    store = new Store(await temp()),
+    service = new GitService(store, () => {}),
+    s = session(root);
+  try {
+    await writeFile(join(root, 'main.py'), 'staged\n');
+    await git(root, ['add', 'main.py']);
+    await writeFile(join(root, 'main.py'), 'working\nextra\n');
+    await mkdir(join(root, 'new'));
+    await writeFile(join(root, 'new', 'odd\tname\n.py'), 'one\ntwo');
+    await writeFile(join(root, 'binary'), Buffer.from([0, 1, 2, 10]));
+    const status = await service.status(s);
+    assert.deepEqual(status.changes, { insertions: 4, deletions: 1 });
+    await git(root, ['add', '.']);
+    await git(root, ['commit', '-m', 'Save changes']);
+    assert.deepEqual((await service.status(s)).changes, { insertions: 0, deletions: 0 });
+    assert.deepEqual((await service.status({ ...s, gitDir: '' })).changes, {
+      insertions: 0,
+      deletions: 0,
+    });
+  } finally {
+    store.close();
+  }
+});
+
 test('publication uses a verified commit and explicit destination ref', async () => {
   const root = await repository(),
     remote = await temp();
@@ -66,7 +92,13 @@ test('a first local commit needs no Git remote', async () => {
   await writeFile(join(root, 'first.py'), 'print(1)\n');
   const store = new Store(await temp());
   try {
-    const op = await new GitService(store, () => {}).act(session(root), {
+    const service = new GitService(store, () => {});
+    await git(root, ['add', '.']);
+    assert.deepEqual((await service.status(session(root))).changes, {
+      insertions: 1,
+      deletions: 0,
+    });
+    const op = await service.act(session(root), {
       sessionId: 'test',
       operationId: 'initial',
       action: 'commit',

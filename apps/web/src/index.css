@@ -983,8 +983,7 @@ kbd {
   background: rgb(0 0 0 / 3.5%);
   color: var(--foreground);
 }
-.island-row:hover small,
-.island-row:hover .change-count {
+.island-row:hover small {
   color: var(--control-muted-foreground);
 }
 .island-row > svg {
@@ -1029,12 +1028,6 @@ kbd {
 }
 .action-row:hover .quiet {
   opacity: 1;
-}
-.change-count {
-  font-size: var(--text-2xs);
-  color: var(--muted-foreground);
-  white-space: nowrap;
-  font-weight: 400;
 }
 .split-action {
   display: flex;

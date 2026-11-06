@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
 export default defineConfig({
   logLevel: 'warn',
@@ -17,6 +18,7 @@ export default defineConfig({
   optimizeDeps: { include: ['@pierre/diffs'] },
   base: './',
   plugins: [
+    tailwindcss(),
     react(),
     {
       name: 'development-csp',
