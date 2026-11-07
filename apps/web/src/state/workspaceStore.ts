@@ -173,7 +173,7 @@ export const useApp = create<State>((set, get) => ({
     const s = get().sessions.find((s) => s.id === get().sessionId);
     if (!s) return;
     try {
-      const { documents } = await import('~/state/editor/Documents');
+      const { documents, documentPath } = await import('~/state/editor/Documents');
       const doc = await documents.open(s, path);
       documents.focused = doc;
       const view = get().views[s.id] ?? emptyView();
@@ -183,7 +183,7 @@ export const useApp = create<State>((set, get) => ({
       if (record && line) {
         history = [
           ...history.slice(0, index + 1),
-          { path, line, column: column ?? 1, label: path.split('/').at(-1) || path },
+          { path, line, column: column ?? 1, label: documentPath(path).split('/').at(-1) || path },
         ].slice(-100);
         index = history.length - 1;
       }
@@ -298,7 +298,7 @@ export async function resolveLocationSymbol(sessionId: string, location: Locatio
   try {
     const { documents } = await import('~/state/editor/Documents');
     const doc = documents.items.get(documents.key(sessionId, location.path));
-    if (!doc || doc.model.getLanguageId() !== 'python') return;
+    if (!doc || doc.readOnly || doc.model.getLanguageId() !== 'python') return;
     const version = doc.version;
     await documents.sync(doc);
     const symbols: DocumentSymbol[] | null = await desktop.call('lsp.request', {

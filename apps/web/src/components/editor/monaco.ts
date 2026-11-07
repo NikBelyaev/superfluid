@@ -13,8 +13,6 @@ import 'monaco-editor/editor/contrib/hover/browser/hoverContribution';
 
 import 'monaco-editor/editor/contrib/gotoSymbol/browser/goToCommands';
 
-import 'monaco-editor/editor/contrib/gotoSymbol/browser/link/goToDefinitionAtPosition';
-
 import 'monaco-editor/editor/contrib/documentSymbols/browser/documentSymbols';
 
 import 'monaco-editor/editor/contrib/snippet/browser/snippetController2';

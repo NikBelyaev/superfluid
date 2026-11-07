@@ -1,5 +1,6 @@
 import { desktop } from '~/rpc/desktop';
 import { documents, monaco } from '~/state/editor/Documents';
+import { definitionLink, definitionTrust } from './definitionPreview';
 
 async function request(
   model: monaco.editor.ITextModel,
@@ -8,7 +9,7 @@ async function request(
   extra: Record<string, unknown> = {},
 ) {
   const doc = documents.find(model);
-  if (!doc) return null;
+  if (!doc || doc.readOnly) return null;
   await documents.sync(doc);
   return desktop.call('lsp.request', {
     sessionId: doc.session.id,
@@ -65,20 +66,50 @@ monaco.languages.registerCompletionItemProvider('python', {
 monaco.languages.registerHoverProvider('python', {
   provideHover: async (model, position, token) => {
     try {
-      const r = await request(model, 'textDocument/hover', position);
-      if (!r || token.isCancellationRequested) return null;
-      const contents = Array.isArray(r.contents) ? r.contents : [r.contents];
+      const doc = documents.find(model);
+      if (!doc || doc.readOnly) return null;
+      const version = doc.version;
+      await documents.sync(doc);
+      const point = { line: position.lineNumber - 1, character: position.column - 1 };
+      const r = await desktop.call('python.hover', {
+        sessionId: doc.session.id,
+        path: doc.path,
+        position: point,
+      });
+      if (!r || token.isCancellationRequested || doc.version !== version) return null;
+      const link = (target: (typeof r.definitions)[number]['symbol'], label = target.name) =>
+        `[${label.replace(/[\\`*_{}\[\]()<>]/g, '\\$&')}](${definitionLink(doc, point, target)})`;
+      const target = r.definitions[0]?.symbol;
       return {
         range: r.range ? range(r.range) : undefined,
-        contents: contents.map((c: any) => ({
-          value:
-            typeof c === 'string'
-              ? c
-              : c.language
-                ? '```' + c.language + '\n' + c.value + '\n```'
-                : (c.value ?? ''),
-          isTrusted: false,
-        })),
+        contents: [
+          ...r.definitions.map((definition) => {
+            const context = [definition.module, ...definition.containers]
+              .map((scope) => `${scope.kind === 5 ? '$(symbol-class) ' : ''}${link(scope)}`)
+              .join(' · ');
+            const candidate =
+              r.definitions.length > 1
+                ? ` · ${link(definition.symbol, `${definition.symbol.name}:${definition.symbol.position.line + 1}`)}`
+                : '';
+            return {
+              value: `$(folder) ${context}${candidate}`,
+              supportThemeIcons: true,
+              isTrusted: definitionTrust,
+            };
+          }),
+          { value: r.markdown, isTrusted: false },
+          ...(target
+            ? [
+                {
+                  value: link(
+                    target,
+                    `${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'} click to open definition`,
+                  ),
+                  isTrusted: definitionTrust,
+                },
+              ]
+            : []),
+        ],
       };
     } catch {
       return null;

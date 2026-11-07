@@ -1,0 +1,49 @@
+.editor-host .monaco-hover {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--popover);
+  color: var(--foreground);
+  box-shadow: var(--shadow-popover);
+  overflow: hidden;
+  font-family: var(--font-sans);
+}
+.editor-host .monaco-resizable-hover:has(> .monaco-hover) {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--popover);
+  box-shadow: var(--shadow-popover);
+}
+.editor-host .monaco-hover .hover-row {
+  background: transparent;
+}
+.editor-host .monaco-hover a {
+  color: var(--primary);
+  text-decoration: none;
+}
+.editor-host .monaco-hover a:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+.editor-host
+  .monaco-hover
+  .markdown-hover:has(a[data-href^='command:superfluid.previewDefinition'])
+  .hover-contents {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-code);
+}
+.editor-host
+  .monaco-hover
+  .markdown-hover:last-child:has(a[data-href^='command:superfluid.previewDefinition'])
+  .hover-contents {
+  font-size: var(--text-xs);
+  font-family: var(--font-sans);
+}
+.definition-readonly {
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+}
+.editor-host .symbol-definition-link {
+  color: var(--primary) !important;
+  text-decoration: underline;
+  cursor: pointer;
+}

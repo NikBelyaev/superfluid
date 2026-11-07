@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { Columns2, FileCode2, X } from 'lucide-react';
 import { useApp, showSurface } from '~/state/workspaceStore';
-import { subscribe, getRevision, documents } from '~/state/editor/Documents';
+import { subscribe, getRevision, documents, documentPath } from '~/state/editor/Documents';
 import { navigateTabs, useActiveTab } from '~/hooks/useTabs';
 import type { Session } from '@superfluid/contracts';
 
@@ -27,18 +27,18 @@ export function EditorTabs({ session }: { session: Session }) {
                 aria-selected={view.active === path}
                 tabIndex={view.active === path ? 0 : -1}
                 aria-controls="primary-editor-panel"
-                title={path}
+                title={documentPath(path)}
                 onClick={() => void useApp.getState().openFile(path)}
                 draggable
                 onDragStart={(e) => e.dataTransfer.setData('application/superfluid-file', path)}
               >
                 <FileCode2 size={13} className={path.endsWith('.py') ? 'python-icon' : ''} />
-                <span>{path.split('/').at(-1)}</span>
+                <span>{documentPath(path).split('/').at(-1)}</span>
                 {d?.dirty && <i className="dirty-dot" />}
               </button>
               <button
                 className="tab-close"
-                aria-label={`Close ${path.split('/').at(-1)}`}
+                aria-label={`Close ${documentPath(path).split('/').at(-1)}`}
                 onClick={async () => {
                   try {
                     await documents.close(session.id, path);

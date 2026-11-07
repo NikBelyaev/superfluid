@@ -123,6 +123,7 @@ class Server {
       ],
       capabilities: {
         textDocument: {
+          hover: { contentFormat: ['markdown'] },
           completion: { completionItem: { snippetSupport: true } },
           documentSymbol: { hierarchicalDocumentSymbolSupport: true },
           publishDiagnostics: { versionSupport: true },

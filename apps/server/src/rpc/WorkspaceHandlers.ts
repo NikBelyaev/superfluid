@@ -79,6 +79,8 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     'lsp.close': (input) => python.closeDocument(session(input.sessionId), input.path),
     'lsp.request': (input) => python.request(session(input.sessionId), input),
     'python.format': (input) => python.format(session(input.sessionId), input.text),
+    'python.hover': (input) => python.hover(session(input.sessionId), input),
+    'python.source': (input) => python.source(session(input.sessionId), input),
     'pr.read': async (input) => pullRequests.read(await repository(input), input),
     'pr.context': async (input) =>
       pullRequests.context(await repository(input), input.targetProject),

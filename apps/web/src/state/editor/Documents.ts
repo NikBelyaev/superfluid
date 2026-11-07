@@ -1,6 +1,6 @@
 import { monaco } from '~/components/editor/monaco';
 import { desktop } from '~/rpc/desktop';
-import type { Session } from '@superfluid/contracts';
+import type { Session, DocumentData } from '@superfluid/contracts';
 import { Recovery } from '~/state/editor/Recovery';
 
 export interface Doc {
@@ -19,6 +19,7 @@ export interface Doc {
   saving?: Promise<void>;
   reloading?: boolean;
   closed?: boolean;
+  readOnly?: boolean;
 }
 
 const listeners = new Set<() => void>();
@@ -50,6 +51,9 @@ const language = (path: string) =>
           ? 'shell'
           : 'plaintext';
 
+export const documentPath = (path: string) =>
+  path.startsWith('file://') ? monaco.Uri.parse(path).fsPath : path;
+
 class Documents {
   items = new Map<string, Doc>();
   focused: Doc | null = null;
@@ -74,10 +78,18 @@ class Documents {
     return monaco.Uri.from({ scheme: 'superfluid-file', authority: s.id, path: '/' + path });
   }
   diskUri(doc: Doc) {
+    if (doc.readOnly) return doc.path;
     return monaco.Uri.file(doc.session.path + '/' + doc.path).toString();
   }
   find(model: monaco.editor.ITextModel) {
     return [...this.items.values()].find((d) => d.model === model);
+  }
+  private async readDefinition(session: Session, path: string): Promise<DocumentData> {
+    const { useApp } = await import('~/state/workspaceStore');
+    const source = useApp.getState().views[session.id]?.definitionSources?.[path];
+    if (!source) throw new Error('Open this definition from a Python symbol first.');
+    const data = await desktop.call('python.source', { ...source, sessionId: session.id });
+    return { path, text: data.text, hash: '', version: 0 };
   }
   async open(session: Session, path: string) {
     const key = this.key(session.id, path),
@@ -91,7 +103,10 @@ class Documents {
     const total = [...this.items.values()].reduce((n, d) => n + d.model.getValueLength() * 2, 0);
     if (this.items.size >= 80 || total >= 128 * 1024 * 1024)
       throw new Error('Editor memory limit reached. Save or close a document first.');
-    const data = await desktop.call('files.read', { sessionId: session.id, path });
+    const readOnly = path.startsWith('file://');
+    const data = readOnly
+      ? await this.readDefinition(session, path)
+      : await desktop.call('files.read', { sessionId: session.id, path });
     const raced = this.items.get(key);
     if (raced) return raced;
     const model = monaco.editor.createModel(data.text, language(path), this.uri(session, path));
@@ -106,8 +121,13 @@ class Documents {
       recovered: !!data.recovered,
       diskText: data.diskText,
       lastUsed: Date.now(),
+      readOnly,
     };
     this.items.set(key, doc);
+    if (readOnly) {
+      notify();
+      return doc;
+    }
     const source = {
       key,
       version: () => doc.version,
@@ -133,7 +153,7 @@ class Documents {
     return doc;
   }
   async sync(doc: Doc) {
-    if (doc.model.isDisposed()) return;
+    if (doc.readOnly || doc.model.isDisposed()) return;
     return desktop.call('lsp.open', {
       sessionId: doc.session.id,
       path: doc.path,
@@ -142,6 +162,7 @@ class Documents {
     });
   }
   async save(doc: Doc): Promise<void> {
+    if (doc.readOnly) return;
     if (doc.saving) return doc.saving;
     doc.saving = this.saveCurrent(doc).finally(() => {
       doc.saving = undefined;
@@ -173,6 +194,7 @@ class Documents {
     notify();
   }
   async reload(doc: Doc) {
+    if (doc.readOnly) throw new Error('External definitions are read only.');
     await this.recovery.flush(doc.key);
     const version = doc.version;
     const disk = await desktop.call('files.read', {
@@ -209,7 +231,7 @@ class Documents {
     const doc = this.items.get(this.key(sessionId, path));
     if (!doc) return;
     if (doc.dirty) await this.recovery.flush(doc.key);
-    else await desktop.call('lsp.close', { sessionId, path }).catch(() => {});
+    else if (!doc.readOnly) await desktop.call('lsp.close', { sessionId, path }).catch(() => {});
     doc.closed = true;
     requestAnimationFrame(() => void this.prune());
   }
@@ -380,6 +402,7 @@ class Documents {
     newName: string,
   ) {
     const doc = await this.open(session, source.path);
+    if (doc.readOnly) throw new Error('External definitions are read only.');
     const sync = async () => {
       const docs = [...this.items.values()].filter((d) => d.session.id === session.id),
         versions = new Map(docs.map((d) => [this.diskUri(d), d.version]));

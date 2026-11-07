@@ -9,6 +9,9 @@ export async function navigate(
   column: number,
   origin?: Location,
 ) {
+  const app = useApp.getState(),
+    view = app.views[session.id];
+  if (app.sessionId !== session.id) return;
   let path: string;
   if (uri.scheme === 'superfluid-file') {
     if (uri.authority !== session.id)
@@ -16,15 +19,36 @@ export async function navigate(
     path = uri.path.slice(1);
   } else {
     const root = session.path.replace(/\/$/, '') + '/';
-    if (!uri.fsPath.startsWith(root))
-      throw new Error(
-        'This definition is outside the current worktree. Open that source folder as a project to inspect it.',
-      );
-    path = uri.fsPath.slice(root.length);
+    if (uri.scheme !== 'file') throw new Error('This definition is not a source file.');
+    if (uri.fsPath.startsWith(root)) path = uri.fsPath.slice(root.length);
+    else {
+      path = uri.toString();
+      if (origin) {
+        const sources = {
+          ...view.definitionSources,
+          [path]: {
+            path: origin.path,
+            position: { line: origin.line - 1, character: origin.column - 1 },
+            target: { uri: path, position: { line: line - 1, character: column - 1 } },
+          },
+        };
+        const retained = new Set([
+          ...view.tabs,
+          ...view.history.map((location) => location.path),
+          path,
+        ]);
+        app.setView(
+          {
+            definitionSources: Object.fromEntries(
+              Object.entries(sources).filter(([key]) => retained.has(key)),
+            ),
+          },
+          session.id,
+        );
+      } else if (!view.definitionSources?.[path])
+        throw new Error('Open this definition from a Python symbol first.');
+    }
   }
-  const app = useApp.getState(),
-    view = app.views[session.id];
-  if (app.sessionId !== session.id) return;
   if (origin) {
     const history = view.history.slice(0, view.historyIndex + 1);
     if (
