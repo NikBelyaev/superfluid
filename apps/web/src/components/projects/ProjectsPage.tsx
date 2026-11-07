@@ -7,6 +7,7 @@ import { UpdateButton } from '~/components/settings/UpdateButton';
 
 export function ProjectsPage() {
   const version = useUpdates((s) => s.state?.version);
+  const updateAvailable = useUpdates((s) => Boolean(s.state?.availableVersion));
   const projects = useApp((a) => a.projects),
     [query, setQuery] = useState(''),
     [pins, setPins] = useState<string[]>(() => {
@@ -51,9 +52,18 @@ export function ProjectsPage() {
         <UpdateButton />
         <button
           className="welcome-nav-item"
+          aria-description={updateAvailable ? 'An update is available.' : undefined}
           onClick={() => useApp.setState({ modal: { kind: 'settings' } })}
         >
-          <Settings size={17} />
+          <span className="relative inline-flex">
+            <Settings size={17} />
+            {updateAvailable && (
+              <span
+                aria-hidden="true"
+                className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-primary ring-2 ring-sidebar"
+              />
+            )}
+          </span>
           Settings
         </button>
         <div className="welcome-version">

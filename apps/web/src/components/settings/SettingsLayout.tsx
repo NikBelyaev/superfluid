@@ -3,6 +3,7 @@ import { Dialog } from '@base-ui/react/dialog';
 import { Palette, GitPullRequest, Info, X } from 'lucide-react';
 import { SourceControlSettings } from './SourceControlSettings';
 import { AboutSettings } from './AboutSettings';
+import { useUpdates } from '~/state/updates';
 
 export function SettingsLayout({
   children,
@@ -13,6 +14,7 @@ export function SettingsLayout({
   section?: 'appearance' | 'hosting' | 'about';
   onSectionChange: (section: 'appearance' | 'hosting' | 'about') => void;
 }) {
+  const updateAvailable = useUpdates((s) => Boolean(s.state?.availableVersion));
   return (
     <>
       <header className="flex h-(--workspace-topbar-height) shrink-0 items-center justify-between border-b border-border px-6">
@@ -31,6 +33,9 @@ export function SettingsLayout({
               key={item}
               className={`settings-nav-item ${section === item ? 'active' : ''}`}
               aria-current={section === item ? 'page' : undefined}
+              aria-description={
+                item === 'about' && updateAvailable ? 'An update is available.' : undefined
+              }
               onClick={() => onSectionChange(item)}
             >
               {item === 'appearance' ? (
@@ -45,6 +50,12 @@ export function SettingsLayout({
                 : item === 'hosting'
                   ? 'Source Control'
                   : 'About'}
+              {item === 'about' && updateAvailable && (
+                <span
+                  aria-hidden="true"
+                  className="ml-auto size-1.5 shrink-0 rounded-full bg-primary"
+                />
+              )}
             </button>
           ))}
         </nav>
