@@ -263,7 +263,14 @@ async function handle(method: string, input: any) {
         cellHeight > 128
       )
         throw new Error('Unsupported terminal dimensions.');
-      t.pty.resize(Math.floor(cols), Math.floor(rows));
+      if (t.run.state === 'running') {
+        try {
+          t.pty.resize(Math.floor(cols), Math.floor(rows));
+        } catch (error) {
+          // The PTY can close before its exit event reaches the worker.
+          if (!(error instanceof Error) || error.message !== 'ioctl(2) failed, EBADF') throw error;
+        }
+      }
       t.core.resize(Math.floor(cols), Math.floor(rows), cellWidth, cellHeight);
       t.full = true;
       schedule(t);

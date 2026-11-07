@@ -12,6 +12,46 @@ function deferredFrame() {
   return { resolve, promise };
 }
 
+test('completed terminal output can be resized and reattached', async () => {
+  let resolveExited!: () => void;
+  const exited = new Promise<void>((resolve) => {
+    resolveExited = resolve;
+  });
+  const resized = deferredFrame();
+  const manager = new TerminalManager(
+    (event) => {
+      if (event.type === 'runs' && event.runs.some((run) => run.state === 'exited'))
+        resolveExited();
+      if (event.type === 'terminal.frame') resized.resolve(event.frame);
+    },
+    new URL('../../../../dist/terminal-worker.mjs', import.meta.url),
+  );
+  try {
+    const run = await manager.call('run', {
+      sessionId: 'resize-test',
+      cwd: tmpdir(),
+      file: '/bin/sh',
+      args: ['-c', 'printf completed-output'],
+      name: 'Resize test',
+      command: 'fixture',
+    });
+    await exited;
+    await manager.call('command', {
+      id: run.id,
+      command: 'resize',
+      data: { cols: 72, rows: 20, cellWidth: 8, cellHeight: 18 },
+    });
+    await manager.call('command', { id: run.id, command: 'attach' });
+    const frame = await resized.promise;
+    assert.equal(frame.header.cols, 72);
+    assert.equal(frame.header.rows, 20);
+    assert.ok(frame.rows.some(([, row]) => row.text.includes('completed-output')));
+    assert.equal(manager.runs.find((item) => item.id === run.id)?.state, 'exited');
+  } finally {
+    await manager.close();
+  }
+});
+
 test('terminal themes validate colors and repaint existing output without restarting the process', async () => {
   const initial = deferredFrame();
   const changed = deferredFrame();
