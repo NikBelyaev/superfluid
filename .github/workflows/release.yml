@@ -48,7 +48,7 @@ jobs:
               echo 'Scheduled releases are disabled until signing secrets are configured.'
               exit 0
             fi
-            echo 'Configure the signing secrets listed in docs/operations/releases.md.' >&2
+            echo 'Configure the CSC_LINK and CSC_KEY_PASSWORD signing secrets.' >&2
             exit 1
           fi
           node scripts/release.ts plan

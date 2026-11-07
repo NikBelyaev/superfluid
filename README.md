@@ -28,7 +28,7 @@ pnpm start
 pnpm dist
 ```
 
-Результат на Apple Silicon: `release/mac-arm64/Superfluid.app`. Эта локальная сборка использует ad-hoc подпись. Релизы macOS для Apple Silicon и Intel собираются через GitHub Actions с постоянным самоподписанным сертификатом; настройка описана в [руководстве по релизам](docs/operations/releases.md).
+Результат на Apple Silicon: `release/mac-arm64/Superfluid.app`. Эта локальная сборка использует ad-hoc подпись. Релизы macOS для Apple Silicon и Intel собираются через GitHub Actions с постоянным самоподписанным сертификатом.
 
 Можно передать проект при запуске: `pnpm start --project=/absolute/path/to/project`.
 
