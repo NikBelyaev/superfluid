@@ -55,11 +55,14 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
       store.dropDraft(session(input.sessionId).id, input.path, input.version);
       return null;
     },
-    'git.status': (input) => git.status(session(input.sessionId)),
+    'git.repositories': (input) =>
+      sourceControl.repositories.list(session(input.sessionId), input.refresh),
+    'git.worktree': (input) => sourceControl.createWorktree(session(input.sessionId), input),
+    'git.status': (input) => sourceControl.status(session(input.sessionId), input.repositoryId),
     'git.init': (input) => sourceControl.initialize(session(input.sessionId)),
     'git.diff': (input) => sourceControl.diff(session(input.sessionId), input),
     'git.act': (input) => sourceControl.act(session(input.sessionId), input),
-    'git.inspect': (input) => git.inspect(session(input.sessionId), input.operationId),
+    'git.inspect': (input) => sourceControl.inspect(session(input.sessionId), input.operationId),
     'git.acknowledge': (input) => git.acknowledge(session(input.sessionId), input.operationId),
     'actions.save': (input) => actions.save(input),
     'actions.delete': (input) => actions.delete(input.id),
@@ -69,8 +72,20 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     'lsp.close': (input) => python.closeDocument(session(input.sessionId), input.path),
     'lsp.request': (input) => python.request(session(input.sessionId), input),
     'python.format': (input) => python.format(session(input.sessionId), input.text),
-    'pr.read': (input) => pullRequests.read(session(input.sessionId), input),
-    'pr.patch': (input) => pullRequests.patch(session(input.sessionId), input),
-    'pr.comment': (input) => pullRequests.comment(session(input.sessionId), input),
+    'pr.read': async (input) =>
+      pullRequests.read(
+        await sourceControl.repositories.target(session(input.sessionId), input.repositoryId),
+        input,
+      ),
+    'pr.patch': async (input) =>
+      pullRequests.patch(
+        await sourceControl.repositories.target(session(input.sessionId), input.repositoryId),
+        input,
+      ),
+    'pr.comment': async (input) =>
+      pullRequests.comment(
+        await sourceControl.repositories.target(session(input.sessionId), input.repositoryId),
+        input,
+      ),
   };
 }

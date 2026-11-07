@@ -5,6 +5,8 @@ import { Gate } from '../utils/Gate';
 
 import { Store } from '../persistence/Store';
 import { digest } from '../utils/digest';
+import { readBranchBase, resolveBranch } from './branchBase';
+import { within } from '../files/paths';
 
 export const unresolvedPhases = [
   'committing',
@@ -14,6 +16,9 @@ export const unresolvedPhases = [
   'creating-pr',
   'uncertain',
   'needs-review',
+  'switching',
+  'stashing',
+  'applying-stash',
 ];
 
 function hostingRepo(remote: string) {
@@ -91,7 +96,8 @@ export class GitService {
     );
   }
   async status(s: Session): Promise<GitStatus> {
-    const existing = this.statuses.get(s.id);
+    const key = s.gitDir || s.id;
+    const existing = this.statuses.get(key);
     if (existing) return existing;
     const work = this.reads
       .run(async () => {
@@ -107,7 +113,7 @@ export class GitService {
             repo: false,
             changes: { insertions: 0, deletions: 0 },
           };
-        const [raw, branches] = await Promise.all([
+        const [raw, branches, remote, stash] = await Promise.all([
           git(
             s.path,
             [
@@ -127,13 +133,17 @@ export class GitService {
             ['for-each-ref', '--format=%(refname:short)', 'refs/heads/', 'refs/remotes/'],
             { timeout: 5000 },
           ),
+          git(s.path, ['remote', 'get-url', '--push', 'origin']).catch(() => ''),
+          git(s.path, ['rev-parse', '--verify', '--quiet', 'refs/stash'], { accept: [1] }).catch(
+            () => '',
+          ),
         ]);
         const status = parseStatus(raw),
           changes = { insertions: 0, deletions: 0 };
-        const count = (numstat: string) => {
+        const count = (numstat: string, target = changes) => {
           for (const match of numstat.matchAll(/^(\d+)\t(\d+)\t/gm)) {
-            changes.insertions += Number(match[1]);
-            changes.deletions += Number(match[2]);
+            target.insertions += Number(match[1]);
+            target.deletions += Number(match[2]);
           }
         };
         if (status.files.some((file) => file.index !== '?')) {
@@ -159,15 +169,87 @@ export class GitService {
               ),
             );
         }
+        const refs = branches.trim().split('\n');
+        const comparison =
+          status.upstream ||
+          [`origin/${status.branch}`, 'origin/HEAD', 'origin/main', 'origin/master'].find((ref) =>
+            refs.includes(ref),
+          );
+        let outgoing: GitStatus['outgoing'] = comparison
+          ? { insertions: 0, deletions: 0 }
+          : undefined;
+        if (comparison && outgoing && (status.ahead > 0 || !status.upstream)) {
+          try {
+            count(
+              await git(
+                s.path,
+                ['diff', '--numstat', '--no-ext-diff', `${safeRef(comparison)}...HEAD`, '--'],
+                { timeout: 5000 },
+              ),
+              outgoing,
+            );
+          } catch {
+            outgoing = undefined;
+          }
+        }
+        const baseBranch =
+          status.branch && status.branch !== 'Detached HEAD'
+            ? await readBranchBase(s.path, status.branch)
+            : undefined;
+        const head = status.head && status.head !== '(initial)';
+        const pushRef = `origin/${status.branch}`;
+        const baseRef = (
+          baseBranch
+            ? [`origin/${baseBranch}`, baseBranch]
+            : ['origin/HEAD', 'origin/main', 'origin/master', 'main', 'master']
+        ).find((ref) => refs.includes(ref));
+        const [push, prChanges] = await Promise.all([
+          remote && head && status.branch !== 'Detached HEAD'
+            ? status.upstream === pushRef
+              ? { ahead: status.ahead, behind: status.behind }
+              : refs.includes(pushRef)
+                ? git(s.path, ['rev-list', '--left-right', '--count', `${safeRef(pushRef)}...HEAD`])
+                    .then((counts) => {
+                      const [behind, ahead] = counts.trim().split(/\s+/).map(Number);
+                      return { ahead, behind };
+                    })
+                    .catch(() => undefined)
+                : { ahead: 1, behind: 0 }
+            : undefined,
+          baseRef?.replace(/^origin\//, '') === status.branch
+            ? false
+            : head && baseRef
+              ? git(s.path, [
+                  'diff',
+                  '--name-only',
+                  '--no-ext-diff',
+                  `${safeRef(baseRef)}...HEAD`,
+                  '--',
+                ])
+                  .then((files) => !!files)
+                  .catch(() => undefined)
+              : head
+                ? undefined
+                : false,
+        ]);
         return {
           ...status,
+          baseBranch,
+          hasRemote: !!remote.trim(),
+          push,
+          prChanges,
+          stash: stash.trim() || undefined,
+          files: status.files,
           changes,
+          outgoing,
           branches: branches.trim().split('\n').filter(Boolean).slice(0, 1000),
           repo: true,
         };
       })
-      .finally(() => this.statuses.delete(s.id));
-    this.statuses.set(s.id, work);
+      .finally(() => {
+        if (this.statuses.get(key) === work) this.statuses.delete(key);
+      });
+    this.statuses.set(key, work);
     return work;
   }
   async diff(s: Session, path: string | undefined, mode: string, base: string) {
@@ -208,7 +290,10 @@ export class GitService {
     this.writers.set(s.gitDir, gate);
     const run = gate
       .run(() => this.perform(s, input))
-      .finally(() => this.running.delete(input.operationId));
+      .finally(() => {
+        this.running.delete(input.operationId);
+        this.statuses.delete(s.gitDir || s.id);
+      });
     this.running.set(input.operationId, run);
     return run;
   }
@@ -217,14 +302,18 @@ export class GitService {
       .all<Operation>('operations')
       .find(
         (o) =>
-          o.sessionId === s.id && o.id !== input.operationId && unresolvedPhases.includes(o.phase),
+          o.sessionId === s.id &&
+          o.repositoryId === input.repositoryId &&
+          o.id !== input.operationId &&
+          unresolvedPhases.includes(o.phase),
       );
     if (unresolved)
       throw new Error(
         'Review the previous Git operation in the actions panel before starting another. Its result is uncertain.',
       );
     let op = this.store.get<Operation>('operations', input.operationId);
-    if (op && op.sessionId !== s.id) throw new Error('This operation belongs to another worktree.');
+    if (op && (op.sessionId !== s.id || op.repositoryId !== input.repositoryId))
+      throw new Error('This operation belongs to another worktree or repository.');
     const intent = digest(JSON.stringify({ ...input, operationId: undefined }));
     if (op?.evidence.intent && op.evidence.intent !== intent)
       throw new Error('This operation ID already belongs to another request.');
@@ -235,7 +324,13 @@ export class GitService {
       throw new Error(
         'The previous result is uncertain. Inspect the Git log or remote before starting another publication.',
       );
-    op ??= { id: input.operationId, sessionId: s.id, phase: 'preparing', evidence: {} };
+    op ??= {
+      id: input.operationId,
+      sessionId: s.id,
+      repositoryId: input.repositoryId,
+      phase: 'preparing',
+      evidence: {},
+    };
     const operation = op;
     operation.evidence.intent = intent;
     const update = (phase: string) => {
@@ -245,9 +340,98 @@ export class GitService {
       this.notify(operation);
     };
     try {
+      if (input.action === 'stash' || input.action === 'stash-apply') {
+        const files = parseStatus(
+          await git(s.path, ['status', '--porcelain=v2', '--untracked-files=all', '-z']),
+        ).files.filter((file) => file.index !== '?' || !file.path.endsWith('/'));
+        operation.evidence.stashAction = input.action;
+        if (input.action === 'stash') {
+          if (await git(s.path, ['ls-files', '--unmerged', '-z']))
+            throw new Error('Resolve merge conflicts before stashing.');
+          if (!files.length) {
+            operation.evidence.skipped = true;
+            update('completed');
+            return operation;
+          }
+          if (
+            !(
+              await git(s.path, ['rev-parse', '--verify', '--quiet', 'HEAD'], { accept: [1] })
+            ).trim()
+          )
+            throw new Error('Make the first commit before stashing.');
+          operation.evidence.stashBefore = (
+            await git(s.path, ['rev-parse', '--verify', '--quiet', 'refs/stash'], { accept: [1] })
+          ).trim();
+          update('stashing');
+          await git(s.path, [
+            'stash',
+            'push',
+            '--include-untracked',
+            '--message',
+            `superfluid:${operation.id}`,
+          ]);
+          operation.evidence.stash = (
+            await git(s.path, ['rev-parse', '--verify', 'refs/stash'])
+          ).trim();
+          if (operation.evidence.stash === operation.evidence.stashBefore)
+            throw new Error('Git did not create a new stash. Inspect the stash list.');
+        } else {
+          if (files.length)
+            throw new Error('Commit or stash local changes before applying a stash.');
+          const stash =
+            input.stash ||
+            (
+              await git(s.path, ['rev-parse', '--verify', '--quiet', 'refs/stash'], { accept: [1] })
+            ).trim();
+          if (!/^[0-9a-f]{40,64}$/.test(stash)) throw new Error('No stash is available.');
+          await git(s.path, ['rev-parse', '--verify', `${stash}^{commit}`]);
+          operation.evidence.stash = stash;
+          update('applying-stash');
+          await git(s.path, ['stash', 'apply', '--index', stash]);
+        }
+        update('completed');
+        return operation;
+      }
+      if (input.action === 'create-branch' || input.action === 'checkout') {
+        safeRef(input.branch!);
+        await git(s.path, ['check-ref-format', '--branch', input.branch!]);
+        if ((await git(s.path, ['status', '--porcelain', '--untracked-files=normal'])).trim())
+          throw new Error('Commit or discard local changes before switching branches.');
+        if (input.action === 'create-branch') safeRef(input.base || 'HEAD');
+        const baseBranch =
+          input.action === 'create-branch'
+            ? await resolveBranch(s.path, input.base || 'HEAD')
+            : undefined;
+        Object.assign(operation.evidence, {
+          branch: input.branch,
+          baseBranch,
+          initial: (await git(s.path, ['rev-parse', 'HEAD'])).trim(),
+        });
+        update('switching');
+        await git(
+          s.path,
+          input.action === 'create-branch'
+            ? ['switch', '-c', input.branch!, input.base || 'HEAD']
+            : ['switch', '--', input.branch!],
+        );
+        if ((await git(s.path, ['branch', '--show-current'])).trim() !== input.branch)
+          throw new Error('The branch changed during checkout. Inspect the repository.');
+        if (baseBranch)
+          await git(s.path, [
+            'config',
+            '--local',
+            `branch.${input.branch}.gh-merge-base`,
+            baseBranch,
+          ]);
+        operation.commit = (await git(s.path, ['rev-parse', 'HEAD'])).trim();
+        update('completed');
+        return operation;
+      }
       const branch = (await git(s.path, ['symbolic-ref', '--quiet', 'HEAD'])).trim();
       if (!branch.startsWith('refs/heads/'))
         throw new Error('Create or select a named branch before publishing.');
+      if (input.branch && branch !== `refs/heads/${safeRef(input.branch)}`)
+        throw new Error('The current branch changed. Reopen the Git action to review compare.');
       const initial = (
         await git(s.path, ['rev-parse', '--verify', '--quiet', 'HEAD'], { accept: [1] })
       ).trim();
@@ -273,12 +457,35 @@ export class GitService {
       });
       update('preparing');
       if (!operation.commit && (input.action === 'commit' || input.action === 'publish')) {
-        {
+        if (input.action === 'commit' && !input.message?.trim())
+          throw new Error('Enter a commit message.');
+        if (input.paths?.some((p) => !p || p.startsWith('/') || p.split('/').includes('..')))
+          throw new Error('Choose paths inside this worktree.');
+        let paths = input.paths || [];
+        if (input.allChanges) {
+          if (await git(s.path, ['ls-files', '--unmerged', '-z']))
+            throw new Error('Resolve merge conflicts before committing.');
+          paths = parseStatus(
+            await git(s.path, ['status', '--porcelain=v2', '--untracked-files=all', '-z']),
+          )
+            .files.filter(
+              (file) => file.worktree !== '.' && (file.index !== '?' || !file.path.endsWith('/')),
+            )
+            .map((file) => file.path);
+          for (const path of paths) await within(s.path, path, true);
+        }
+        if (paths.length && !input.message?.trim()) throw new Error('Enter a commit message.');
+        if (paths.length) await git(s.path, ['add', '--', ...paths]);
+        const tree = (await git(s.path, ['write-tree'])).trim();
+        const unchanged =
+          initial && tree === (await git(s.path, ['rev-parse', `${initial}^{tree}`])).trim();
+        if (unchanged && input.action === 'commit') {
+          operation.evidence.skipped = true;
+          update('completed');
+          return operation;
+        }
+        if (!unchanged) {
           if (!input.message?.trim()) throw new Error('Enter a commit message.');
-          if (input.paths?.some((p) => !p || p.startsWith('/') || p.split('/').includes('..')))
-            throw new Error('Choose paths inside this worktree.');
-          if (input.paths?.length) await git(s.path, ['add', '--', ...input.paths]);
-          const tree = (await git(s.path, ['write-tree'])).trim();
           if (
             (
               await git(s.path, ['rev-parse', '--verify', '--quiet', 'HEAD'], { accept: [1] })
@@ -336,6 +543,17 @@ export class GitService {
           throw new Error('The remote branch moved. Inspect it before creating the pull request.');
         }
         before.remoteCommit = actual;
+        if ((await git(s.path, ['remote', 'get-url', '--push', 'origin'])).trim() === remote) {
+          const name = branch.slice('refs/heads/'.length);
+          // Pushing a pinned OID does not update branch tracking.
+          await git(s.path, ['update-ref', `refs/remotes/origin/${name}`, operation.commit]);
+          if (
+            !(
+              await git(s.path, ['config', '--get', `branch.${name}.remote`], { accept: [1] })
+            ).trim()
+          )
+            await git(s.path, ['branch', `--set-upstream-to=origin/${name}`, '--', name]);
+        }
         update('pushed');
       }
       if (input.action === 'push') {
@@ -379,7 +597,10 @@ export class GitService {
         operation.url = found[0].url;
       } else {
         update('creating-pr');
-        const title = input.title?.trim() || input.message?.trim().split('\n')[0] || head;
+        const title =
+          input.title?.trim() ||
+          input.message?.trim().split('\n')[0] ||
+          (await git(s.path, ['show', '-s', '--format=%s', operation.commit])).trim();
         const args = [
           'pr',
           'create',
@@ -411,7 +632,14 @@ export class GitService {
       return operation;
     } catch (error: any) {
       operation.error = error.message || 'Git operation failed.';
-      operation.phase = ['committing', 'pushing', 'creating-pr'].includes(operation.phase)
+      operation.phase = [
+        'committing',
+        'pushing',
+        'creating-pr',
+        'switching',
+        'stashing',
+        'applying-stash',
+      ].includes(operation.phase)
         ? 'uncertain'
         : operation.phase === 'needs-review'
           ? 'needs-review'
@@ -424,9 +652,11 @@ export class GitService {
   async inspect(s: Session, id: string) {
     const operation = this.store.get<Operation>('operations', id);
     if (!operation || operation.sessionId !== s.id) throw new Error('Git operation not found.');
-    const log = await git(s.path, ['log', '-8', '--oneline', '--decorate', '--all']).catch(
+    let log = await git(s.path, ['log', '-8', '--oneline', '--decorate', '--all']).catch(
       (e: Error) => e.message,
     );
+    if (operation.evidence.stashAction)
+      log += '\nStashes:\n' + (await git(s.path, ['stash', 'list', '--format=%H %gs', '-8']));
     const branch = String(operation.evidence.branch ?? '');
     const target = String(operation.evidence.remote ?? '');
     const remote =

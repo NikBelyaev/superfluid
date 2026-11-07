@@ -3,7 +3,7 @@ import type { editor } from 'monaco-editor/editor/editor.api';
 export type Surface =
   | { kind: 'terminal'; id: string }
   | { kind: 'diff'; path?: string; mode?: 'unstaged' | 'staged' | 'branch' }
-  | { kind: 'pr'; number?: number }
+  | { kind: 'pr'; number?: number; repositoryId?: string }
   | { kind: 'browser'; url: string }
   | { kind: 'file'; path: string };
 
@@ -17,6 +17,8 @@ export interface Location {
 }
 
 export interface ViewState {
+  repositoryIds?: string[];
+  islandCollapsed?: boolean;
   tabs: string[];
   active: string | null;
   expanded: string[];
@@ -48,5 +50,5 @@ export const surfaceKey = (s: Surface) =>
       : s.kind === 'diff'
         ? `diff:${s.path ?? ''}`
         : s.kind === 'pr'
-          ? `pr:${s.number ?? ''}`
+          ? `pr:${s.repositoryId ?? ''}:${s.number ?? ''}`
           : `browser:${s.url}`;

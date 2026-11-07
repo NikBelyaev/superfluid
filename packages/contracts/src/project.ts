@@ -9,6 +9,7 @@ export interface Project {
 }
 
 export interface Session {
+  repositoryWorktree?: boolean;
   id: string;
   projectId: string;
   path: string;

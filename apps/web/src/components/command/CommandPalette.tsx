@@ -5,6 +5,7 @@ import { Search, Command, FileCode2, ArrowUpRight } from 'lucide-react';
 import type { SearchHit } from '@superfluid/contracts';
 import { useApp, currentSession, showSurface } from '~/state/workspaceStore';
 import { runAction } from '~/commands/runProjectAction';
+import { openRepositoryMenu } from '~/commands/gitBatch';
 
 export default function CommandPalette() {
   const mode = useApp((a) => a.palette),
@@ -16,6 +17,23 @@ export default function CommandPalette() {
   const generation = useRef(0),
     session = currentSession();
   const commands = [
+    { name: 'Manage repositories', run: () => session && openRepositoryMenu(session.id) },
+    {
+      name: 'Create branch in selected repositories',
+      run: () => session && openRepositoryMenu(session.id, 'create-branch'),
+    },
+    {
+      name: 'Switch branch in selected repositories',
+      run: () => session && openRepositoryMenu(session.id, 'checkout'),
+    },
+    {
+      name: 'Commit selected repositories',
+      run: () => session && openRepositoryMenu(session.id, 'commit'),
+    },
+    {
+      name: 'Push selected repositories',
+      run: () => session && openRepositoryMenu(session.id, 'push'),
+    },
     { name: 'Settings: Appearance', run: () => useApp.setState({ modal: { kind: 'settings' } }) },
     { name: 'New worktree', run: () => useApp.setState({ modal: { kind: 'worktree' } }) },
     { name: 'New terminal', run: () => session && void runAction(session) },
