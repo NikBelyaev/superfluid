@@ -911,6 +911,7 @@ try {
   const page = await app.firstWindow();
   await page.screenshot({ path: 'test-results/failure.png' }).catch(() => {});
   console.error('Electron fixture:', temp);
+  console.error('Error toasts:', await page.locator('.toast').allTextContents());
   console.error('Renderer errors:', errors);
   console.error('Native output:', nativeOutput);
   throw e;
