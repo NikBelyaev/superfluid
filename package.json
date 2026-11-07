@@ -33,7 +33,9 @@
     ],
     "asarUnpack": [
       "node_modules/node-pty/**",
-      "node_modules/pyright/**"
+      "node_modules/pyright/**",
+      "dist/ty",
+      "dist/ty.exe"
     ],
     "npmRebuild": true,
     "mac": {

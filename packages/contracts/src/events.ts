@@ -2,6 +2,7 @@ import type { Run, TerminalFrame } from './terminal';
 import type { Operation } from './vcs';
 import type { Project } from './project';
 import type { PullRequestRef } from './pullRequest';
+import type { PythonStatus } from './python';
 
 export type AppEvent =
   | { type: 'project'; project: Project }
@@ -10,6 +11,13 @@ export type AppEvent =
   | { type: 'runs'; runs: Run[] }
   | { type: 'operation'; operation: Operation }
   | { type: 'files.changed'; sessionId: string }
-  | { type: 'diagnostics'; sessionId: string; generation: number; uri: string; diagnostics: any[] }
-  | { type: 'lsp.status'; sessionId: string; status: string }
+  | {
+      type: 'diagnostics';
+      sessionId: string;
+      generation: number;
+      server: 'ty' | 'pyright';
+      uri: string;
+      diagnostics: any[];
+    }
+  | PythonStatus
   | { type: 'error'; message: string };

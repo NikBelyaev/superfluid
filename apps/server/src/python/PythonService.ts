@@ -1,13 +1,7 @@
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { basename, dirname, isAbsolute, relative, join } from 'node:path';
 import { access } from 'node:fs/promises';
-import type {
-  Session,
-  ParsedInput,
-  PythonDefinition,
-  PythonHover,
-  PythonLocation,
-} from '@superfluid/contracts';
+import type { Session, ParsedInput, PythonDefinition, PythonLocation } from '@superfluid/contracts';
 import { LanguageServers } from './LanguageServers';
 import { WorkspaceWatcher } from '../workspace/WorkspaceWatcher';
 import { within } from '../files/paths';
@@ -77,6 +71,7 @@ async function moduleName(root: string, file: string) {
 }
 
 export class PythonService {
+  private pending = new Map<string, AbortController>();
   constructor(
     private languages: LanguageServers,
     private watcher: WorkspaceWatcher,
@@ -86,39 +81,71 @@ export class PythonService {
   async open(session: Session, input: ParsedInput<'lsp.open'>) {
     await within(session.path, input.path);
     this.watcher.observe(session);
-    await (await this.languages.get(session)).open(input.path, input.text, input.version);
-    return null;
+    const server = await this.languages.get(session);
+    await server.open(input.path, input.text, input.version);
+    server.assertCurrent();
+    return { generation: server.generation, value: null };
   }
   async closeDocument(session: Session, path: string) {
-    await (await this.languages.get(session)).documentClose(path);
+    await this.languages.documentClose(session.id, path);
     return null;
   }
-  async request(session: Session, input: ParsedInput<'lsp.request'>) {
-    const document = input.params.textDocument;
-    const uri =
-      typeof document === 'object' && document !== null && 'uri' in document
-        ? document.uri
-        : undefined;
-    if (typeof uri === 'string') {
-      const file = fileURLToPath(uri);
-      const rel = relative(session.path, file);
-      await within(session.path, rel);
+  cancel(session: Session, requestId: string) {
+    this.pending.get(`${session.id}:${requestId}`)?.abort(new Error('Python request cancelled.'));
+    return null;
+  }
+  private async cancellable<T>(
+    session: Session,
+    requestId: string | undefined,
+    run: (signal?: AbortSignal) => Promise<T>,
+  ) {
+    if (!requestId) return run();
+    const key = `${session.id}:${requestId}`;
+    if (this.pending.has(key)) throw new Error('Duplicate Python request.');
+    if (this.pending.size >= 128) throw new Error('Python request queue is full.');
+    const controller = new AbortController();
+    this.pending.set(key, controller);
+    try {
+      const value = await run(controller.signal);
+      controller.signal.throwIfAborted();
+      return value;
+    } finally {
+      this.pending.delete(key);
     }
-    return await (await this.languages.get(session)).request(input.method, input.params);
+  }
+  request(session: Session, input: ParsedInput<'lsp.request'>) {
+    return this.cancellable(session, input.requestId, async (signal) => {
+      const document = input.params.textDocument;
+      const uri =
+        typeof document === 'object' && document !== null && 'uri' in document
+          ? document.uri
+          : undefined;
+      if (typeof uri === 'string') {
+        const file = fileURLToPath(uri);
+        const rel = relative(session.path, file);
+        await within(session.path, rel);
+      }
+      signal?.throwIfAborted();
+      const server = await this.languages.get(session);
+      const value = await server.request(input.method, input.params, signal);
+      return { generation: server.generation, value };
+    });
   }
 
   private async definitions(
     session: Session,
     input: ParsedInput<'python.hover'>,
+    server: Awaited<ReturnType<LanguageServers['get']>>,
+    signal?: AbortSignal,
   ): Promise<PythonDefinition[]> {
     const file = await within(session.path, input.path);
-    const server = await this.languages.get(session);
     const result: Definition[] | Definition | null = await server.request(
       'textDocument/definition',
       {
         textDocument: { uri: pathToFileURL(file).href },
         position: input.position,
       },
+      signal,
     );
     const symbols = new Map<string, Promise<Symbol[]>>();
     return Promise.all(
@@ -135,7 +162,7 @@ export class PythonService {
           symbols.set(
             uri,
             server
-              .request('textDocument/documentSymbol', { textDocument: { uri } })
+              .request('textDocument/documentSymbol', { textDocument: { uri } }, signal)
               .then((value) => value ?? []),
           );
         const scopes = isModule ? [] : scopesAt(await symbols.get(uri)!, position);
@@ -155,44 +182,62 @@ export class PythonService {
     );
   }
 
-  async hover(session: Session, input: ParsedInput<'python.hover'>): Promise<PythonHover | null> {
-    const file = await within(session.path, input.path);
-    const server = await this.languages.get(session);
-    const hover = await server.request('textDocument/hover', {
-      textDocument: { uri: pathToFileURL(file).href },
-      position: input.position,
+  hover(session: Session, input: ParsedInput<'python.hover'>) {
+    return this.cancellable(session, input.requestId, async (signal) => {
+      const file = await within(session.path, input.path);
+      signal?.throwIfAborted();
+      const server = await this.languages.get(session);
+      const hover = await server.request(
+        'textDocument/hover',
+        {
+          textDocument: { uri: pathToFileURL(file).href },
+          position: input.position,
+        },
+        signal,
+      );
+      const value = !hover
+        ? null
+        : {
+            markdown: hover.contents.value,
+            range: hover.range,
+            definitions: await this.definitions(session, input, server, signal).catch(() => []),
+          };
+      server.assertCurrent();
+      return { generation: server.generation, value };
     });
-    if (!hover) return null;
-    return {
-      markdown: hover.contents.value,
-      range: hover.range,
-      definitions: await this.definitions(session, input).catch(() => []),
-    };
   }
 
-  async source(session: Session, input: ParsedInput<'python.source'>) {
-    const definitions = await this.definitions(session, input);
-    const allowed = definitions.flatMap((definition) => [
-      definition.module,
-      ...definition.containers,
-      definition.symbol,
-    ]);
-    if (
-      !allowed.some(
-        (target) =>
-          target.uri === input.target.uri &&
-          target.position.line === input.target.position.line &&
-          target.position.character === input.target.position.character,
+  source(session: Session, input: ParsedInput<'python.source'>) {
+    return this.cancellable(session, input.requestId, async (signal) => {
+      const server = await this.languages.get(session);
+      const definitions = await this.definitions(session, input, server, signal);
+      signal?.throwIfAborted();
+      const allowed = definitions.flatMap((definition) => [
+        definition.module,
+        ...definition.containers,
+        definition.symbol,
+      ]);
+      if (
+        !allowed.some(
+          (target) =>
+            target.uri === input.target.uri &&
+            target.position.line === input.target.position.line &&
+            target.position.character === input.target.position.character,
+        )
       )
-    )
-      throw new Error('This definition is no longer available. Hover the symbol again.');
-    const file = fileURLToPath(input.target.uri);
-    const path = workspacePath(session.path, file);
-    const data =
-      path === undefined
-        ? await this.files.read({ ...session, path: dirname(file) }, basename(file))
-        : await this.documents.read(session, { sessionId: session.id, path, diskOnly: false });
-    return { text: data.text, path: file, workspacePath: path };
+        throw new Error('This definition is no longer available. Hover the symbol again.');
+      const file = fileURLToPath(input.target.uri);
+      const path = workspacePath(session.path, file);
+      const data =
+        path === undefined
+          ? await this.files.read({ ...session, path: dirname(file) }, basename(file))
+          : await this.documents.read(session, { sessionId: session.id, path, diskOnly: false });
+      server.assertCurrent();
+      return {
+        generation: server.generation,
+        value: { text: data.text, path: file, workspacePath: path },
+      };
+    });
   }
 
   format(session: Session, text: string) {

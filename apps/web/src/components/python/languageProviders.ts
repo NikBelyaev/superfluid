@@ -1,27 +1,32 @@
-import { desktop } from '~/rpc/desktop';
+import { callPython } from '~/rpc/python';
 import { documents, monaco } from '~/state/editor/Documents';
 import { definitionLink, definitionTrust } from './definitionPreview';
 
 async function request(
   model: monaco.editor.ITextModel,
   method: any,
+  token: monaco.CancellationToken,
   position?: monaco.Position,
   extra: Record<string, unknown> = {},
 ) {
   const doc = documents.find(model);
-  if (!doc || doc.readOnly) return null;
+  if (!doc || doc.readOnly || token.isCancellationRequested) return null;
   await documents.sync(doc);
-  return desktop.call('lsp.request', {
-    sessionId: doc.session.id,
-    method,
-    params: {
-      textDocument: { uri: documents.diskUri(doc) },
-      ...(position
-        ? { position: { line: position.lineNumber - 1, character: position.column - 1 } }
-        : {}),
-      ...extra,
+  return callPython(
+    'lsp.request',
+    {
+      sessionId: doc.session.id,
+      method,
+      params: {
+        textDocument: { uri: documents.diskUri(doc) },
+        ...(position
+          ? { position: { line: position.lineNumber - 1, character: position.column - 1 } }
+          : {}),
+        ...extra,
+      },
     },
-  });
+    token,
+  );
 }
 
 const range = (r: any) =>
@@ -31,7 +36,7 @@ monaco.languages.registerCompletionItemProvider('python', {
   triggerCharacters: ['.'],
   provideCompletionItems: async (model, position, _context, token) => {
     try {
-      const result = await request(model, 'textDocument/completion', position);
+      const result = await request(model, 'textDocument/completion', token, position);
       if (token.isCancellationRequested) return { suggestions: [] };
       const word = model.getWordUntilPosition(position);
       return {
@@ -67,15 +72,19 @@ monaco.languages.registerHoverProvider('python', {
   provideHover: async (model, position, token) => {
     try {
       const doc = documents.find(model);
-      if (!doc || doc.readOnly) return null;
+      if (!doc || doc.readOnly || token.isCancellationRequested) return null;
       const version = doc.version;
       await documents.sync(doc);
       const point = { line: position.lineNumber - 1, character: position.column - 1 };
-      const r = await desktop.call('python.hover', {
-        sessionId: doc.session.id,
-        path: doc.path,
-        position: point,
-      });
+      const r = await callPython(
+        'python.hover',
+        {
+          sessionId: doc.session.id,
+          path: doc.path,
+          position: point,
+        },
+        token,
+      );
       if (!r || token.isCancellationRequested || doc.version !== version) return null;
       const link = (target: (typeof r.definitions)[number]['symbol'], label = target.name) =>
         `[${label.replace(/[\\`*_{}\[\]()<>]/g, '\\$&')}](${definitionLink(doc, point, target)})`;
@@ -120,7 +129,7 @@ monaco.languages.registerHoverProvider('python', {
 monaco.languages.registerDefinitionProvider('python', {
   provideDefinition: async (model, position, token) => {
     try {
-      const r = await request(model, 'textDocument/definition', position);
+      const r = await request(model, 'textDocument/definition', token, position);
       if (!r || token.isCancellationRequested) return [];
       return (Array.isArray(r) ? r : [r]).map((d: any) => ({
         uri: monaco.Uri.parse(d.uri ?? d.targetUri),
@@ -135,7 +144,7 @@ monaco.languages.registerDefinitionProvider('python', {
 monaco.languages.registerDocumentSymbolProvider('python', {
   provideDocumentSymbols: async (model, token) => {
     try {
-      const r = await request(model, 'textDocument/documentSymbol');
+      const r = await request(model, 'textDocument/documentSymbol', token);
       if (token.isCancellationRequested) return [];
       const convert = (s: any): monaco.languages.DocumentSymbol => ({
         name: s.name,

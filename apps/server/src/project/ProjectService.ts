@@ -1,5 +1,5 @@
 import { realpath, stat, mkdir, access } from 'node:fs/promises';
-import { join, basename, dirname, isAbsolute, relative } from 'node:path';
+import { join, basename, dirname, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Project, Session, ParsedInput } from '@superfluid/contracts';
 import { Store } from '../persistence/Store';
@@ -9,10 +9,12 @@ import { git, safeRef } from '../vcs/gitCommand';
 import { resolveBranch } from '../vcs/branchBase';
 
 import { LanguageServers } from '../python/LanguageServers';
+import { inspectInterpreter } from '../python/interpreter';
 
 const identity = (value: string) => digest(value).slice(0, 24);
 
 export class ProjectService {
+  private interpreterSelections = new Map<string, symbol>();
   constructor(
     private store: Store,
     private languages: LanguageServers,
@@ -200,12 +202,20 @@ export class ProjectService {
     return null;
   }
   async setInterpreter(session: Session, input: ParsedInput<'session.interpreter'>) {
-    if (isAbsolute(input.python)) await access(input.python);
-    else if (input.python !== 'python3' && input.python !== 'python')
-      throw new Error('Choose an absolute interpreter path.');
-    session.python = input.python;
-    this.store.put('sessions', session);
-    this.languages.invalidate(session.id);
-    return session;
+    const selection = Symbol();
+    this.interpreterSelections.set(session.id, selection);
+    try {
+      await inspectInterpreter(input.python, session.path);
+      if (this.interpreterSelections.get(session.id) !== selection)
+        throw new Error('A newer Python interpreter was selected.');
+      const updated = { ...this.session(session.id), python: input.python };
+      this.store.put('sessions', updated);
+      const running = this.languages.invalidate(session.id);
+      if (running) await this.languages.get(updated);
+      return updated;
+    } finally {
+      if (this.interpreterSelections.get(session.id) === selection)
+        this.interpreterSelections.delete(session.id);
+    }
   }
 }
