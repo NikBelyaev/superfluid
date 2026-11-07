@@ -13,12 +13,15 @@ function deferredFrame() {
 }
 
 test('completed terminal output can be resized and reattached', async () => {
-  const exited = Promise.withResolvers<void>();
+  let resolveExited!: () => void;
+  const exited = new Promise<void>((resolve) => {
+    resolveExited = resolve;
+  });
   const resized = deferredFrame();
   const manager = new TerminalManager(
     (event) => {
       if (event.type === 'runs' && event.runs.some((run) => run.state === 'exited'))
-        exited.resolve();
+        resolveExited();
       if (event.type === 'terminal.frame') resized.resolve(event.frame);
     },
     new URL('../../../../dist/terminal-worker.mjs', import.meta.url),
@@ -32,7 +35,7 @@ test('completed terminal output can be resized and reattached', async () => {
       name: 'Resize test',
       command: 'fixture',
     });
-    await exited.promise;
+    await exited;
     await manager.call('command', {
       id: run.id,
       command: 'resize',
