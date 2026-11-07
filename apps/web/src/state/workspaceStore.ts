@@ -1,6 +1,14 @@
 import { desktop } from '~/rpc/desktop';
 import { create } from 'zustand';
-import type { Action, GitStatus, Operation, Project, Run, Session } from '@superfluid/contracts';
+import type {
+  Action,
+  GitRepository,
+  GitStatus,
+  Operation,
+  Project,
+  Run,
+  Session,
+} from '@superfluid/contracts';
 import {
   emptyView,
   surfaceKey,
@@ -9,6 +17,8 @@ import {
   type Location,
 } from './workspaceView';
 import type { Modal } from './dialogs';
+import { repositorySummary } from './repositories';
+import type { GitMenuPage, GitBatch } from '~/commands/gitBatch';
 import { symbolAt, type DocumentSymbol } from '~/components/python/symbols';
 
 export { surfaceKey, type Surface, type Location, type ViewState } from './workspaceView';
@@ -23,6 +33,12 @@ interface State {
   runs: Run[];
   operations: Operation[];
   git: Record<string, GitStatus>;
+  repositories: Record<string, GitRepository[]>;
+  repositoryGit: Record<string, Record<string, GitStatus>>;
+  repositoryErrors: Record<string, Record<string, string>>;
+  gitBatches: Record<string, GitBatch | undefined>;
+  repositoryWorktrees: Record<string, { startedAt: number }>;
+  repositoryMenu: { sessionId: string; page: GitMenuPage } | null;
   error: string | null;
   busy: string | null;
   modal: Modal;
@@ -37,10 +53,13 @@ interface State {
   setView: (patch: Partial<ViewState>, id?: string) => void;
   openFile: (path: string, line?: number, column?: number, record?: boolean) => Promise<void>;
   refreshGit: (sessionId?: string) => Promise<void>;
+  refreshRepositories: (sessionId: string, refresh?: boolean) => Promise<void>;
+  refreshRepositoryGit: (sessionId: string, repositoryIds: string[]) => Promise<void>;
   fail: (e: unknown) => void;
 }
 
 const persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const repositoryReads = new Map<string, symbol>();
 
 export const useApp = create<State>((set, get) => ({
   projects: [],
@@ -52,6 +71,12 @@ export const useApp = create<State>((set, get) => ({
   runs: [],
   operations: [],
   git: {},
+  repositories: {},
+  repositoryGit: {},
+  repositoryErrors: {},
+  gitBatches: {},
+  repositoryWorktrees: {},
+  repositoryMenu: null,
   error: null,
   busy: null,
   modal: null,
@@ -80,6 +105,9 @@ export const useApp = create<State>((set, get) => ({
           views[s.id] = {
             ...emptyView(),
             ...saved,
+            repositoryIds: Array.isArray(saved.repositoryIds)
+              ? saved.repositoryIds.filter((id) => typeof id === 'string')
+              : undefined,
             editorViews: saved.editorViews ?? {},
             tabs: Array.isArray(saved.tabs)
               ? saved.tabs.filter((x) => typeof x === 'string').slice(0, 80)
@@ -107,7 +135,7 @@ export const useApp = create<State>((set, get) => ({
   switchSession: (id) => {
     if (!get().sessions.some((s) => s.id === id)) return;
     performance.mark('superfluid:switch-start');
-    set({ sessionId: id, modal: null, palette: null });
+    set({ sessionId: id, modal: null, palette: null, repositoryMenu: null });
     void import('~/state/editor/Documents').then((d) => d.documents.activate(id)).catch(get().fail);
     void get().refreshGit(id);
   },
@@ -116,6 +144,17 @@ export const useApp = create<State>((set, get) => ({
     if (!target) return;
     const state = { ...(get().views[target] ?? emptyView()), ...patch };
     set({ views: { ...get().views, [target]: state } });
+    if (patch.repositoryIds && get().repositories[target])
+      set({
+        git: {
+          ...get().git,
+          [target]: repositorySummary(
+            get().repositories[target],
+            get().repositoryGit[target] || {},
+            patch.repositoryIds,
+          ),
+        },
+      });
     clearTimeout(persistTimers.get(target));
     persistTimers.set(
       target,
@@ -163,24 +202,92 @@ export const useApp = create<State>((set, get) => ({
       get().fail(e);
     }
   },
+  refreshRepositories: async (id, refresh = false) => {
+    const repositories = await desktop.call('git.repositories', { sessionId: id, refresh });
+    set({ repositories: { ...get().repositories, [id]: repositories } });
+    if (repositories.length === 1) {
+      const selected = get().views[id]?.repositoryIds;
+      if (selected?.length !== 1 || selected[0] !== repositories[0].id)
+        get().setView({ repositoryIds: [repositories[0].id] }, id);
+    } else if (!get().views[id]?.repositoryIds) {
+      const active = get().views[id]?.active;
+      const initial =
+        repositories
+          .filter((r) => r.path && active?.startsWith(r.path + '/'))
+          .sort((a, b) => b.path.length - a.path.length)[0] ||
+        repositories.find((r) => r.path) ||
+        repositories[0];
+      get().setView({ repositoryIds: initial ? [initial.id] : [] }, id);
+    } else {
+      const before = get().views[id].repositoryIds!;
+      const available = before.filter((repositoryId) =>
+        repositories.some((r) => r.id === repositoryId),
+      );
+      if (available.length !== before.length) get().setView({ repositoryIds: available }, id);
+    }
+    await get().refreshGit(id);
+  },
+  refreshRepositoryGit: async (id, repositoryIds) => {
+    const values: Record<string, GitStatus> = {};
+    const errors: Record<string, string | undefined> = {};
+    const versions = new Map<string, symbol>();
+    for (const repositoryId of repositoryIds) {
+      const version = Symbol();
+      versions.set(repositoryId, version);
+      repositoryReads.set(`${id}:${repositoryId}`, version);
+      try {
+        values[repositoryId] = await desktop.call('git.status', { sessionId: id, repositoryId });
+        errors[repositoryId] = undefined;
+      } catch (error) {
+        errors[repositoryId] = error instanceof Error ? error.message : String(error);
+      }
+    }
+    for (const repositoryId of Object.keys(errors))
+      if (repositoryReads.get(`${id}:${repositoryId}`) !== versions.get(repositoryId)) {
+        delete values[repositoryId];
+        delete errors[repositoryId];
+      }
+    const repositoryErrors = { ...get().repositoryErrors[id] };
+    for (const [repositoryId, error] of Object.entries(errors)) {
+      if (error) repositoryErrors[repositoryId] = error;
+      else delete repositoryErrors[repositoryId];
+    }
+    const statuses = { ...get().repositoryGit[id], ...values };
+    const repositories = (get().repositories[id] || []).map((r) => ({
+      ...r,
+      branch: statuses[r.id]?.branch || r.branch,
+    }));
+    const root = repositories.find((r) => !r.path);
+    const rootStatus = root && values[root.id];
+    set({
+      repositoryGit: { ...get().repositoryGit, [id]: statuses },
+      repositoryErrors: { ...get().repositoryErrors, [id]: repositoryErrors },
+      repositories: { ...get().repositories, [id]: repositories },
+      git: {
+        ...get().git,
+        [id]: repositorySummary(repositories, statuses, get().views[id]?.repositoryIds || []),
+      },
+      ...(rootStatus
+        ? {
+            sessions: get().sessions.map((s) =>
+              s.id === id
+                ? {
+                    ...s,
+                    branch: s.repositoryWorktree ? s.branch : rootStatus.branch,
+                    head: rootStatus.head,
+                  }
+                : s,
+            ),
+          }
+        : {}),
+    });
+  },
   refreshGit: async (sessionId) => {
     const id = sessionId ?? get().sessionId;
     if (!id) return;
     try {
-      const status = await desktop.call('git.status', { sessionId: id });
-      const before = get().sessions.find((s) => s.id === id);
-      set({
-        git: { ...get().git, [id]: status },
-        sessions: get().sessions.map((s) =>
-          s.id === id && status.repo ? { ...s, branch: status.branch, head: status.head } : s,
-        ),
-      });
-      if (before?.branch && status.repo && before.branch !== status.branch)
-        get().fail(
-          new Error(
-            'The branch changed outside Superfluid. Buffers were kept; check the new branch and disk version before saving.',
-          ),
-        );
+      if (!get().repositories[id]) return await get().refreshRepositories(id);
+      await get().refreshRepositoryGit(id, get().views[id]?.repositoryIds || []);
     } catch (e) {
       get().fail(e);
     }
@@ -238,6 +345,13 @@ export function showSurface(surface: Surface, sessionId?: string) {
     target = sessionId ?? a.sessionId,
     view = target ? a.views[target] : null;
   if (!view) return;
+  if (a.repositoryMenu?.sessionId === target) useApp.setState({ repositoryMenu: null });
+  if (surface.kind === 'pr' && !surface.repositoryId) {
+    const repository = (a.repositories[target!] || [])
+      .filter((r) => r.path && view.active?.startsWith(r.path + '/'))
+      .sort((a, b) => b.path.length - a.path.length)[0];
+    surface = { ...surface, repositoryId: repository?.id || view.repositoryIds?.[0] };
+  }
   const tabs = view.rightTabs ?? [];
   a.setView(
     {

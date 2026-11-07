@@ -3,16 +3,31 @@ import { useState } from 'react';
 import { GitBranch } from 'lucide-react';
 import { useApp, currentSession } from '~/state/workspaceStore';
 import { Form } from '~/components/dialogs/DialogForm';
+import { createRepositoryWorktree } from '~/commands/gitBatch';
+import { selectedRepositories } from '~/state/repositories';
 
 export function NewWorktreeDialog() {
   const session = currentSession()!,
     status = useApp((a) => a.git[session.id]),
+    repositories = useApp((a) => a.repositories[session.id]),
+    ids = useApp((a) => a.views[session.id]?.repositoryIds),
+    group = selectedRepositories(repositories || [], ids),
+    nested = group.some((r) => r.path),
     [branch, setBranch] = useState(''),
-    [base, setBase] = useState(session.branch || 'HEAD');
+    [base, setBase] = useState(nested ? 'HEAD' : session.branch || 'HEAD');
   return (
     <Form
       label="Create worktree"
       submit={async () => {
+        if (nested) {
+          await createRepositoryWorktree(
+            session,
+            group.map((r) => r.id),
+            branch,
+            base,
+          );
+          return;
+        }
         const created = await desktop.call('session.create', {
           sessionId: session.id,
           branch,

@@ -7,6 +7,12 @@ export function useWorkspaceEvents() {
     void useApp.getState().bootstrap();
     return desktop.onEvent((e) => {
       if (e.type === 'runs') useApp.setState({ runs: e.runs });
+      else if (e.type === 'project')
+        useApp.setState((app) => ({
+          projects: app.projects.map((project) =>
+            project.id === e.project.id ? e.project : project,
+          ),
+        }));
       else if (e.type === 'operation')
         useApp.setState((a) => ({
           operations: [...a.operations.filter((o) => o.id !== e.operation.id), e.operation],

@@ -1,13 +1,12 @@
 import { desktop } from '~/rpc/desktop';
 import { useState, useEffect } from 'react';
-import { currentSession } from '~/state/workspaceStore';
+import { currentSession, useApp } from '~/state/workspaceStore';
+import type { Results } from '@superfluid/contracts';
 import { Form } from '~/components/dialogs/DialogForm';
 
 export function GitReviewDialog({ id }: { id: string }) {
-  const s = currentSession()!,
-    [inspection, setInspection] = useState<{ log: string; remote: string; operation: any } | null>(
-      null,
-    ),
+  const [s] = useState(() => currentSession()!),
+    [inspection, setInspection] = useState<Results['git.inspect'] | null>(null),
     [checked, setChecked] = useState(false),
     [error, setError] = useState('');
   useEffect(() => {
@@ -30,7 +29,13 @@ export function GitReviewDialog({ id }: { id: string }) {
       submit={async () => {
         if (!checked || !inspection)
           throw new Error('Inspect the local log and remote before acknowledging this attempt.');
-        await desktop.call('git.acknowledge', { sessionId: s.id, operationId: id });
+        const operation = await desktop.call('git.acknowledge', {
+          sessionId: s.id,
+          operationId: id,
+        });
+        useApp.setState((a) => ({
+          operations: [...a.operations.filter((o) => o.id !== operation.id), operation],
+        }));
       }}
     >
       <p className="modal-description">
@@ -40,8 +45,19 @@ export function GitReviewDialog({ id }: { id: string }) {
       {error && <p className="form-error">{error}</p>}
       {inspection ? (
         <>
+          {inspection.operation.url && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() =>
+                void desktop.external(inspection.operation.url!).catch(useApp.getState().fail)
+              }
+            >
+              Open request on server
+            </button>
+          )}
           <label>
-            Recent local commits<pre className="inspection">{inspection.log}</pre>
+            Recent Git activity<pre className="inspection">{inspection.log}</pre>
           </label>
           <label>
             Remote branch

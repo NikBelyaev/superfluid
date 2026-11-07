@@ -1,11 +1,12 @@
 import { realpath, stat, mkdir, access } from 'node:fs/promises';
-import { join, basename, dirname, isAbsolute } from 'node:path';
+import { join, basename, dirname, isAbsolute, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Project, Session, ParsedInput } from '@superfluid/contracts';
 import { Store } from '../persistence/Store';
 import { digest } from '../utils/digest';
 import { command } from '../process/ProcessRunner';
 import { git, safeRef } from '../vcs/gitCommand';
+import { resolveBranch } from '../vcs/branchBase';
 
 import { LanguageServers } from '../python/LanguageServers';
 
@@ -15,6 +16,7 @@ export class ProjectService {
   constructor(
     private store: Store,
     private languages: LanguageServers,
+    private changed: (project: Project) => void = () => {},
   ) {}
   session(id: string) {
     const s = this.store.get<Session>('sessions', id);
@@ -26,6 +28,7 @@ export class ProjectService {
     if (!(await stat(root)).isDirectory()) throw new Error('Choose a project folder.');
     const existing = this.store.all<Project>('projects').find((p) => p.path === root);
     const project: Project = {
+      ...existing,
       id: existing?.id ?? identity(root),
       name: basename(root),
       path: root,
@@ -57,6 +60,13 @@ export class ProjectService {
     } catch {
       paths = [{ path: p.path, branch: '', head: '' }];
     }
+    for (const saved of this.store.all<Session>('sessions'))
+      if (
+        saved.projectId === projectId &&
+        saved.repositoryWorktree &&
+        !paths.some((p) => p.path === saved.path)
+      )
+        paths.push({ path: saved.path, branch: saved.branch, head: saved.head });
     const result: Session[] = [];
     for (const entry of paths) {
       let gitDir = '',
@@ -86,6 +96,7 @@ export class ProjectService {
       }
       const s: Session = {
         ...entry,
+        ...(old?.repositoryWorktree ? { repositoryWorktree: true, branch: old.branch } : {}),
         id: old?.id ?? identity(`${p.id}:${gitDir || entry.path}`),
         projectId: p.id,
         gitDir,
@@ -97,6 +108,47 @@ export class ProjectService {
       result.push(s);
     }
     return result;
+  }
+  async registerRepositoryWorktree(source: Session, path: string, branch: string) {
+    const canonical = await realpath(path);
+    const gitDir = await git(canonical, ['rev-parse', '--absolute-git-dir'])
+      .then((s) => s.trim())
+      .catch(() => '');
+    const session: Session = {
+      id: identity(`${source.projectId}:${gitDir || canonical}`),
+      projectId: source.projectId,
+      path: canonical,
+      branch,
+      head: '',
+      gitDir,
+      python: 'python3',
+      state: {},
+      available: true,
+      repositoryWorktree: true,
+    };
+    this.store.put('sessions', session);
+    return session;
+  }
+  async setRemote(session: Session, input: ParsedInput<'project.remote'>, target = session) {
+    const project = this.store.get<Project>('projects', session.projectId);
+    if (!project) throw new Error('Project not found.');
+    if (input.remote) await git(target.path, ['remote', 'get-url', '--push', input.remote]);
+    const updated = { ...project };
+    const path = relative(session.path, target.path);
+    if (path) {
+      const remotes = { ...project.gitRemotes };
+      if (input.remote) remotes[path] = input.remote;
+      else delete remotes[path];
+      if (Object.keys(remotes).length) updated.gitRemotes = remotes;
+      else delete updated.gitRemotes;
+    } else {
+      delete updated.hosting;
+      if (input.remote) updated.gitRemote = input.remote;
+      else delete updated.gitRemote;
+    }
+    this.store.put('projects', updated);
+    this.changed(updated);
+    return updated;
   }
   async clone(input: ParsedInput<'project.clone'>) {
     if (
@@ -118,12 +170,20 @@ export class ProjectService {
     safeRef(input.branch);
     safeRef(input.base);
     await git(session.path, ['check-ref-format', '--branch', input.branch]);
+    const baseBranch = await resolveBranch(session.path, input.base);
     const root = join(this.store.directory, 'worktrees', session.projectId);
     await mkdir(root, { recursive: true });
     const path = join(root, `${input.branch.replace(/[^\w.-]/g, '-')}-${randomUUID().slice(0, 6)}`);
     await git(session.path, ['worktree', 'add', '-b', input.branch, path, input.base], {
       timeout: 120000,
     });
+    if (baseBranch)
+      await git(session.path, [
+        'config',
+        '--local',
+        `branch.${input.branch}.gh-merge-base`,
+        baseBranch,
+      ]);
     const canonical = await realpath(path);
     const result = (await this.sessions(session.projectId)).find((x) => x.path === canonical);
     if (!result)

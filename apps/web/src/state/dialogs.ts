@@ -1,13 +1,19 @@
-import type { Action } from '@superfluid/contracts';
+import type { Action, PullRequest } from '@superfluid/contracts';
 import { useApp } from '~/state/workspaceStore';
 
 export const closeDialog = () => useApp.setState({ modal: null });
 
 export type Modal =
-  | { kind: 'settings' }
+  | { kind: 'settings'; section?: 'appearance' | 'hosting' }
   | { kind: 'action'; action?: Action }
   | { kind: 'worktree' }
-  | { kind: 'git'; action: 'commit' | 'push' | 'pr' | 'publish' }
+  | {
+      kind: 'git';
+      action: 'commit' | 'push' | 'pr' | 'publish';
+      sessionId?: string;
+      repositoryId?: string;
+    }
+  | { kind: 'pr-edit'; sessionId: string; repositoryId?: string; request: PullRequest }
   | { kind: 'git-review'; id: string }
   | { kind: 'terminal-name'; id: string; name: string }
   | { kind: 'clone' }

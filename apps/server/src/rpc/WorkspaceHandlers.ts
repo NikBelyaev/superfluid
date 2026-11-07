@@ -26,7 +26,12 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     pullRequests,
   } = workspace;
   const session = (id: string) => projects.session(id);
+  const repository = (input: { sessionId: string; repositoryId?: string }) =>
+    sourceControl.repositories.target(session(input.sessionId), input.repositoryId);
   return {
+    'sourceControl.discovery': () => workspace.sourceControlDiscovery.scan(),
+    'sourceControl.repository': async (input) =>
+      workspace.hosting.repository(await repository(input)),
     bootstrap: () => ({
       projects: store.all<Project>('projects').sort((a, b) => b.lastOpened - a.lastOpened),
       actions: store.all<Action>('actions'),
@@ -34,6 +39,8 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
       operations: store.all<Operation>('operations'),
     }),
     'project.add': (input) => projects.add(input.path),
+    'project.remote': async (input) =>
+      projects.setRemote(session(input.sessionId), input, await repository(input)),
     'project.clone': (input) => projects.clone(input),
     'session.list': (input) => projects.sessions(input.projectId),
     'session.create': (input) => projects.createWorktree(session(input.sessionId), input),
@@ -55,11 +62,14 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
       store.dropDraft(session(input.sessionId).id, input.path, input.version);
       return null;
     },
-    'git.status': (input) => git.status(session(input.sessionId)),
+    'git.repositories': (input) =>
+      sourceControl.repositories.list(session(input.sessionId), input.refresh),
+    'git.worktree': (input) => sourceControl.createWorktree(session(input.sessionId), input),
+    'git.status': (input) => sourceControl.status(session(input.sessionId), input.repositoryId),
     'git.init': (input) => sourceControl.initialize(session(input.sessionId)),
     'git.diff': (input) => sourceControl.diff(session(input.sessionId), input),
     'git.act': (input) => sourceControl.act(session(input.sessionId), input),
-    'git.inspect': (input) => git.inspect(session(input.sessionId), input.operationId),
+    'git.inspect': (input) => sourceControl.inspect(session(input.sessionId), input.operationId),
     'git.acknowledge': (input) => git.acknowledge(session(input.sessionId), input.operationId),
     'actions.save': (input) => actions.save(input),
     'actions.delete': (input) => actions.delete(input.id),
@@ -71,8 +81,15 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     'python.format': (input) => python.format(session(input.sessionId), input.text),
     'python.hover': (input) => python.hover(session(input.sessionId), input),
     'python.source': (input) => python.source(session(input.sessionId), input),
-    'pr.read': (input) => pullRequests.read(session(input.sessionId), input),
-    'pr.patch': (input) => pullRequests.patch(session(input.sessionId), input),
-    'pr.comment': (input) => pullRequests.comment(session(input.sessionId), input),
+    'pr.read': async (input) => pullRequests.read(await repository(input), input),
+    'pr.context': async (input) =>
+      pullRequests.context(await repository(input), input.targetProject),
+    'pr.remotes': async (input) => workspace.hosting.remotes(await repository(input)),
+    'pr.list': async (input) => pullRequests.list(await repository(input), input),
+    'pr.comments': async (input) => pullRequests.comments(await repository(input), input),
+    'pr.timeline': async (input) => pullRequests.timeline(await repository(input), input),
+    'pr.update': async (input) => pullRequests.update(await repository(input), input),
+    'pr.patch': async (input) => pullRequests.patch(await repository(input), input),
+    'pr.comment': async (input) => pullRequests.comment(await repository(input), input),
   };
 }

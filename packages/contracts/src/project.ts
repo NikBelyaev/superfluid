@@ -1,14 +1,19 @@
 import { z } from 'zod';
 import { id, path } from './schema';
+import { gitRemoteName, type HostingBinding } from './hosting';
 
 export interface Project {
   id: string;
   name: string;
   path: string;
   lastOpened: number;
+  hosting?: HostingBinding;
+  gitRemote?: string;
+  gitRemotes?: Record<string, string>;
 }
 
 export interface Session {
+  repositoryWorktree?: boolean;
   id: string;
   projectId: string;
   path: string;
@@ -22,6 +27,11 @@ export interface Session {
 
 export const projectRequests = {
   'project.add': z.object({ path }),
+  'project.remote': z.object({
+    sessionId: id,
+    repositoryId: id.optional(),
+    remote: gitRemoteName.nullable(),
+  }),
   'project.clone': z.object({ url: z.string().min(1).max(2048), destination: path }),
   'session.list': z.object({ projectId: id }),
   'session.create': z.object({
@@ -35,6 +45,7 @@ export const projectRequests = {
 
 export interface ProjectResults {
   'project.add': Project;
+  'project.remote': Project;
   'project.clone': Project;
   'session.list': Session[];
   'session.create': Session;

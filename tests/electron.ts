@@ -1,11 +1,13 @@
 import { _electron as electron } from 'playwright';
-import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
+import { githubRequest, gitlabRequest } from './hostingFixtures';
 import { git } from '../apps/server/src/vcs/gitCommand';
+import { repository } from './fixtures';
 
 const require = createRequire(import.meta.url);
 
@@ -45,6 +47,7 @@ await git(project, ['config', 'user.email', 'test@superfluid.invalid']);
 await git(project, ['add', '.']);
 
 await git(project, ['commit', '-m', 'Initial fixture']);
+await writeFile(join(project, 'README.md'), '# Fluid lab\n\nPending documentation changes.\n');
 
 await git(project, [
   'remote',
@@ -57,53 +60,53 @@ const bin = join(temp, 'bin');
 
 await mkdir(bin);
 
-const prFixture = {
-  number: 15,
-  title: 'Keep each worktree independent',
-  body: '## Summary\n\n- Preserve open files and navigation in each worktree.\n- Keep terminal processes running when switching branches.\n\n## Testing\n\nPython navigation, document recovery and terminal reconnect pass locally.',
-  state: 'OPEN',
-  url: 'https://github.com/superfluid-tests/fluid-lab/pull/15',
-  author: { login: 'fluid-dev' },
-  baseRefName: 'main',
-  headRefName: 'feature/parallel',
-  headRefOid: 'a'.repeat(40),
-  additions: 24,
-  deletions: 8,
-  changedFiles: 2,
-  comments: [
-    { author: { login: 'reviewer' }, body: 'The worktree state is easier to follow now.' },
-  ],
-  commits: [
-    {
-      oid: 'b'.repeat(40),
-      messageHeadline: 'Preserve worktree document state',
-      committedDate: '2026-11-05T12:00:00Z',
-    },
-  ],
-  reviews: [
-    {
-      author: { login: 'reviewer' },
-      state: 'APPROVED',
-      body: 'Navigation and recovery look good.',
-    },
-  ],
-  statusCheckRollup: [
-    { name: 'Python tests', conclusion: 'SUCCESS' },
-    { name: 'Electron smoke', conclusion: 'SUCCESS' },
-  ],
-};
+const prFixture = { ...githubRequest, body: '## Summary\n\nKeep each worktree independent.' };
 
 const prPatch =
   'diff --git a/models.py b/models.py\nindex 1234567..abcdef0 100644\n--- a/models.py\n+++ b/models.py\n@@ -1,3 +1,3 @@\n-class Store:\n+class Inventory:\n     def count(self) -> int:\n         return 42\n';
 
-await writeFile(
-  join(bin, 'gh'),
-  '#!/usr/bin/env node\n' +
-    `const args=process.argv.slice(2); if(args[0]!=='pr') process.exit(2);\n` +
-    `if(args[1]==='view') process.stdout.write(${JSON.stringify(JSON.stringify(prFixture))});\n` +
-    `else if(args[1]==='diff') process.stdout.write(${JSON.stringify(prPatch)}); else process.exit(2);\n`,
-  { mode: 0o755 },
-);
+const ghState = join(temp, 'github.json');
+const glState = join(temp, 'gitlab.json');
+await writeFile(ghState, JSON.stringify(prFixture));
+await writeFile(glState, JSON.stringify(gitlabRequest));
+for (const cli of ['gh', 'glab'])
+  await writeFile(
+    join(bin, cli),
+    '#!' +
+      process.execPath +
+      '\n' +
+      `
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+const file = ${JSON.stringify(cli === 'gh' ? ghState : glState)};
+const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+const gitlab = ${cli === 'glab'};
+if(args[0] === '--version') console.log(gitlab ? 'glab 1.128.0' : 'gh version 2.80.0');
+else if(args[0] === 'auth') console.log(JSON.stringify(value.signedOut ? (gitlab ? {hosts:[]} : {hosts:{}}) : gitlab ? {hosts:[{host:'gitlab.example.test',user:'fluid-dev',state:'success'}]} : {hosts:{'github.com':[{login:'fluid-dev',active:true,state:'success'}]}}));
+else if(args[0] === 'repo') { if(value.denyRepository) { console.error('Project access denied by fixture'); process.exit(1); } console.log(JSON.stringify(gitlab ? {id: 11, default_branch: args[2].includes('/people/') ? 'main' : 'develop',forked_from_project:args[2].includes('/people/') ? {path_with_namespace:'platform/editor'} : null} : {defaultBranchRef: {name: 'main'},parent:null})); }
+else if(args[1] === 'list') console.log(JSON.stringify([value]));
+else if(args[1] === 'view') { if(value.failRead) { console.error('Refresh rejected by fixture'); process.exit(1); } console.log(JSON.stringify(value)); }
+else if(args[0] === 'api') { let body=''; process.stdin.on('data', chunk => body += chunk); process.stdin.on('end', () => { value.description=JSON.parse(body).description;fs.writeFileSync(file,JSON.stringify(value)); }); }
+else if(args[1] === 'diff') process.stdout.write(${JSON.stringify(prPatch)});
+else if(args[1] === 'update' || args[1] === 'edit') {
+ let body=''; process.stdin.on('data', chunk => body += chunk); process.stdin.on('end', () => {
+  const title = args.indexOf('--title'); if(title >= 0) value.title = args[title+1];
+  if(args.includes('--description-file') || args.includes('--body-file')) value[gitlab ? 'description' : 'body'] = body;
+  value[gitlab ? 'updated_at' : 'updatedAt'] = '2026-11-07T13:00:00Z'; fs.writeFileSync(file,JSON.stringify(value));
+ });
+} else if(args[1] === 'note' || args[1] === 'comment') {
+ let body=''; process.stdin.on('data', chunk => body += chunk); process.stdin.on('end', () => {
+  value.commentAttempts = (value.commentAttempts || 0) + 1;
+  if (value.failComment) { fs.writeFileSync(file,JSON.stringify(value)); console.error('Comment rejected by fixture'); process.exit(1); }
+  if (gitlab) value.Discussions.push({id:'posted-'+value.commentAttempts,notes:[{id:200+value.commentAttempts,author:{username:'fluid-dev'},body,created_at:'2026-11-07T14:00:00Z',system:false}]});
+  else value.comments.push({id:'posted-'+value.commentAttempts,author:{login:'fluid-dev'},body,createdAt:'2026-11-07T14:00:00Z'});
+  fs.writeFileSync(file,JSON.stringify(value));
+ });
+}
+else process.exit(2);
+`,
+    { mode: 0o755 },
+  );
 
 await mkdir('test-results', { recursive: true });
 
@@ -195,6 +198,7 @@ try {
   await page.locator('.tree-row').filter({ hasText: 'bom.py' }).waitFor();
   await page.screenshot({ path: 'test-results/editor-empty.png' });
   const gitMenu = page.getByRole('button', { name: 'Individual Git actions', exact: true });
+  await page.locator('.repository-operation:not(:disabled)').waitFor();
   await gitMenu.focus();
   await page.keyboard.press('ArrowDown');
   await page.getByRole('menu').waitFor();
@@ -202,7 +206,7 @@ try {
   await page.keyboard.press('End');
   assert.equal(
     await page
-      .getByRole('menuitem', { name: 'Create PR', exact: true })
+      .getByRole('menuitem', { name: 'Apply stash', exact: true })
       .evaluate((e) => e === document.activeElement),
     true,
   );
@@ -216,7 +220,7 @@ try {
   await page.keyboard.press('Home');
   await page.keyboard.press('Enter');
   await page.getByRole('dialog').waitFor();
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.keyboard.press('Escape');
   await page.locator('.tree-row').filter({ hasText: 'bom.py' }).click();
   await page.locator('.editor-host').first().click();
   await page.keyboard.press('Meta+ArrowDown');
@@ -392,7 +396,8 @@ try {
     .getByRole('banner')
     .getByRole('button', { name: 'Open a surface', exact: true })
     .click();
-  await page.getByRole('button', { name: 'Pull request', exact: true }).click();
+  await page.getByRole('button', { name: 'Pull / merge requests', exact: true }).click();
+  await page.getByRole('button', { name: /Keep each worktree independent/ }).click();
   await page.getByRole('heading', { name: prFixture.title }).waitFor();
   await page.screenshot({ path: 'test-results/pr-summary.png' });
   const prTabs = page.getByRole('tablist', { name: 'Pull request', exact: true });
@@ -406,6 +411,298 @@ try {
   await page.keyboard.press('ArrowRight');
   await page.locator('.pr-panel diffs-container').waitFor();
   await page.screenshot({ path: 'test-results/pr-code.png' });
+  await page.keyboard.press('Meta+Shift+P');
+  await page.getByRole('button', { name: 'Settings: Source Control', exact: true }).click();
+  await page.getByRole('heading', { name: 'Version Control', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Source control providers', exact: true }).waitFor();
+  await page.getByRole('switch', { name: 'GitLab availability', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Toggle GitLab details', exact: true }).click();
+  await page
+    .locator('.source-control-account strong')
+    .filter({ hasText: /^gitlab\.example\.test$/ })
+    .waitFor();
+  await page.screenshot({ path: 'test-results/source-control-settings.png' });
+  await page.getByRole('button', { name: 'Reveal GitLab accounts', exact: true }).click();
+  await page.locator('.source-control-login').filter({ hasText: 'fluid-dev' }).waitFor();
+  const githubSettings = page
+    .locator('.source-control-tool')
+    .filter({ has: page.getByRole('switch', { name: 'GitHub availability', exact: true }) });
+  const gitlabSettings = page
+    .locator('.source-control-tool')
+    .filter({ has: page.getByRole('switch', { name: 'GitLab availability', exact: true }) });
+  await page.getByRole('button', { name: 'Toggle GitHub details', exact: true }).click();
+  await githubSettings.getByText('Connection instructions', { exact: true }).click();
+  await githubSettings.getByText('Install command', { exact: true }).click();
+  await gitlabSettings.getByText('Connection instructions', { exact: true }).click();
+  await gitlabSettings.getByText('Install command', { exact: true }).click();
+  for (const [settings, cli] of [
+    [githubSettings, 'gh'],
+    [gitlabSettings, 'glab'],
+  ] as const) {
+    for (const manager of ['brew', 'winget', 'scoop', 'choco']) {
+      await settings.getByRole('button', { name: manager, exact: true }).click();
+      const expected =
+        manager === 'winget'
+          ? cli === 'gh'
+            ? 'winget install --id GitHub.cli --source winget'
+            : 'winget install glab.glab'
+          : `${manager} install ${cli}`;
+      assert.equal(
+        await settings.locator('.source-control-snippet pre').first().innerText(),
+        '$' + expected,
+      );
+    }
+  }
+  await githubSettings.getByRole('button', { name: 'repo', exact: true }).hover();
+  await page.getByRole('tooltip').filter({ hasText: 'Read and write repositories' }).waitFor();
+  await githubSettings.getByRole('button', { name: 'Classic PAT', exact: true }).click();
+  assert.ok(
+    !(await githubSettings.locator('.source-control-snippet pre').last().innerText()).includes(
+      '--web',
+    ),
+  );
+  await githubSettings.getByRole('button', { name: 'Browser', exact: true }).click();
+  assert.ok(
+    (await githubSettings.locator('.source-control-snippet pre').last().innerText()).includes(
+      '--web',
+    ),
+  );
+  await page.evaluate(`Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText: async text => { document.documentElement.dataset.copiedCommand = text; } }
+  })`);
+  const copyInstall = githubSettings.getByRole('button', {
+    name: 'Copy gh install command',
+    exact: true,
+  });
+  await copyInstall.click();
+  await githubSettings.getByRole('button', { name: 'Copied', exact: true }).waitFor();
+  assert.equal(await page.locator('html').getAttribute('data-copied-command'), 'choco install gh');
+  await page.evaluate(
+    `navigator.clipboard.writeText = async () => { throw new Error('Clipboard denied by fixture'); }`,
+  );
+  await githubSettings.getByRole('button', { name: 'Copy gh login command', exact: true }).click();
+  await githubSettings.getByRole('button', { name: 'Could not copy', exact: true }).waitFor();
+  await page.evaluate(
+    'delete navigator.clipboard; delete document.documentElement.dataset.copiedCommand',
+  );
+  await gitlabSettings.getByRole('row', { name: 'Pipeline Read', exact: true }).waitFor();
+  await gitlabSettings.getByRole('row', { name: 'Job Read', exact: true }).waitFor();
+  await gitlabSettings.getByRole('checkbox', { name: 'Git over HTTPS', exact: true }).check();
+  await gitlabSettings.getByRole('row', { name: 'Code Download · Push', exact: true }).waitFor();
+  await page.screenshot({ path: 'test-results/source-control-onboarding.png' });
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog').waitFor({ state: 'detached' });
+  await git(project, [
+    'remote',
+    'set-url',
+    'origin',
+    'git@gitlab.example.test:people/fluid/editor.git',
+  ]);
+  await page.keyboard.press('Meta+Shift+P');
+  await page.getByRole('button', { name: 'Settings: Source Control', exact: true }).click();
+  await page.getByRole('button', { name: 'Toggle GitLab details', exact: true }).click();
+  await gitlabSettings.getByText('Connection instructions', { exact: true }).click();
+  assert.ok(
+    (await gitlabSettings.locator('.source-control-snippet pre').last().innerText()).includes(
+      '--hostname gitlab.example.test',
+    ),
+  );
+  await gitlabSettings.getByRole('button', { name: 'Check connection', exact: true }).click();
+  await gitlabSettings
+    .getByRole('status')
+    .filter({ hasText: 'Project people/fluid/editor is accessible.' })
+    .waitFor();
+  await writeFile(
+    glState,
+    JSON.stringify({ ...JSON.parse(await readFile(glState, 'utf8')), denyRepository: true }),
+  );
+  await gitlabSettings.getByRole('button', { name: 'Check connection', exact: true }).click();
+  await gitlabSettings
+    .getByRole('alert')
+    .filter({ hasText: 'Project access denied by fixture' })
+    .waitFor();
+  await writeFile(
+    glState,
+    JSON.stringify({
+      ...JSON.parse(await readFile(glState, 'utf8')),
+      denyRepository: false,
+      signedOut: true,
+    }),
+  );
+  await gitlabSettings.getByRole('button', { name: 'Check connection', exact: true }).click();
+  await gitlabSettings
+    .getByRole('alert')
+    .filter({ hasText: 'glab auth login --hostname gitlab.example.test' })
+    .waitFor();
+  assert.equal(
+    await gitlabSettings
+      .getByRole('switch', { name: 'GitLab availability', exact: true })
+      .isChecked(),
+    false,
+  );
+  await writeFile(
+    glState,
+    JSON.stringify({ ...JSON.parse(await readFile(glState, 'utf8')), signedOut: false }),
+  );
+  await gitlabSettings.getByRole('button', { name: 'Check connection', exact: true }).click();
+  await gitlabSettings
+    .getByRole('status')
+    .filter({ hasText: 'Project people/fluid/editor is accessible.' })
+    .waitFor();
+  assert.equal(
+    await gitlabSettings
+      .getByRole('switch', { name: 'GitLab availability', exact: true })
+      .isChecked(),
+    true,
+  );
+  await page.screenshot({ path: 'test-results/gitlab-onboarding-checked.png' });
+  const settingsMetrics = await page.context().newCDPSession(page);
+  try {
+    for (const width of [768, 320]) {
+      await settingsMetrics.send('Emulation.setDeviceMetricsOverride', {
+        width,
+        height: 900,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      await page.screenshot({ path: `test-results/source-control-onboarding-${width}.png` });
+    }
+  } finally {
+    await settingsMetrics.send('Emulation.clearDeviceMetricsOverride');
+    await settingsMetrics.detach();
+  }
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog').waitFor({ state: 'detached' });
+  await page.keyboard.press('Meta+Shift+P');
+  await page.getByRole('button', { name: 'Open pull / merge requests', exact: true }).click();
+  await page.getByRole('heading', { name: 'Merge requests', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Create MR', exact: true }).click();
+  const targetProject = page.getByLabel('Target project', { exact: true });
+  await targetProject.waitFor();
+  assert.equal(await targetProject.inputValue(), 'platform/editor');
+  assert.equal(await page.getByLabel('Base branch', { exact: true }).inputValue(), 'develop');
+  await targetProject.selectOption('people/fluid/editor');
+  await page.locator('.modal input[value="main"]').waitFor();
+  assert.equal(
+    await page.getByLabel('Target project', { exact: true }).inputValue(),
+    'people/fluid/editor',
+  );
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog').waitFor({ state: 'detached' });
+  await git(project, ['remote', 'rename', 'origin', 'personal']);
+  await git(project, ['remote', 'add', 'work', 'git@gitlab.example.test:people/fluid/editor.git']);
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await page.getByLabel('Git remote', { exact: true }).waitFor();
+  await page
+    .getByText('Choose a Git remote to load requests or publish this branch.', { exact: false })
+    .waitFor();
+  await page.screenshot({ path: 'test-results/gitlab-remote-choice.png' });
+  await page.getByLabel('Git remote', { exact: true }).selectOption('work');
+  await page.getByRole('heading', { name: 'Merge requests', exact: true }).waitFor();
+  await page.getByRole('button', { name: /Support enterprise worktrees/ }).click();
+  await page.getByRole('heading', { name: gitlabRequest.title, exact: true }).waitFor();
+  await page.getByText('Ready for review.', { exact: true }).waitFor();
+  await page.screenshot({ path: 'test-results/gitlab-summary.png' });
+  const composerTrigger = page.getByRole('button', {
+    name: 'Comment on merge request',
+    exact: true,
+  });
+  const commentInput = page.getByRole('textbox', {
+    name: 'Comment on this merge request',
+    exact: true,
+  });
+  await composerTrigger.click();
+  await commentInput.fill('Comment draft survives dismissal and a failed request.');
+  await page.keyboard.press('Escape');
+  await writeFile(
+    glState,
+    JSON.stringify({ ...JSON.parse(await readFile(glState, 'utf8')), failRead: true }),
+  );
+  await page.getByRole('button', { name: 'Refresh request', exact: true }).click();
+  await page
+    .locator('.pr-detail-error')
+    .filter({ hasText: 'Refresh rejected by fixture' })
+    .waitFor();
+  await composerTrigger.click();
+  assert.equal(
+    await commentInput.inputValue(),
+    'Comment draft survives dismissal and a failed request.',
+  );
+  await page.keyboard.press('Escape');
+  await writeFile(
+    glState,
+    JSON.stringify({ ...JSON.parse(await readFile(glState, 'utf8')), failRead: false }),
+  );
+  await page.getByRole('button', { name: 'Refresh request', exact: true }).click();
+  await page
+    .locator('.pr-detail-error')
+    .filter({ hasText: 'Refresh rejected by fixture' })
+    .waitFor({ state: 'hidden' });
+  await page
+    .getByRole('tablist', { name: 'Merge request', exact: true })
+    .getByRole('tab', { name: 'Timeline', exact: true })
+    .click();
+  await page.getByText('added 2 commits', { exact: true }).waitFor();
+  await page.screenshot({ path: 'test-results/gitlab-timeline.png' });
+  await composerTrigger.click();
+  assert.equal(
+    await commentInput.inputValue(),
+    'Comment draft survives dismissal and a failed request.',
+  );
+  await page.screenshot({ path: 'test-results/gitlab-composer.png' });
+  await writeFile(
+    glState,
+    JSON.stringify({ ...JSON.parse(await readFile(glState, 'utf8')), failComment: true }),
+  );
+  await page.getByRole('button', { name: 'Comment', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: 'Comment rejected by fixture' }).waitFor();
+  assert.equal(
+    await commentInput.inputValue(),
+    'Comment draft survives dismissal and a failed request.',
+  );
+  await writeFile(
+    glState,
+    JSON.stringify({ ...JSON.parse(await readFile(glState, 'utf8')), failComment: false }),
+  );
+  await commentInput.press('Meta+Enter');
+  await commentInput.waitFor({ state: 'hidden' });
+  await page
+    .getByRole('tablist', { name: 'Merge request', exact: true })
+    .getByRole('tab', { name: 'Summary', exact: true })
+    .click();
+  await page
+    .getByText('Comment draft survives dismissal and a failed request.', { exact: true })
+    .waitFor();
+  assert.equal(JSON.parse(await readFile(glState, 'utf8')).commentAttempts, 2);
+  await composerTrigger.click();
+  assert.equal(await commentInput.inputValue(), '');
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Edit MR', exact: true }).click();
+  await page.getByLabel('MR title', { exact: true }).fill('Enterprise MR edited in Superfluid');
+  await page.getByLabel('Description', { exact: true }).fill('Updated enterprise description');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await page
+    .getByRole('heading', { name: 'Enterprise MR edited in Superfluid', exact: true })
+    .waitFor();
+  assert.equal(
+    JSON.parse(await readFile(glState, 'utf8')).description,
+    'Updated enterprise description',
+  );
+  await page.screenshot({ path: 'test-results/gitlab-edited.png' });
+  await page.getByRole('button', { name: 'Edit MR', exact: true }).click();
+  await page.getByLabel('Description', { exact: true }).fill('');
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await page.getByText('No description provided.', { exact: true }).waitFor();
+  assert.equal(JSON.parse(await readFile(glState, 'utf8')).description, '');
+
+  await page
+    .getByRole('tablist', { name: 'Merge request', exact: true })
+    .getByRole('tab', { name: 'Code', exact: true })
+    .click();
+  await page.locator('.pr-panel diffs-container').waitFor();
+  await page.screenshot({ path: 'test-results/gitlab-code.png' });
+
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 800));
   await page.waitForFunction(() => {
     if (innerWidth !== 1280) return false;
@@ -416,6 +713,12 @@ try {
     return tab.left >= list.left && tab.right <= list.right;
   });
   await page.getByRole('button', { name: 'Collapse actions', exact: true }).waitFor();
+  await page
+    .getByRole('tablist', { name: 'Merge request', exact: true })
+    .getByRole('tab', { name: 'Summary', exact: true })
+    .click();
+  await page.getByText('Ready for review.', { exact: true }).waitFor();
+  await page.screenshot({ path: 'test-results/gitlab-summary-1280.png' });
   const geometry = await page.evaluate(() => {
     const island = document.querySelector('.island')!.getBoundingClientRect();
     const editor = document.querySelector('.main-editor')!.getBoundingClientRect();
@@ -494,6 +797,7 @@ try {
   });
   captureNativeOutput();
   const restored = await app.firstWindow();
+  restored.on('pageerror', (error) => errors.push(error.message));
   await restored
     .getByRole('button', { name: /fluid-lab/ })
     .first()
@@ -516,6 +820,75 @@ try {
       ?.textContent?.replaceAll('\u00a0', ' ')
       .includes('# cursor restored'),
   );
+  await restored
+    .locator('.worktree-chip')
+    .filter({ hasText: /^main$/ })
+    .click();
+  await restored.getByRole('tab', { name: '!42', exact: true }).click();
+  await restored
+    .getByRole('heading', { name: 'Enterprise MR edited in Superfluid', exact: true })
+    .waitFor();
+  await restored.screenshot({ path: 'test-results/gitlab-restored.png' });
+  const nested = join(project, 'nested-github');
+  await rename(await repository(), nested);
+  await git(nested, [
+    'remote',
+    'add',
+    'origin',
+    'https://github.com/superfluid-tests/fluid-lab.git',
+  ]);
+  await restored.getByRole('button', { name: 'Project repositories', exact: true }).click();
+  const selectRepositories = restored.getByRole('button', {
+    name: 'Select repositories',
+    exact: true,
+  });
+  await selectRepositories.click();
+  const repositories = restored.getByRole('dialog', { name: 'Repositories', exact: true });
+  await repositories.getByRole('checkbox', { name: 'Select nested-github', exact: true }).click();
+  await repositories.getByRole('checkbox', { name: 'Select root', exact: true }).click();
+  await selectRepositories.click();
+  await restored.keyboard.press('Escape');
+  await restored.keyboard.press('Meta+Shift+P');
+  await restored.getByRole('button', { name: 'Open pull / merge requests', exact: true }).click();
+  await restored.getByRole('heading', { name: 'Pull requests', exact: true }).waitFor();
+  await restored.getByRole('button', { name: /Keep each worktree independent/ }).click();
+  await restored.getByRole('heading', { name: prFixture.title, exact: true }).waitFor();
+  await restored.getByRole('button', { name: 'Edit PR', exact: true }).click();
+  await restored
+    .getByLabel('PR title', { exact: true })
+    .fill('Nested GitHub request edited independently');
+  await restored.getByRole('button', { name: 'Save changes', exact: true }).click();
+  await restored
+    .getByRole('heading', { name: 'Nested GitHub request edited independently', exact: true })
+    .waitFor();
+  await restored.getByRole('button', { name: 'Comment on pull request', exact: true }).click();
+  const nestedComment = restored.getByRole('textbox', {
+    name: 'Comment on this pull request',
+    exact: true,
+  });
+  await nestedComment.fill('Nested comment stays in GitHub.');
+  await restored.getByRole('button', { name: 'Comment', exact: true }).click();
+  await nestedComment.waitFor({ state: 'hidden' });
+  await restored
+    .locator('.pr-comment')
+    .filter({ hasText: 'Nested comment stays in GitHub.' })
+    .waitFor();
+  const githubAfter = JSON.parse(await readFile(ghState, 'utf8'));
+  const gitlabAfter = JSON.parse(await readFile(glState, 'utf8'));
+  assert.equal(githubAfter.title, 'Nested GitHub request edited independently');
+  assert.ok(
+    githubAfter.comments.some(
+      (comment: { body: string }) => comment.body === 'Nested comment stays in GitHub.',
+    ),
+  );
+  assert.equal(gitlabAfter.title, 'Enterprise MR edited in Superfluid');
+  assert.ok(!JSON.stringify(gitlabAfter).includes('Nested comment stays in GitHub.'));
+  await restored.screenshot({ path: 'test-results/nested-github-request.png' });
+  await restored.getByRole('tab', { name: '!42', exact: true }).click();
+  await restored
+    .getByRole('heading', { name: 'Enterprise MR edited in Superfluid', exact: true })
+    .waitFor();
+  assert.deepEqual(errors, []);
   console.log('Electron smoke passed:', project);
 } catch (e) {
   failed = true;

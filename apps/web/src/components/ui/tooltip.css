@@ -1,0 +1,15 @@
+.ui-tooltip-positioner {
+  z-index: 200;
+}
+.ui-tooltip {
+  max-width: min(260px, calc(100vw - 24px));
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--control-radius);
+  background: var(--popover);
+  color: var(--foreground);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--text-xs);
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}

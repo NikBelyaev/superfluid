@@ -14,6 +14,7 @@ import { InterpreterDialog } from '~/components/python/InterpreterDialog';
 import { RenameSymbolDialog } from '~/components/editor/RenameSymbolDialog';
 import { SettingsLayout } from '~/components/settings/SettingsLayout';
 import { SettingsSkeleton } from '~/components/settings/SettingsSkeleton';
+import { EditPullRequestDialog } from '~/components/pullRequest/EditPullRequestDialog';
 
 const Launcher = lazy(() =>
   import('~/components/surfaces/SurfaceLauncher').then((m) => ({ default: m.SurfaceLauncher })),
@@ -28,6 +29,7 @@ export default function DialogHost() {
     action: 'Project action',
     worktree: 'New worktree',
     git: 'Publish changes',
+    'pr-edit': 'Edit request',
     'git-review': 'Review Git operation',
     'terminal-name': 'Terminal name',
     clone: 'Clone repository',
@@ -62,7 +64,7 @@ export default function DialogHost() {
             </div>
           )}
           {modal.kind === 'settings' ? (
-            <SettingsLayout>
+            <SettingsLayout initialSection={modal.section}>
               <Suspense fallback={<SettingsSkeleton />}>
                 <SettingsPage />
               </Suspense>
@@ -72,7 +74,17 @@ export default function DialogHost() {
           ) : modal.kind === 'worktree' ? (
             <NewWorktreeDialog />
           ) : modal.kind === 'git' ? (
-            <GitDialog action={modal.action} />
+            <GitDialog
+              action={modal.action}
+              sessionId={modal.sessionId}
+              repositoryId={modal.repositoryId}
+            />
+          ) : modal.kind === 'pr-edit' ? (
+            <EditPullRequestDialog
+              sessionId={modal.sessionId}
+              repositoryId={modal.repositoryId}
+              request={modal.request}
+            />
           ) : modal.kind === 'git-review' ? (
             <GitReviewDialog id={modal.id} />
           ) : modal.kind === 'terminal-name' ? (
