@@ -1,0 +1,167 @@
+name: Release
+on:
+  push:
+    tags: ['v*.*.*']
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        type: choice
+        options: [nightly, stable]
+        default: nightly
+      version:
+        description: Stable version override (X.Y.Z); otherwise promote the latest nightly version
+        type: string
+
+permissions:
+  contents: read
+concurrency:
+  group: superfluid-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      commit: ${{ steps.plan.outputs.commit }}
+      channel: ${{ steps.plan.outputs.channel }}
+      previousTag: ${{ steps.plan.outputs.previousTag }}
+      skip: ${{ steps.plan.outputs.skip }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '26'
+      - run: npm install --global pnpm@12.14.0
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - id: plan
+        run: |
+          if [ "$SIGNING_READY" != true ]; then
+            if [ "$GITHUB_EVENT_NAME" = schedule ]; then
+              echo 'skip=true' >> "$GITHUB_OUTPUT"
+              echo 'Scheduled releases are disabled until signing secrets are configured.'
+              exit 0
+            fi
+            echo 'Configure the CSC_LINK and CSC_KEY_PASSWORD signing secrets.' >&2
+            exit 1
+          fi
+          node scripts/release.ts plan
+        env:
+          SIGNING_READY: ${{ secrets.CSC_LINK != '' && secrets.CSC_KEY_PASSWORD != '' }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_CHANNEL: ${{ github.event_name == 'push' && 'stable' || inputs.channel || 'nightly' }}
+          RELEASE_VERSION: ${{ inputs.version }}
+
+  checks:
+    needs: prepare
+    if: needs.prepare.outputs.skip != 'true'
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.prepare.outputs.commit }}
+
+  desktop:
+    needs: prepare
+    if: needs.prepare.outputs.skip != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            app: release/mac-arm64/Superfluid.app/Contents/MacOS/Superfluid
+          - runner: macos-15-intel
+            arch: x64
+            app: release/mac/Superfluid.app/Contents/MacOS/Superfluid
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '26'
+      - run: npm install --global pnpm@12.14.0
+      - run: brew install ripgrep
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/release.ts stamp "$RELEASE_VERSION"
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      - run: pnpm build
+      - name: Sign DMG and update ZIP with the pinned release certificate
+        run: |
+          test -n "$CSC_LINK" && test -n "$CSC_KEY_PASSWORD"
+          pnpm exec electron-builder --config scripts/electron-builder.cjs --mac --"$ARCH" --publish never
+        env:
+          ARCH: ${{ matrix.arch }}
+          SF_RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      - name: Verify packaged app in an isolated profile
+        run: pnpm test:electron
+        env:
+          SF_EXECUTABLE: ${{ github.workspace }}/${{ matrix.app }}
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: desktop-${{ matrix.arch }}
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.blockmap
+            release/*-mac.yml
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, checks, desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '26'
+      - run: npm install --global pnpm@12.14.0
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          pattern: desktop-*
+          path: release-parts
+      - name: Merge architecture metadata
+        run: |
+          mkdir release
+          cp release-parts/desktop-*/*.dmg release-parts/desktop-*/*.zip release-parts/desktop-*/*.blockmap release/
+          if [ "$CHANNEL" = nightly ]; then FEED=nightly; else FEED=latest; fi
+          node scripts/release.ts merge "release/$FEED-mac.yml" "release-parts/desktop-arm64/$FEED-mac.yml" "release-parts/desktop-x64/$FEED-mac.yml"
+          cd release
+          sha256sum *.dmg *.zip *.blockmap *-mac.yml > SHA256SUMS
+        env:
+          CHANNEL: ${{ needs.prepare.outputs.channel }}
+      - name: Publish only after every asset is attached
+        run: |
+          if gh release view "$TAG" --json isDraft --jq .isDraft > "$RUNNER_TEMP/release-state"; then
+            test "$(cat "$RUNNER_TEMP/release-state")" = true
+          else
+            args=("$TAG" --draft --target "$COMMIT" --title "Superfluid $VERSION" --generate-notes)
+            if [ -n "$PREVIOUS_TAG" ]; then args+=(--notes-start-tag "$PREVIOUS_TAG"); fi
+            if [ "$CHANNEL" = nightly ]; then args+=(--prerelease); fi
+            gh release create "${args[@]}"
+          fi
+          gh release upload "$TAG" release/* --clobber
+          if [ "$CHANNEL" = stable ]; then LATEST=true; else LATEST=false; fi
+          gh release edit "$TAG" --draft=false --latest="$LATEST"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          COMMIT: ${{ needs.prepare.outputs.commit }}
+          CHANNEL: ${{ needs.prepare.outputs.channel }}
+          PREVIOUS_TAG: ${{ needs.prepare.outputs.previousTag }}

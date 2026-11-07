@@ -16,3 +16,4 @@ export * from './rpc';
 export * from './events';
 
 export * from './desktop';
+export * from './updates';

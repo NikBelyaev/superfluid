@@ -1,13 +1,27 @@
 import { BrowserWindow, dialog, Menu } from 'electron';
 import { DesktopLifecycle } from './DesktopLifecycle';
+import type { DesktopUpdates } from '../updates/DesktopUpdates';
 
-export function installApplicationMenu(window: BrowserWindow, lifecycle: DesktopLifecycle) {
+export function installApplicationMenu(
+  window: BrowserWindow,
+  lifecycle: DesktopLifecycle,
+  updates: DesktopUpdates,
+) {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
         label: 'Superfluid',
         submenu: [
           { role: 'about' },
+          {
+            label: 'Check for Updates…',
+            click: () => {
+              window.webContents.send('desktop:show-updates');
+              void updates
+                .run({ action: 'check' })
+                .catch((error) => dialog.showErrorBox('Update failed', String(error)));
+            },
+          },
           { type: 'separator' },
           {
             label: 'Quit Superfluid',

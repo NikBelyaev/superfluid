@@ -1,4 +1,5 @@
 import { _electron as electron } from 'playwright';
+import { expect } from 'playwright/test';
 import { mkdtemp, mkdir, writeFile, readFile, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -222,6 +223,7 @@ try {
   await page.getByRole('dialog').waitFor();
   await page.keyboard.press('Escape');
   await page.locator('.tree-row').filter({ hasText: 'bom.py' }).click();
+  await expect(page.locator('.main-editor .view-lines')).toContainText('value = 1');
   await page.locator('.editor-host').first().click();
   await page.keyboard.press('Meta+ArrowDown');
   await page.keyboard.insertText('# saved through Monaco\r\n');
@@ -242,7 +244,7 @@ try {
   await page.keyboard.press('Enter');
   await page.locator('.editor-tab.active').filter({ hasText: 'bom.py' }).waitFor();
   await page.getByRole('tab', { name: 'main.py', exact: true }).click();
-  await page.locator('.monaco-editor textarea').first().waitFor({ state: 'attached' });
+  await expect(page.locator('.main-editor .view-lines')).toContainText('store = Store()');
   await page.locator('.editor-host').click();
   await page.keyboard.press('Meta+A');
   await page.keyboard.insertText(
@@ -254,11 +256,13 @@ try {
   await page.getByRole('button', { name: 'Create worktree', exact: true }).click();
   await page.locator('.worktree-chip.active').filter({ hasText: 'feature/parallel' }).waitFor();
   await page.locator('.tree-row').filter({ hasText: 'main.py' }).click();
+  await expect(page.locator('.main-editor .view-lines')).toContainText('store = Store()');
   await page.locator('.editor-host').click();
   await page.keyboard.press('Meta+A');
   await page.keyboard.insertText(
     'from models import Store\n\n# feature unsaved\nprint(Store().count())\n',
   );
+  await expect(page.locator('.main-editor .view-lines')).toContainText('feature unsaved');
   await page
     .locator('.worktree-chip')
     .filter({ hasText: /^main$/ })
@@ -351,13 +355,8 @@ try {
       .locator('.worktree-chip')
       .filter({ hasText: target === 'main' ? /^main$/ : /^feature\/parallel$/ })
       .click();
-    await page.waitForFunction(
-      (target) =>
-        document
-          .querySelector('.view-lines')
-          ?.textContent?.replaceAll('\u00a0', ' ')
-          .includes(target === 'main' ? 'main unsaved' : 'feature unsaved'),
-      target,
+    await expect(page.locator('.main-editor .view-lines')).toContainText(
+      target === 'main' ? 'main unsaved' : 'feature unsaved',
     );
     const time = await page.evaluate(() => {
       const starts = performance.getEntriesByName('superfluid:switch-start'),
@@ -572,6 +571,17 @@ try {
     await settingsMetrics.send('Emulation.clearDeviceMetricsOverride');
     await settingsMetrics.detach();
   }
+  await page.getByRole('button', { name: 'About', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'About Superfluid' })).toBeVisible();
+  await page.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await app.evaluate(({ Menu }) => {
+    Menu.getApplicationMenu()!
+      .items[0].submenu!.items.find((item) => item.label === 'Check for Updates…')!
+      .click();
+  });
+  await expect(page.getByRole('heading', { name: 'About Superfluid' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Check for updates', exact: true })).toBeDisabled();
+  await page.screenshot({ path: 'test-results/about-updates.png' });
   await page.keyboard.press('Escape');
   await page.getByRole('dialog').waitFor({ state: 'detached' });
   await page.keyboard.press('Meta+Shift+P');
@@ -744,7 +754,6 @@ try {
   await page.screenshot({ path: 'test-results/workspace-1280.png' });
   await page.getByRole('button', { name: 'Collapse actions', exact: true }).click();
   await page.getByRole('button', { name: 'Expand actions', exact: true }).click();
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1512, 980));
   preview = createServer((_request, response) => {
     response.setHeader('Content-Type', 'text/html');
     response.end(
@@ -760,7 +769,12 @@ try {
       window.superfluid.browser({
         url,
         visible: true,
-        bounds: { x: 1000, y: 180, width: 450, height: 650 },
+        bounds: {
+          x: 0,
+          y: 0,
+          width: Math.min(450, innerWidth),
+          height: Math.min(650, innerHeight),
+        },
       }),
     url,
   );
@@ -781,10 +795,12 @@ try {
   preview.closeAllConnections();
   await new Promise<void>((resolve) => preview!.close(() => resolve()));
   preview = undefined;
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1512, 980));
   await page
     .locator('.worktree-chip')
     .filter({ hasText: /^feature\/parallel$/ })
     .click();
+  await expect(page.locator('.main-editor .view-lines')).toContainText('feature unsaved');
   await page.locator('.editor-host').first().click();
   await page.keyboard.press('Meta+A');
   await page.keyboard.insertText('# newest edit must survive immediate quit\n');

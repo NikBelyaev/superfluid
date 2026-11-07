@@ -1,6 +1,9 @@
 import type { Bridge } from '@superfluid/contracts';
 
 export const desktop: Bridge = {
+  update: (input) => window.superfluid.update(input),
+  onUpdate: (listener) => window.superfluid.onUpdate(listener),
+  onShowUpdates: (listener) => window.superfluid.onShowUpdates(listener),
   call: (method, input) => window.superfluid.call(method, input),
   onEvent: (listener) => window.superfluid.onEvent(listener),
   onFlush: (listener) => window.superfluid.onFlush(listener),

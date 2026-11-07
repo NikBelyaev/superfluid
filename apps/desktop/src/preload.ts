@@ -1,7 +1,18 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AppEvent, Bridge } from '@superfluid/contracts';
+import type { AppEvent, Bridge, UpdateState } from '@superfluid/contracts';
 
 const bridge: Bridge = {
+  update: (input) => ipcRenderer.invoke('desktop:update', input),
+  onShowUpdates: (listener) => {
+    const handler = () => listener();
+    ipcRenderer.on('desktop:show-updates', handler);
+    return () => ipcRenderer.removeListener('desktop:show-updates', handler);
+  },
+  onUpdate: (listener) => {
+    const handler = (_event: unknown, state: UpdateState) => listener(state);
+    ipcRenderer.on('desktop:update-state', handler);
+    return () => ipcRenderer.removeListener('desktop:update-state', handler);
+  },
   call: (method, input) => ipcRenderer.invoke('workspace', method, input),
   onEvent: (listener) => {
     const handler = (_event: unknown, value: AppEvent) => listener(value);
