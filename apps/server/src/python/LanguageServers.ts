@@ -1,15 +1,17 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import type { Session, AppEvent } from '@superfluid/contracts';
 import type { Store } from '../persistence/Store';
+import { inspectInterpreter, languageServerFor } from './interpreter';
 
 const require = createRequire(import.meta.url);
 
 export class LanguageServers {
   private servers = new Map<string, Server>();
+  private generation = 0;
   constructor(
     private store: Store,
     private notify: (event: AppEvent) => void,
@@ -21,19 +23,32 @@ export class LanguageServers {
       this.servers.set(s.id, server);
       return server;
     }
-    if (server) this.servers.delete(s.id);
+    if (server) this.invalidate(s.id);
+    s = this.store.get<Session>('sessions', s.id) ?? s;
     if (this.servers.size >= 2) {
       const [id, old] = this.servers.entries().next().value!;
       old.close();
       this.servers.delete(id);
     }
-    server = new Server(s, this.notify, () => this.store.drafts(s.id));
+    server = new Server({ ...s }, ++this.generation, this.notify, () => this.store.drafts(s.id));
     this.servers.set(s.id, server);
     return server;
   }
   invalidate(id: string) {
+    const running = this.servers.has(id);
     this.servers.get(id)?.close();
     this.servers.delete(id);
+    this.notify({
+      type: 'lsp.status',
+      sessionId: id,
+      generation: ++this.generation,
+      phase: 'stopped',
+      status: 'Python intelligence paused',
+    });
+    return running;
+  }
+  async documentClose(id: string, path: string) {
+    await this.servers.get(id)?.documentClose(path);
   }
   changed(id: string, path: string, event: 'rename' | 'change') {
     void this.servers
@@ -48,24 +63,27 @@ export class LanguageServers {
 }
 
 class Server {
-  private child: ChildProcessWithoutNullStreams;
+  private child?: ChildProcessWithoutNullStreams;
   private buffer = Buffer.alloc(0);
   private serial = 0;
   private pending = new Map<
     number,
-    { resolve: (v: any) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
+    { resolve: (v: any) => void; reject: (e: Error) => void; dispose: () => void }
   >();
   private documents = new Map<string, number>();
   private ready: Promise<void>;
-  private generation = Date.now();
   private closed = false;
+  private released = false;
   private stderr = '';
+  kind: 'ty' | 'pyright' = 'pyright';
+  private executable = '';
+  private fallback = '';
   get available() {
     return !this.closed;
   }
   private settings() {
     return {
-      pythonPath: this.session.python,
+      pythonPath: this.executable,
       analysis: {
         diagnosticMode: 'openFilesOnly',
         autoSearchPaths: true,
@@ -75,50 +93,113 @@ class Server {
       },
     };
   }
+  private configuration() {
+    return this.kind === 'ty'
+      ? {
+          ty: {
+            configuration: { environment: { python: this.executable } },
+            diagnosticMode: 'openFilesOnly',
+            completions: { autoImport: false },
+          },
+        }
+      : { python: this.settings() };
+  }
+  private status(phase: 'starting' | 'ready' | 'stopped' | 'error', status: string) {
+    this.notify({
+      type: 'lsp.status',
+      sessionId: this.session.id,
+      generation: this.generation,
+      server: this.kind,
+      phase,
+      status,
+    });
+  }
   constructor(
     private session: Session,
+    readonly generation: number,
     private notify: (event: AppEvent) => void,
     drafts: () => ReturnType<Store['drafts']>,
   ) {
-    this.child = spawn(
-      process.env.SF_NODE_EXEC_PATH || process.execPath,
-      [
-        require.resolve('pyright/langserver.index.js').replace('app.asar/', 'app.asar.unpacked/'),
-        '--stdio',
-      ],
-      { cwd: session.path, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, stdio: 'pipe' },
-    );
-    this.child.stdout.on('data', (chunk) => {
+    this.status('starting', 'Checking Python interpreter…');
+    this.ready = this.start(drafts);
+    this.ready.catch((error) => this.fail(error));
+  }
+  private async start(drafts: () => ReturnType<Store['drafts']>) {
+    const interpreter = await inspectInterpreter(this.session.python, this.session.path);
+    if (this.released) throw new Error('Python server session released.');
+    this.executable = interpreter.executable;
+    this.kind = languageServerFor(interpreter.version);
+    try {
+      await this.launch(drafts);
+    } catch (error) {
+      if (this.kind !== 'ty' || this.released) throw error;
+      this.child?.kill();
+      this.child = undefined;
+      this.closed = false;
+      this.buffer = Buffer.alloc(0);
+      this.stderr = '';
+      this.documents.clear();
+      this.kind = 'pyright';
+      this.fallback = ` (ty unavailable: ${error instanceof Error ? error.message : String(error)})`;
+      await this.launch(drafts);
+    }
+  }
+  private async launch(drafts: () => ReturnType<Store['drafts']>) {
+    if (this.released) throw new Error('Python server session released.');
+    const ty =
+      process.env.SF_TY_PATH ||
+      fileURLToPath(
+        new URL(
+          `../../../../dist/ty${process.platform === 'win32' ? '.exe' : ''}`,
+          import.meta.url,
+        ),
+      );
+    const child = (this.child = spawn(
+      this.kind === 'ty' ? ty : process.env.SF_NODE_EXEC_PATH || process.execPath,
+      this.kind === 'ty'
+        ? ['server']
+        : [
+            require
+              .resolve('pyright/langserver.index.js')
+              .replace('app.asar/', 'app.asar.unpacked/'),
+            '--stdio',
+          ],
+      { cwd: this.session.path, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, stdio: 'pipe' },
+    ));
+    child.stdout.on('data', (chunk) => {
+      if (this.child !== child) return;
       try {
         this.receive(chunk);
       } catch (error) {
         this.fail(error instanceof Error ? error : new Error(String(error)));
       }
     });
-    this.child.stdin.on('error', (error) => this.fail(error));
-    this.child.stderr.on('data', (chunk) => {
+    child.stdin.on('error', (error) => {
+      if (this.child === child) this.fail(error);
+    });
+    child.stderr.on('data', (chunk) => {
+      if (this.child !== child) return;
       this.stderr = (this.stderr + chunk.toString()).slice(-4096);
     });
-    this.child.on('error', (e) => this.fail(e));
-    this.child.on('exit', (code) =>
+    child.on('error', (e) => {
+      if (this.child === child) this.fail(e);
+    });
+    child.on('exit', (code) => {
+      if (this.child !== child) return;
       this.fail(
         new Error(
           `Python language server stopped (${code}). ${this.stderr.trim() || 'The next request will restart it.'}`,
         ),
-      ),
-    );
-    this.notify({
-      type: 'lsp.status',
-      sessionId: session.id,
-      status: 'Warming Python intelligence…',
+      );
     });
-    this.ready = this.requestRaw('initialize', {
+    this.status('starting', `Warming ${this.kind === 'ty' ? 'ty' : 'Pyright'}…${this.fallback}`);
+    await this.requestRaw('initialize', {
       processId: process.pid,
-      rootUri: pathToFileURL(session.path).href,
+      rootUri: pathToFileURL(this.session.path).href,
       workspaceFolders: [
         {
-          uri: pathToFileURL(session.path).href,
-          name: session.branch || session.path.split('/').at(-1) || 'Project',
+          uri: pathToFileURL(this.session.path).href,
+          name: this.session.branch || this.session.path.split('/').at(-1) || 'Project',
         },
       ],
       capabilities: {
@@ -135,17 +216,16 @@ class Server {
           didChangeWatchedFiles: { dynamicRegistration: true },
         },
       },
-      initializationOptions: {},
-    }).then(() => {
-      this.send('initialized', {});
-      this.send('workspace/didChangeConfiguration', { settings: { python: this.settings() } });
-      for (const d of drafts()) this.openRaw(d.path, d.text, d.version);
-      this.notify({ type: 'lsp.status', sessionId: session.id, status: 'Python ready' });
+      initializationOptions: this.kind === 'ty' ? this.configuration().ty : {},
     });
-    this.ready.catch((error) => this.fail(error));
+    if (this.released) throw new Error('Python server session released.');
+    this.send('initialized', {});
+    this.send('workspace/didChangeConfiguration', { settings: this.configuration() });
+    for (const d of drafts()) this.openRaw(d.path, d.text, d.version);
+    this.status('ready', `${this.kind === 'ty' ? 'ty' : 'Pyright'} ready${this.fallback}`);
   }
   private write(message: unknown) {
-    if (this.closed || !this.child.stdin.writable)
+    if (this.closed || !this.child?.stdin.writable)
       throw new Error('Python language server is unavailable.');
     const json = JSON.stringify(message);
     this.child.stdin.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`);
@@ -153,23 +233,31 @@ class Server {
   private send(method: string, params: unknown) {
     this.write({ jsonrpc: '2.0', method, params });
   }
-  private requestRaw(method: string, params: unknown): Promise<any> {
+  private requestRaw(method: string, params: unknown, signal?: AbortSignal): Promise<any> {
+    signal?.throwIfAborted();
     if (this.pending.size >= 32) return Promise.reject(new Error('Python request queue is full.'));
     const id = ++this.serial;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const dispose = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', aborted);
         this.pending.delete(id);
+      };
+      const cancel = (error: Error) => {
+        dispose();
         try {
           this.send('$/cancelRequest', { id });
         } catch {}
-        reject(new Error('Python request timed out.'));
-      }, 15000);
-      this.pending.set(id, { resolve, reject, timer });
+        reject(error);
+      };
+      const aborted = () => cancel(signal!.reason);
+      const timer = setTimeout(() => cancel(new Error('Python request timed out.')), 15000);
+      this.pending.set(id, { resolve, reject, dispose });
+      signal?.addEventListener('abort', aborted, { once: true });
       try {
         this.write({ jsonrpc: '2.0', id, method, params });
       } catch (e: any) {
-        clearTimeout(timer);
-        this.pending.delete(id);
+        dispose();
         reject(e);
       }
     });
@@ -211,19 +299,23 @@ class Server {
             type: 'diagnostics',
             sessionId: this.session.id,
             generation: this.generation,
+            server: this.kind,
             uri: message.params.uri,
             diagnostics: message.params.diagnostics,
           });
       } else if (message.method && message.id !== undefined) {
         const settings = this.settings();
+        const configuration = this.configuration();
         const result =
           message.method === 'workspace/configuration' && Array.isArray(message.params?.items)
             ? message.params.items.map((item: any) =>
-                item.section === 'python.analysis'
-                  ? settings.analysis
-                  : item.section === 'python'
-                    ? settings
-                    : { python: settings },
+                item.section === 'ty'
+                  ? (configuration.ty ?? null)
+                  : item.section === 'python.analysis'
+                    ? settings.analysis
+                    : item.section === 'python'
+                      ? settings
+                      : configuration,
               )
             : message.method === 'workspace/workspaceFolders'
               ? [
@@ -237,8 +329,7 @@ class Server {
       } else if (message.id !== undefined) {
         const task = this.pending.get(message.id);
         if (!task) continue;
-        clearTimeout(task.timer);
-        this.pending.delete(message.id);
+        task.dispose();
         if (message.error) task.reject(new Error(message.error.message));
         else task.resolve(message.result);
       }
@@ -247,11 +338,14 @@ class Server {
   private openRaw(path: string, text: string, version: number) {
     const uri = pathToFileURL(join(this.session.path, path)).href,
       previous = this.documents.get(uri);
-    if (previous === undefined)
+    if (previous === undefined) {
       this.send('textDocument/didOpen', {
         textDocument: { uri, languageId: 'python', version, text },
       });
-    else if (version > previous)
+      // ty needs a workspace invalidation to update imports of a newly opened overlay.
+      if (this.kind === 'ty')
+        this.send('workspace/didChangeWatchedFiles', { changes: [{ uri, type: 2 }] });
+    } else if (version > previous)
       this.send('textDocument/didChange', {
         textDocument: { uri, version },
         contentChanges: [{ text }],
@@ -268,9 +362,15 @@ class Server {
     this.send('textDocument/didClose', { textDocument: { uri } });
     this.documents.delete(uri);
   }
-  async request(method: string, params: unknown) {
+  async request(method: string, params: unknown, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     await this.ready;
-    return this.requestRaw(method, params);
+    const result = await this.requestRaw(method, params, signal);
+    this.assertCurrent();
+    return result;
+  }
+  assertCurrent() {
+    if (this.closed) throw new Error('Python environment changed. Try again.');
   }
   async changed(path: string, event: 'rename' | 'change') {
     await this.ready;
@@ -288,19 +388,21 @@ class Server {
   }
   private fail(error: Error) {
     for (const task of this.pending.values()) {
-      clearTimeout(task.timer);
+      task.dispose();
       task.reject(error);
     }
     this.pending.clear();
     if (!this.closed) {
-      this.notify({ type: 'lsp.status', sessionId: this.session.id, status: error.message });
       this.closed = true;
-      this.child.kill();
+      this.status('error', error.message);
+      this.child?.kill();
     }
   }
   close() {
+    this.released = true;
     this.closed = true;
     this.fail(new Error('Python server session released.'));
-    this.child.kill();
+    this.child?.kill();
+    this.status('stopped', 'Python intelligence paused');
   }
 }

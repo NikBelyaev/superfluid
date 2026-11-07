@@ -1,8 +1,9 @@
+import { callPython } from '~/rpc/python';
 import type { PythonLocation } from '@superfluid/contracts';
-import { desktop } from '~/rpc/desktop';
 import { documents, monaco } from '~/state/editor/Documents';
 import { useApp } from '~/state/workspaceStore';
 import { openDefinition } from './definitionPreview';
+import { onPythonReset, pythonGeneration } from '~/state/python';
 
 type Definition =
   | { uri: string; range: { start: PythonLocation['position'] } }
@@ -28,8 +29,11 @@ export function installDefinitionLinks(
   let hoverKey = '';
   let pressed = '';
   let serial = 0;
+  let controller: AbortController | undefined;
   let pending: Promise<PythonLocation | undefined> = Promise.resolve(undefined);
   const clear = () => {
+    controller?.abort();
+    controller = undefined;
     hoverKey = '';
     if (!key) return;
     key = '';
@@ -40,6 +44,7 @@ export function installDefinitionLinks(
     point = null;
     mouseRange = null;
     pressed = '';
+    pending = Promise.resolve(undefined);
     clear();
   };
   const refresh = () => {
@@ -72,6 +77,7 @@ export function installDefinitionLinks(
     const request = ++serial;
     const version = doc.version;
     const position = { line: point.lineNumber - 1, character: point.column - 1 };
+    const signal = (controller = new AbortController()).signal;
     const range = new monaco.Range(
       point.lineNumber,
       word.startColumn,
@@ -80,11 +86,15 @@ export function installDefinitionLinks(
     );
     pending = (async () => {
       await documents.sync(doc);
-      const result: Definition[] | Definition | null = await desktop.call('lsp.request', {
-        sessionId: doc.session.id,
-        method: 'textDocument/definition',
-        params: { textDocument: { uri: documents.diskUri(doc) }, position },
-      });
+      const result: Definition[] | Definition | null = await callPython(
+        'lsp.request',
+        {
+          sessionId: doc.session.id,
+          method: 'textDocument/definition',
+          params: { textDocument: { uri: documents.diskUri(doc) }, position },
+        },
+        signal,
+      );
       const first = Array.isArray(result) ? result[0] : result;
       if (!first) return;
       const target =
@@ -156,22 +166,32 @@ export function installDefinitionLinks(
     const doc = model && documents.find(model);
     if (!doc) return;
     const version = doc.version;
+    const generation = pythonGeneration(doc.session.id);
     const position = { line: point.lineNumber - 1, character: point.column - 1 };
     event.preventDefault();
     event.stopImmediatePropagation();
     pressed = '';
     void pending
       .then(
-        (target) => target && openDefinition(doc.model.uri.toString(), version, position, target),
+        (target) =>
+          target && openDefinition(doc.model.uri.toString(), version, position, target, generation),
       )
       .catch(useApp.getState().fail);
   };
   root.addEventListener('click', click, true);
+  const unsubscribe = onPythonReset((sessionId) => {
+    const model = editor.getModel();
+    const doc = model && documents.find(model);
+    if (doc?.session.id !== sessionId) return;
+    reset();
+    editor.getContribution<ContentHover>('editor.contrib.contentHover')?.hideContentHover();
+  });
   window.addEventListener('keydown', keys);
   window.addEventListener('keyup', keys);
   window.addEventListener('blur', blur);
   return () => {
     reset();
+    unsubscribe();
     for (const subscription of subscriptions) subscription.dispose();
     root.removeEventListener('click', click, true);
     window.removeEventListener('keydown', keys);

@@ -1,7 +1,9 @@
 import { build } from 'esbuild';
 import { build as viteBuild } from 'vite';
 import { mkdir, cp, rm } from 'node:fs/promises';
+import { copyTy } from './ty.mjs';
 await mkdir('dist', { recursive: true });
+await copyTy();
 await Promise.all([
   build({
     entryPoints: { main: 'apps/desktop/src/main.ts', preload: 'apps/desktop/src/preload.ts' },

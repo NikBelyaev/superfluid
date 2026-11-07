@@ -77,6 +77,7 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     'terminal.command': (input) => terminals.call('command', input),
     'lsp.open': (input) => python.open(session(input.sessionId), input),
     'lsp.close': (input) => python.closeDocument(session(input.sessionId), input.path),
+    'lsp.cancel': (input) => python.cancel(session(input.sessionId), input.requestId),
     'lsp.request': (input) => python.request(session(input.sessionId), input),
     'python.format': (input) => python.format(session(input.sessionId), input.text),
     'python.hover': (input) => python.hover(session(input.sessionId), input),

@@ -3,26 +3,39 @@ import { documents, monaco, type Doc } from '~/state/editor/Documents';
 import { useApp } from '~/state/workspaceStore';
 import { navigate } from './navigation';
 import './definition.css';
+import { pythonGeneration } from '~/state/python';
 
 const command = 'superfluid.previewDefinition';
 
-type LinkArgs = [string, number, PythonLocation['position'], PythonLocation];
+type LinkArgs = [string, number, PythonLocation['position'], PythonLocation, number];
 
 export function definitionLink(
   doc: Doc,
   position: PythonLocation['position'],
   target: PythonSymbol,
 ) {
-  const args: LinkArgs = [doc.model.uri.toString(), doc.version, position, target];
+  const args: LinkArgs = [
+    doc.model.uri.toString(),
+    doc.version,
+    position,
+    target,
+    pythonGeneration(doc.session.id),
+  ];
   return `command:${command}?${encodeURIComponent(JSON.stringify(args))}`;
 }
 
 export const definitionTrust = { enabledCommands: [command] };
 
-export async function openDefinition(...[uri, version, position, target]: LinkArgs) {
+export async function openDefinition(...[uri, version, position, target, generation]: LinkArgs) {
   const model = monaco.editor.getModel(monaco.Uri.parse(uri));
   const doc = model && documents.find(model);
-  if (!doc || doc.version !== version || useApp.getState().sessionId !== doc.session.id) return;
+  if (
+    !doc ||
+    doc.version !== version ||
+    generation !== pythonGeneration(doc.session.id) ||
+    useApp.getState().sessionId !== doc.session.id
+  )
+    return;
   await navigate(
     doc.session,
     monaco.Uri.parse(target.uri),

@@ -18,8 +18,6 @@ export function useWorkspaceEvents() {
           operations: [...a.operations.filter((o) => o.id !== e.operation.id), e.operation],
         }));
       else if (e.type === 'error') useApp.getState().fail(new Error(e.message));
-      else if (e.type === 'lsp.status')
-        useApp.setState((a) => ({ language: { ...a.language, [e.sessionId]: e.status } }));
       else if (e.type === 'files.changed' && e.sessionId === useApp.getState().sessionId)
         void useApp.getState().refreshGit(e.sessionId);
     });

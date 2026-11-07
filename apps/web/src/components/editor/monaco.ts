@@ -31,7 +31,10 @@ import 'monaco-editor/editor/contrib/folding/browser/folding';
 
 import 'monaco-editor/editor/contrib/multicursor/browser/multicursor';
 
-import 'monaco-editor/languages/definitions/python/register';
+import {
+  conf as pythonConfiguration,
+  language as pythonTokens,
+} from 'monaco-editor/languages/definitions/python/python';
 
 import 'monaco-editor/languages/definitions/yaml/register';
 
@@ -43,4 +46,12 @@ import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 (self as typeof self & { MonacoEnvironment: unknown }).MonacoEnvironment = {
   getWorker: () => new EditorWorker(),
 };
+monaco.languages.register({
+  id: 'python',
+  extensions: ['.py', '.pyi', '.rpy', '.pyw', '.cpy', '.gyp', '.gypi'],
+  aliases: ['Python', 'py'],
+  firstLine: '^#!/.*\\bpython[0-9.-]*\\b',
+});
+monaco.languages.setLanguageConfiguration('python', pythonConfiguration);
+monaco.languages.setMonarchTokensProvider('python', pythonTokens);
 export { monaco };

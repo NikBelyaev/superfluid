@@ -3,13 +3,16 @@ import { id, path, text } from './schema';
 
 const position = z.object({ line: z.number().int().min(0), character: z.number().int().min(0) });
 const source = { sessionId: id, path, position };
+const requestId = id.optional();
 const location = z.object({ uri: z.string().max(8192), position });
 
 export const pythonRequests = {
   'lsp.open': z.object({ sessionId: id, path, text, version: z.number().int().min(0) }),
   'lsp.close': z.object({ sessionId: id, path }),
+  'lsp.cancel': z.object({ sessionId: id, requestId: id }),
   'lsp.request': z.object({
     sessionId: id,
+    requestId,
     method: z.enum([
       'textDocument/completion',
       'textDocument/hover',
@@ -24,8 +27,8 @@ export const pythonRequests = {
     params: z.record(z.string(), z.unknown()),
   }),
   'python.format': z.object({ sessionId: id, text }),
-  'python.hover': z.object(source),
-  'python.source': z.object({ ...source, target: location }),
+  'python.hover': z.object({ ...source, requestId }),
+  'python.source': z.object({ ...source, requestId, target: location }),
 } as const;
 
 export type PythonLocation = z.infer<typeof location>;
@@ -49,11 +52,26 @@ export interface PythonSource {
   workspacePath?: string;
 }
 
+export interface PythonResult<T> {
+  generation: number;
+  value: T;
+}
+
+export interface PythonStatus {
+  type: 'lsp.status';
+  sessionId: string;
+  generation: number;
+  server?: 'ty' | 'pyright';
+  phase: 'starting' | 'ready' | 'stopped' | 'error';
+  status: string;
+}
+
 export interface PythonResults {
-  'lsp.open': null;
+  'lsp.open': PythonResult<null>;
   'lsp.close': null;
-  'lsp.request': any;
+  'lsp.cancel': null;
+  'lsp.request': PythonResult<any>;
   'python.format': string;
-  'python.hover': PythonHover | null;
-  'python.source': PythonSource;
+  'python.hover': PythonResult<PythonHover | null>;
+  'python.source': PythonResult<PythonSource>;
 }

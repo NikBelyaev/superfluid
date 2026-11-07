@@ -3,7 +3,9 @@ import { createServer } from 'vite';
 import { build } from 'esbuild';
 import { cp, mkdir, rm } from 'node:fs/promises';
 import electron from 'electron';
+import { copyTy } from './ty.mjs';
 await mkdir('dist', { recursive: true });
+await copyTy();
 await build({
   entryPoints: { main: 'apps/desktop/src/main.ts', preload: 'apps/desktop/src/preload.ts' },
   outdir: 'dist',

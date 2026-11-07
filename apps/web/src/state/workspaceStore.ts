@@ -1,3 +1,4 @@
+import { callPython } from '~/rpc/python';
 import { desktop } from '~/rpc/desktop';
 import { create } from 'zustand';
 import type {
@@ -301,7 +302,7 @@ export async function resolveLocationSymbol(sessionId: string, location: Locatio
     if (!doc || doc.readOnly || doc.model.getLanguageId() !== 'python') return;
     const version = doc.version;
     await documents.sync(doc);
-    const symbols: DocumentSymbol[] | null = await desktop.call('lsp.request', {
+    const symbols: DocumentSymbol[] | null = await callPython('lsp.request', {
       sessionId,
       method: 'textDocument/documentSymbol',
       params: { textDocument: { uri: documents.diskUri(doc) } },

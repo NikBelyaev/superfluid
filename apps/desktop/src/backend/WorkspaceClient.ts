@@ -1,4 +1,5 @@
 import { utilityProcess } from 'electron';
+import { dirname, join } from 'node:path';
 import type { AppEvent, Input, Method, Results } from '@superfluid/contracts';
 
 type BackendMessage = {
@@ -32,6 +33,10 @@ export class WorkspaceClient {
         ...process.env,
         PATH: `${process.env.PATH || '/usr/bin:/bin'}:/opt/homebrew/bin:/usr/local/bin`,
         SF_NODE_EXEC_PATH: process.execPath,
+        SF_TY_PATH: join(
+          dirname(entrypoint),
+          `ty${process.platform === 'win32' ? '.exe' : ''}`,
+        ).replace('app.asar/', 'app.asar.unpacked/'),
       },
       serviceName: 'Superfluid workspace',
     });
