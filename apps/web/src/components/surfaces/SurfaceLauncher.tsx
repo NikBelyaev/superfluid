@@ -30,8 +30,8 @@ export function SurfaceLauncher({ session }: { session: Session }) {
         },
         {
           icon: GitPullRequest,
-          label: 'Pull request',
-          run: () => showSurface({ kind: 'pr' }),
+          label: 'Pull / merge requests',
+          run: () => showSurface({ kind: 'pr' }, session.id),
         },
       ].map(({ icon: Icon, label, run }) => (
         <button

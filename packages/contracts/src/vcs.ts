@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { id, path } from './schema';
 import type { Session } from './project';
+import { projectPath } from './hosting';
 
 export interface GitFile {
   path: string;
@@ -29,6 +30,7 @@ export interface GitStatus {
   changes: { insertions: number; deletions: number };
   outgoing?: { insertions: number; deletions: number };
   hasRemote?: boolean;
+  remote?: string;
   push?: { ahead: number; behind: number };
   prChanges?: boolean;
   stash?: string;
@@ -42,6 +44,7 @@ export interface Operation {
   error?: string;
   commit?: string;
   url?: string;
+  pullRequest?: import('./pullRequest').PullRequestRef;
   evidence: Record<string, unknown>;
 }
 
@@ -84,7 +87,9 @@ export const vcsRequests = {
     message: z.string().max(8192).default(''),
     paths: z.array(path).max(1000).default([]),
     allChanges: z.boolean().default(false),
-    base: z.string().max(200).default('main'),
+    base: z.string().max(200).default(''),
+    hostingRevision: z.string().optional(),
+    targetProject: projectPath.optional(),
     title: z.string().max(200).default(''),
     body: z.string().max(65536).default(''),
     draft: z.boolean().default(true),

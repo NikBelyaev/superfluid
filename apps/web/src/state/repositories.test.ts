@@ -52,7 +52,7 @@ test('Git actions follow dirty, unpushed and published states and block unresolv
   );
   assert.match(
     gitActionProblem('publish', group, { core: { ...dirty, hasRemote: false } }),
-    /origin/,
+    /remote/,
   );
 });
 

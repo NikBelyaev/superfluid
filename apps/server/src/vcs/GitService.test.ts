@@ -6,6 +6,8 @@ import { within } from '../files/paths';
 import { Store } from '../persistence/Store';
 import { GitService, parseStatus } from './GitService';
 import { git } from './gitCommand';
+import { HostingService } from '../hosting/HostingService';
+import { githubRequest } from '../../../../tests/hostingFixtures';
 import { temp, session, repository } from '../../../../tests/fixtures';
 
 test('porcelain parsing preserves whitespace and rename paths', () => {
@@ -91,7 +93,7 @@ test('publication uses a verified commit and explicit destination ref', async ()
   const root = await repository(),
     remote = await temp();
   await git(remote, ['init', '--bare']);
-  await git(root, ['remote', 'add', 'origin', remote]);
+  await git(root, ['remote', 'add', 'work', remote]);
   const store = new Store(await temp()),
     events: any[] = [],
     service = new GitService(store, (o) => events.push(structuredClone(o)));
@@ -140,7 +142,7 @@ test('publication uses a verified commit and explicit destination ref', async ()
     const push = await service.act(s, { sessionId: s.id, operationId: 'push-1', action: 'push' });
     assert.equal(push.phase, 'completed');
     assert.equal((await git(remote, ['rev-parse', 'refs/heads/main'])).trim(), op.commit);
-    assert.equal((await service.status(s)).upstream, 'origin/main');
+    assert.equal((await service.status(s)).upstream, 'work/main');
     assert.deepEqual((await service.status(s)).push, { ahead: 0, behind: 0 });
     assert.deepEqual((await service.status(s)).outgoing, { insertions: 0, deletions: 0 });
     assert.ok(events.some((e) => e.phase === 'committing'));
@@ -248,28 +250,64 @@ test('diffs include untracked files and files whose parent directory was deleted
   }
 });
 
-test('publish pipeline creates one PR and retries the same operation without side effects', async () => {
-  const root = await repository(),
-    remote = await temp(),
-    bin = await temp(),
-    store = new Store(await temp()),
-    oldPath = process.env.PATH;
-  await git(remote, ['init', '--bare']);
-  await git(root, ['remote', 'add', 'origin', remote]);
-  const calls = join(bin, 'calls.json');
-  await writeFile(
-    join(bin, 'gh'),
-    '#!' +
-      process.execPath +
-      '\n' +
-      `const fs=require('node:fs');const cp=require('node:child_process');const args=process.argv.slice(2);const file=${JSON.stringify(calls)};const calls=fs.existsSync(file)?JSON.parse(fs.readFileSync(file)):[];calls.push(args);fs.writeFileSync(file,JSON.stringify(calls));if(args[1]==='list')console.log('[]');else if(args[1]==='create')console.log('https://github.com/superfluid-test/fixture/pull/1');else console.log(JSON.stringify({headRefOid:cp.execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()}));`,
-    { mode: 0o755 },
-  );
-  process.env.PATH = bin + ':' + oldPath;
-  try {
-    await writeFile(join(root, 'main.py'), 'print("published")\n');
-    const service = new GitService(store, () => {}),
-      input = {
+test('publish pipeline creates one request per operation for GitHub and GitLab', async () => {
+  for (const provider of ['github', 'gitlab'] as const) {
+    const root = await repository(),
+      remote = await temp(),
+      store = new Store(await temp());
+    await git(remote, ['init', '--bare']);
+    await git(root, ['remote', 'add', 'origin', remote]);
+    store.put('projects', {
+      id: 'project',
+      name: 'Fixture',
+      path: root,
+      lastOpened: 0,
+      hosting: {
+        provider,
+        host: provider === 'github' ? 'github.com' : 'gitlab.example.test',
+        remote: 'origin',
+        sourceProject: 'superfluid-tests/fluid-lab',
+        targetProject: 'superfluid-tests/fluid-lab',
+      },
+    });
+    let creates = 0;
+    const titles: string[] = [];
+    const hosting = new HostingService(store, async (_file, args) => {
+      if (args[0] === 'repo')
+        return provider === 'github'
+          ? '{"defaultBranchRef":{"name":"main"}}'
+          : '{"default_branch":"main","id":11}';
+      if (args[1] === 'list') return '[]';
+      if (args[1] === 'create') {
+        creates++;
+        titles.push(args[args.indexOf('--title') + 1]);
+        return provider === 'github'
+          ? githubRequest.url
+          : 'https://gitlab.example.test/superfluid-tests/fluid-lab/-/merge_requests/42';
+      }
+      const sha = (await git(root, ['rev-parse', 'HEAD'])).trim();
+      return JSON.stringify(
+        provider === 'github'
+          ? { ...githubRequest, headRefOid: sha }
+          : {
+              iid: 42,
+              title: 'Fixture',
+              description: '',
+              state: 'opened',
+              web_url: 'https://gitlab.example.test/superfluid-tests/fluid-lab/-/merge_requests/42',
+              author: null,
+              source_branch: 'main',
+              target_branch: 'main',
+              sha,
+              updated_at: '2026-11-07',
+              source_project_id: 11,
+            },
+      );
+    });
+    try {
+      await writeFile(join(root, 'main.py'), 'print("published")\n');
+      const service = new GitService(store, () => {}, hosting);
+      const input = {
         sessionId: 'test',
         operationId: 'publish',
         action: 'publish' as const,
@@ -277,48 +315,41 @@ test('publish pipeline creates one PR and retries the same operation without sid
         paths: ['main.py'],
         body: 'A multiline\nbody',
       };
-    const op = await service.act(session(root), input);
-    assert.equal(op.phase, 'completed', op.error ?? '');
-    assert.match(op.url!, /\/pull\/1$/);
-    await service.act(session(root), input);
-    assert.equal(
-      JSON.parse(await readFile(calls, 'utf8')).filter((a: string[]) => a[1] === 'create').length,
-      1,
-    );
-    const separate = await service.act(session(root), {
-      sessionId: 'test',
-      operationId: 'separate-pr',
-      action: 'pr',
-    });
-    assert.equal(separate.phase, 'completed', separate.error ?? '');
-    const creates = (JSON.parse(await readFile(calls, 'utf8')) as string[][]).filter(
-      (a) => a[1] === 'create',
-    );
-    assert.equal(creates[0][creates[0].indexOf('--title') + 1], 'Publish title');
-    assert.equal(creates[1][creates[1].indexOf('--title') + 1], 'Publish title');
-    for (const message of ['', 'Already committed']) {
-      const clean = await service.act(session(root), {
+      const op = await service.act(session(root), input);
+      assert.equal(op.phase, 'completed', op.error ?? '');
+      assert.equal(op.pullRequest?.provider, provider);
+      assert.equal((await git(remote, ['rev-parse', 'refs/heads/main'])).trim(), op.commit);
+      await service.act(session(root), input);
+      assert.equal(creates, 1);
+      const separate = await service.act(session(root), {
         sessionId: 'test',
-        operationId: `push-pr-${message || 'no-message'}`,
-        action: 'publish',
-        allChanges: true,
-        message,
+        operationId: 'separate-pr',
+        action: 'pr',
       });
-      assert.equal(clean.phase, 'completed', clean.error ?? '');
-      assert.equal(clean.commit, op.commit);
-      assert.equal((await git(root, ['rev-parse', 'HEAD'])).trim(), op.commit);
+      assert.equal(separate.phase, 'completed', separate.error ?? '');
+      assert.deepEqual(titles, ['Publish title', 'Publish title']);
+      for (const message of ['', 'Already committed']) {
+        const clean = await service.act(session(root), {
+          sessionId: 'test',
+          operationId: `clean-${message}`,
+          action: 'publish',
+          allChanges: true,
+          message,
+        });
+        assert.equal(clean.phase, 'completed', clean.error ?? '');
+        assert.equal(clean.commit, op.commit);
+      }
+      const changed = await service.act(session(root), {
+        sessionId: 'test',
+        operationId: 'changed-compare',
+        action: 'pr',
+        branch: 'another-branch',
+      });
+      assert.equal(changed.phase, 'failed');
+      assert.match(changed.error || '', /branch changed/);
+    } finally {
+      store.close();
     }
-    const changed = await service.act(session(root), {
-      sessionId: 'test',
-      operationId: 'changed-compare',
-      action: 'pr',
-      branch: 'another-branch',
-    });
-    assert.equal(changed.phase, 'failed');
-    assert.match(changed.error!, /branch changed/);
-  } finally {
-    process.env.PATH = oldPath;
-    store.close();
   }
 });
 
@@ -336,7 +367,21 @@ test('a post-commit ref change stops publication without resetting the branch', 
   await writeFile(join(root, 'main.py'), 'changed\n');
   const store = new Store(await temp());
   try {
-    const op = await new GitService(store, () => {}).act(session(root), {
+    store.put('projects', {
+      id: 'project',
+      name: 'Fixture',
+      path: root,
+      lastOpened: 0,
+      hosting: {
+        provider: 'github',
+        host: 'github.com',
+        remote: 'origin',
+        sourceProject: 'superfluid-tests/fluid-lab',
+        targetProject: 'superfluid-tests/fluid-lab',
+      },
+    });
+    const hosting = new HostingService(store, async () => '{"defaultBranchRef":{"name":"main"}}');
+    const op = await new GitService(store, () => {}, hosting).act(session(root), {
       sessionId: 'test',
       operationId: 'race',
       action: 'publish',
@@ -430,6 +475,78 @@ test('an uncertain Git result blocks a fresh operation ID until explicitly revie
     );
     assert.equal(service.acknowledge(s, 'unknown').phase, 'reviewed');
     assert.equal(store.get<any>('operations', 'unknown').evidence.previousPhase, 'uncertain');
+  } finally {
+    store.close();
+  }
+});
+
+test('hosting preflight stops before commit and uncertain creation preserves its link', async () => {
+  const root = await repository(),
+    remote = await temp(),
+    store = new Store(await temp());
+  await git(remote, ['init', '--bare']);
+  await git(root, ['remote', 'add', 'origin', remote]);
+  store.put('projects', {
+    id: 'project',
+    name: 'Fixture',
+    path: root,
+    lastOpened: 0,
+    hosting: {
+      provider: 'gitlab',
+      host: 'gitlab.example.test',
+      remote: 'origin',
+      sourceProject: 'platform/editor',
+      targetProject: 'platform/editor',
+    },
+  });
+  let authenticated = false;
+  const hosting = new HostingService(store, async (_file, args) => {
+    if (!authenticated) throw new Error('Sign in to GitLab.');
+    if (args[0] === 'repo') return '{"default_branch":"main","id":11}';
+    if (args[1] === 'list') return '[]';
+    if (args[1] === 'create')
+      return 'https://gitlab.example.test/platform/editor/-/merge_requests/42';
+    throw new Error('Connection lost after creation.');
+  });
+  try {
+    const service = new GitService(store, () => {}, hosting);
+    const initial = (await git(root, ['rev-parse', 'HEAD'])).trim();
+    await writeFile(join(root, 'main.py'), 'changed\n');
+    const failed = await service.act(session(root), {
+      sessionId: 'test',
+      operationId: 'preflight',
+      action: 'publish',
+      base: 'main',
+      message: 'Change',
+      paths: ['main.py'],
+    });
+    assert.equal(failed.phase, 'failed');
+    assert.equal((await git(root, ['rev-parse', 'HEAD'])).trim(), initial);
+    assert.equal((await git(root, ['diff', '--cached', '--name-only'])).trim(), '');
+    authenticated = true;
+    const context = await hosting.context(session(root));
+    const changedTarget = await service.act(session(root), {
+      sessionId: 'test',
+      operationId: 'changed-target',
+      action: 'publish',
+      message: 'Change',
+      paths: ['main.py'],
+      targetProject: 'other/editor',
+      hostingRevision: context.revision,
+    });
+    assert.equal(changedTarget.phase, 'failed');
+    assert.match(changedTarget.error ?? '', /hosting target changed/);
+    assert.equal((await git(root, ['rev-parse', 'HEAD'])).trim(), initial);
+    const uncertain = await service.act(session(root), {
+      sessionId: 'test',
+      operationId: 'created',
+      action: 'publish',
+      message: 'Change',
+      paths: ['main.py'],
+    });
+    assert.equal(uncertain.phase, 'uncertain');
+    assert.equal(uncertain.pullRequest?.number, 42);
+    assert.equal(uncertain.url, 'https://gitlab.example.test/platform/editor/-/merge_requests/42');
   } finally {
     store.close();
   }

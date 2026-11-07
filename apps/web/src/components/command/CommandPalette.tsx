@@ -38,7 +38,19 @@ export default function CommandPalette() {
     { name: 'New worktree', run: () => useApp.setState({ modal: { kind: 'worktree' } }) },
     { name: 'New terminal', run: () => session && void runAction(session) },
     { name: 'Show changes', run: () => showSurface({ kind: 'diff' }) },
-    { name: 'Open pull request', run: () => showSurface({ kind: 'pr' }) },
+    {
+      name: 'Open pull / merge requests',
+      run: () => session && showSurface({ kind: 'pr' }, session.id),
+    },
+    {
+      name: 'Create pull / merge request',
+      run: () =>
+        session && useApp.setState({ modal: { kind: 'git', action: 'pr', sessionId: session.id } }),
+    },
+    {
+      name: 'Settings: Source Control',
+      run: () => useApp.setState({ modal: { kind: 'settings', section: 'hosting' } }),
+    },
     { name: 'Open a surface', run: () => useApp.setState({ modal: { kind: 'launcher' } }) },
     { name: 'Add project action', run: () => useApp.setState({ modal: { kind: 'action' } }) },
     {

@@ -1,0 +1,94 @@
+.copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  flex: none;
+  border-radius: 5px;
+  color: var(--muted-foreground);
+}
+.copy-button:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.copy-button-glyph {
+  position: relative;
+  width: 17px;
+  height: 17px;
+}
+.copy-button-glyph span {
+  position: absolute;
+  border: 1.4px solid currentColor;
+  border-radius: 2px;
+  transition:
+    width 0.28s,
+    height 0.28s,
+    left 0.28s,
+    top 0.28s,
+    transform 0.32s cubic-bezier(0.22, 0.8, 0.28, 1),
+    opacity 0.22s,
+    border-color 0.22s,
+    border-radius 0.28s;
+}
+.copy-button-back {
+  width: 10px;
+  height: 11px;
+  left: 2px;
+  top: 1px;
+}
+.copy-button-front {
+  width: 10px;
+  height: 11px;
+  left: 6px;
+  top: 5px;
+  background: var(--card);
+}
+.copy-button[data-feedback='copied'] {
+  color: var(--success-foreground);
+}
+.copy-button[data-feedback='copied'] .copy-button-back {
+  opacity: 0;
+  transform: translate(3px, 3px) scale(0.35) rotate(45deg);
+}
+.copy-button[data-feedback='copied'] .copy-button-front {
+  width: 6px;
+  height: 11px;
+  left: 6px;
+  top: 1px;
+  border-top-color: transparent;
+  border-left-color: transparent;
+  border-radius: 0;
+  transform: rotate(45deg);
+  background: transparent;
+}
+.copy-button[data-feedback='failed'] {
+  color: var(--error-foreground);
+}
+.copy-button[data-feedback='failed'] .copy-button-glyph span {
+  width: 14px;
+  height: 0;
+  left: 2px;
+  top: 8px;
+  border-width: 0 0 1.4px;
+  border-radius: 0;
+  background: transparent;
+}
+.copy-button[data-feedback='failed'] .copy-button-back {
+  transform: rotate(45deg);
+}
+.copy-button[data-feedback='failed'] .copy-button-front {
+  transform: rotate(-45deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .copy-button-glyph span {
+    transition: none;
+  }
+}
+@media (pointer: coarse) {
+  .copy-button {
+    width: 44px;
+    height: 44px;
+  }
+}

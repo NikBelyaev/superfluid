@@ -8,6 +8,7 @@ import {
   selectedRepositories,
   gitActionProblem,
   repositoriesForAction,
+  repositoryBranch,
 } from '~/state/repositories';
 import { runGitBatch, type GitAction } from '~/commands/gitBatch';
 import { RepositoryBranchPicker } from './RepositoryBranchPicker';
@@ -54,7 +55,7 @@ export function GitActionForm({
       )
     : [];
   const baseFor = (id: string) =>
-    (base || statuses?.[id]?.baseBranch || '').replace(/^origin\//, '');
+    repositoryBranch(statuses?.[id], base || statuses?.[id]?.baseBranch || '');
   const bases = [...new Set(prGroup.map((r) => baseFor(r.id)))];
   const compare = [...new Set(prGroup.map((r) => statuses?.[r.id]?.branch || r.branch))];
   const branches = [...new Set(prGroup.flatMap((r) => statuses?.[r.id]?.branches || []))].sort();

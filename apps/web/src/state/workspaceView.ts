@@ -1,9 +1,10 @@
 import type { editor } from 'monaco-editor/editor/editor.api';
+import type { PullRequestRef } from '@superfluid/contracts';
 
 export type Surface =
   | { kind: 'terminal'; id: string }
   | { kind: 'diff'; path?: string; mode?: 'unstaged' | 'staged' | 'branch' }
-  | { kind: 'pr'; number?: number; repositoryId?: string }
+  | { kind: 'pr'; number?: number; ref?: PullRequestRef; repositoryId?: string }
   | { kind: 'browser'; url: string }
   | { kind: 'file'; path: string };
 
@@ -50,5 +51,5 @@ export const surfaceKey = (s: Surface) =>
       : s.kind === 'diff'
         ? `diff:${s.path ?? ''}`
         : s.kind === 'pr'
-          ? `pr:${s.repositoryId ?? ''}:${s.number ?? ''}`
+          ? `pr:${s.repositoryId ?? ''}:${s.ref ? JSON.stringify(s.ref) : (s.number ?? '')}`
           : `browser:${s.url}`;

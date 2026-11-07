@@ -52,9 +52,11 @@ export default function RightPanel({ session }: { session: Session }) {
       : s.kind === 'file'
         ? s.path.split('/').at(-1)
         : s.kind === 'pr'
-          ? s.number
-            ? '#' + s.number
-            : 'Pull request'
+          ? s.ref
+            ? `${s.ref.provider === 'gitlab' ? '!' : '#'}${s.ref.number}`
+            : s.number
+              ? '#' + s.number
+              : 'Requests'
           : s.kind === 'diff'
             ? 'Diff'
             : 'Preview';
@@ -150,9 +152,10 @@ export default function RightPanel({ session }: { session: Session }) {
             />
           ) : active?.kind === 'pr' ? (
             <PullRequestSurface
-              key={surfaceKey(active)}
+              key={session.id + surfaceKey(active)}
               session={session}
               number={active.number}
+              request={active.ref}
               repositoryId={active.repositoryId}
             />
           ) : active?.kind === 'browser' ? (

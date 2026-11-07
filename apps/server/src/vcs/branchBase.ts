@@ -4,7 +4,13 @@ export async function resolveBranch(path: string, ref: string) {
   const resolved = (
     await git(path, ['rev-parse', '--symbolic-full-name', safeRef(ref)], { accept: [128] })
   ).trim();
-  return resolved.match(/^refs\/(?:heads|remotes\/origin)\/(.+)$/)?.[1];
+  if (resolved.startsWith('refs/heads/')) return resolved.slice('refs/heads/'.length);
+  const remotes = (await git(path, ['remote']))
+    .trim()
+    .split('\n')
+    .sort((a, b) => b.length - a.length);
+  const remote = remotes.find((remote) => resolved.startsWith(`refs/remotes/${remote}/`));
+  return remote ? resolved.slice(`refs/remotes/${remote}/`.length) : undefined;
 }
 
 export async function readBranchBase(path: string, branch: string) {

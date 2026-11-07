@@ -17,6 +17,7 @@ export function Form({
     [error, setError] = useState('');
   return (
     <form
+      className="dialog-form"
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
