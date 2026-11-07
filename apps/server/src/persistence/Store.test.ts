@@ -1,7 +1,9 @@
-import test from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Store } from './Store';
+import { DatabaseSync } from 'node:sqlite';
+import { join } from 'node:path';
 import { temp } from '../../../../tests/fixtures';
+import { Store } from './Store';
 
 test('recovery drafts never regress to a late version', async () => {
   const store = new Store(await temp());
@@ -31,5 +33,24 @@ test('an older save cannot drop a newer recovery draft', async () => {
     assert.equal(store.drafts('a').length, 0);
   } finally {
     store.close();
+  }
+});
+
+test('a newer workspace format is refused without modifying the database', async () => {
+  const directory = await temp();
+  const file = join(directory, 'workspace.sqlite');
+  const db = new DatabaseSync(file);
+  db.exec('PRAGMA user_version=999; CREATE TABLE future(value TEXT);');
+  db.close();
+  assert.throws(() => new Store(directory), /newer version/);
+  const check = new DatabaseSync(file, { readOnly: true });
+  try {
+    assert.equal(check.prepare('PRAGMA user_version').get()!.user_version, 999);
+    assert.equal(
+      check.prepare("SELECT name FROM sqlite_master WHERE name='projects'").get(),
+      undefined,
+    );
+  } finally {
+    check.close();
   }
 });

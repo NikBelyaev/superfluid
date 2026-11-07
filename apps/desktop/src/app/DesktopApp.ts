@@ -1,5 +1,8 @@
 import { app, BrowserWindow, dialog, session } from 'electron';
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { autoUpdater } from 'electron-updater';
+import { DesktopUpdates } from '../updates/DesktopUpdates';
 import { WorkspaceClient } from '../backend/WorkspaceClient';
 import { BrowserView } from '../preview/BrowserView';
 import { createMainWindow } from '../window/MainWindow';
@@ -55,9 +58,31 @@ export function startDesktopApp(directory: string) {
       window = createMainWindow(join(directory, 'preload.cjs'), devUrl);
       const preview = new BrowserView(window);
       lifecycle = new DesktopLifecycle(window, backend, preview);
-      installDesktopIpc(window, backend, preview, devUrl);
-      installApplicationMenu(window, lifecycle);
+      const updates = new DesktopUpdates(
+        autoUpdater,
+        app.getVersion(),
+        app.getPath('userData'),
+        process.env.SF_TEST
+          ? 'Updates are disabled during tests.'
+          : !app.isPackaged
+            ? 'Updates are available in installed release builds.'
+            : process.platform !== 'darwin' ||
+                !existsSync(join(process.resourcesPath, 'app-update.yml'))
+              ? 'This build does not have an update feed. Install a release from GitHub.'
+              : '',
+        (state) => {
+          if (state.status === 'error') lifecycle?.cancelUpdate();
+          if (window && !window.isDestroyed())
+            window.webContents.send('desktop:update-state', state);
+        },
+        (install) => lifecycle!.quit(install),
+      );
+      await updates.initialize();
+      installDesktopIpc(window, backend, preview, devUrl, updates);
+      installApplicationMenu(window, lifecycle, updates);
       await window.loadURL(devUrl || 'superfluid://app/index.html');
+      updates.start();
+      app.once('will-quit', () => updates.stop());
     })
     .catch((error) => {
       dialog.showErrorBox('Superfluid could not start', String(error));

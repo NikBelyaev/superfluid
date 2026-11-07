@@ -1,4 +1,5 @@
 import { _electron as electron } from 'playwright';
+import { expect } from 'playwright/test';
 import { mkdtemp, mkdir, writeFile, readFile, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -572,6 +573,17 @@ try {
     await settingsMetrics.send('Emulation.clearDeviceMetricsOverride');
     await settingsMetrics.detach();
   }
+  await page.getByRole('button', { name: 'About', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'About Superfluid' })).toBeVisible();
+  await page.getByRole('button', { name: 'Appearance', exact: true }).click();
+  await app.evaluate(({ Menu }) => {
+    Menu.getApplicationMenu()!
+      .items[0].submenu!.items.find((item) => item.label === 'Check for Updates…')!
+      .click();
+  });
+  await expect(page.getByRole('heading', { name: 'About Superfluid' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Check for updates', exact: true })).toBeDisabled();
+  await page.screenshot({ path: 'test-results/about-updates.png' });
   await page.keyboard.press('Escape');
   await page.getByRole('dialog').waitFor({ state: 'detached' });
   await page.keyboard.press('Meta+Shift+P');

@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Action, Draft, Operation, Project, Session } from '@superfluid/contracts';
+import { WORKSPACE_DATA_VERSION } from '@superfluid/contracts';
 
 export class Store {
   readonly db: DatabaseSync;
@@ -9,6 +10,11 @@ export class Store {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     const file = join(directory, 'workspace.sqlite');
     this.db = new DatabaseSync(file);
+    const version = Number(this.db.prepare('PRAGMA user_version').get()!.user_version);
+    if (version > WORKSPACE_DATA_VERSION) {
+      this.db.close();
+      throw new Error('This workspace requires a newer version of Superfluid.');
+    }
     chmodSync(file, 0o600);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
       CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -17,7 +23,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS drafts(session TEXT NOT NULL, path TEXT NOT NULL, text TEXT NOT NULL,
         hash TEXT NOT NULL, version INTEGER NOT NULL, updated INTEGER NOT NULL, PRIMARY KEY(session,path));
-      PRAGMA user_version=1;`);
+      PRAGMA user_version=${WORKSPACE_DATA_VERSION};`);
   }
   all<T>(table: 'projects' | 'sessions' | 'actions' | 'operations'): T[] {
     return this.db

@@ -2,8 +2,11 @@ import { desktop } from '~/rpc/desktop';
 import { useState } from 'react';
 import { ChevronRight, FolderOpen, GitBranch, Plus, Search, Settings, Star } from 'lucide-react';
 import { useApp } from '~/state/workspaceStore';
+import { useUpdates } from '~/state/updates';
+import { UpdateButton } from '~/components/settings/UpdateButton';
 
 export function ProjectsPage() {
+  const version = useUpdates((s) => s.state?.version);
   const projects = useApp((a) => a.projects),
     [query, setQuery] = useState(''),
     [pins, setPins] = useState<string[]>(() => {
@@ -45,6 +48,7 @@ export function ProjectsPage() {
           Open a project
         </button>
         <div className="spacer" />
+        <UpdateButton />
         <button
           className="welcome-nav-item"
           onClick={() => useApp.setState({ modal: { kind: 'settings' } })}
@@ -53,7 +57,7 @@ export function ProjectsPage() {
           Settings
         </button>
         <div className="welcome-version">
-          Superfluid <span>0.1 alpha</span>
+          Superfluid <span>{version ?? '…'}</span>
         </div>
       </aside>
       <main className="welcome-main">

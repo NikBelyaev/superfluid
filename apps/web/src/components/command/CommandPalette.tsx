@@ -6,6 +6,7 @@ import type { SearchHit } from '@superfluid/contracts';
 import { useApp, currentSession, showSurface } from '~/state/workspaceStore';
 import { runAction } from '~/commands/runProjectAction';
 import { openRepositoryMenu } from '~/commands/gitBatch';
+import { checkForAppUpdates } from '~/commands/updateApp';
 
 export default function CommandPalette() {
   const mode = useApp((a) => a.palette),
@@ -17,6 +18,11 @@ export default function CommandPalette() {
   const generation = useRef(0),
     session = currentSession();
   const commands = [
+    { name: 'Check for app updates', run: checkForAppUpdates },
+    {
+      name: 'Settings: About',
+      run: () => useApp.setState({ modal: { kind: 'settings', section: 'about' } }),
+    },
     { name: 'Manage repositories', run: () => session && openRepositoryMenu(session.id) },
     {
       name: 'Create branch in selected repositories',

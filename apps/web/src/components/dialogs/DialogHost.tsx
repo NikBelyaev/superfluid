@@ -64,7 +64,12 @@ export default function DialogHost() {
             </div>
           )}
           {modal.kind === 'settings' ? (
-            <SettingsLayout initialSection={modal.section}>
+            <SettingsLayout
+              section={modal.section}
+              onSectionChange={(section) =>
+                useApp.setState({ modal: { kind: 'settings', section } })
+              }
+            >
               <Suspense fallback={<SettingsSkeleton />}>
                 <SettingsPage />
               </Suspense>

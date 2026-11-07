@@ -7,11 +7,13 @@ import { ProjectsPage } from '~/components/projects/ProjectsPage';
 import { useAppShortcuts } from '~/shortcuts/useAppShortcuts';
 import { useWorkspaceEvents } from '~/hooks/useWorkspaceEvents';
 import { useAppearanceSync } from '~/hooks/useAppearanceSync';
+import { useUpdateEvents } from '~/state/updates';
 
 const Workspace = lazy(() => import('~/components/workspace/Workspace'));
 
 export default function App() {
   useAppearanceSync();
+  useUpdateEvents();
   const project = useApp((a) => a.projectId),
     error = useApp((a) => a.error),
     busy = useApp((a) => a.busy);

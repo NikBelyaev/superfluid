@@ -1,6 +1,7 @@
 import { Files, GitCompareArrows, Search, Settings2, Settings } from 'lucide-react';
 import { useApp, showSurface } from '~/state/workspaceStore';
 import type { Session } from '@superfluid/contracts';
+import { UpdateButton } from '~/components/settings/UpdateButton';
 
 export function ActivityRail({ session }: { session: Session }) {
   const sidebar = useApp((a) => a.showSidebar),
@@ -39,6 +40,7 @@ export function ActivityRail({ session }: { session: Session }) {
         )}
       </button>
       <div className="spacer" />
+      <UpdateButton compact />
       <button
         className="rail-button"
         title="Python interpreter"
