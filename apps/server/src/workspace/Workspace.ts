@@ -48,7 +48,7 @@ export class Workspace {
     this.documents = new DocumentService(this.files, this.store, this.watcher);
     this.sourceControl = new SourceControlService(this.git, this.projects, this.store);
     this.actions = new ProjectActionService(this.store, this.terminals);
-    this.python = new PythonService(this.lsp, this.watcher);
+    this.python = new PythonService(this.lsp, this.watcher, this.files, this.documents);
     this.pullRequests = new PullRequestService(this.git);
     this.handlers = createWorkspaceHandlers(this);
   }

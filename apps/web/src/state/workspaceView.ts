@@ -1,4 +1,5 @@
 import type { editor } from 'monaco-editor/editor/editor.api';
+import type { Input } from '@superfluid/contracts';
 
 export type Surface =
   | { kind: 'terminal'; id: string }
@@ -26,6 +27,7 @@ export interface ViewState {
   history: Location[];
   historyIndex: number;
   editorViews: Record<string, editor.ICodeEditorViewState>;
+  definitionSources?: Record<string, Omit<Input<'python.source'>, 'sessionId'>>;
 }
 
 export const emptyView = (): ViewState => ({

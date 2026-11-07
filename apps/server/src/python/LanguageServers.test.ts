@@ -133,6 +133,8 @@ test('Pyright uses the selected environment for completion, hover and live diagn
       textDocument: { uri },
       position: { line: 1, character: 15 },
     });
+    assert.equal(hover.contents.kind, 'markdown');
+    assert.match(hover.contents.value, /```python\n[\s\S]*answer\(\) -> int[\s\S]*```/);
     assert.match(JSON.stringify(hover), /int/);
     const symbols = await server.request('textDocument/documentSymbol', { textDocument: { uri } });
     assert.ok(symbols.some((symbol: any) => symbol.name === 'value'));

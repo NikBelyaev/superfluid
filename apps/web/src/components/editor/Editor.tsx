@@ -1,13 +1,22 @@
 import { desktop } from '~/rpc/desktop';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AlertCircle, Braces, Save, Download, RefreshCw } from 'lucide-react';
-import { documents, monaco, subscribe, getRevision, type Doc } from '~/state/editor/Documents';
+import {
+  documents,
+  documentPath,
+  monaco,
+  subscribe,
+  getRevision,
+  type Doc,
+} from '~/state/editor/Documents';
 import { useApp } from '~/state/workspaceStore';
 import { editorTheme, useAppearance, useSystemDark } from '~/state/appearance';
 import type { Session } from '@superfluid/contracts';
 import './theme';
 import '~/components/python/languageProviders';
 import { navigate } from '~/components/python/navigation';
+import { installDefinitionHover } from '~/components/python/definitionPreview';
+import { installDefinitionLinks } from '~/components/python/definitionLinks';
 
 export default function Editor({
   session,
@@ -52,6 +61,8 @@ export default function Editor({
       bracketPairColorization: { enabled: true },
     });
     editor.current = instance;
+    const removeHoverNavigation = installDefinitionHover(host.current);
+    const removeDefinitionLinks = installDefinitionLinks(instance, host.current);
     const remember = () => {
       const d = bound.current;
       if (!d || d.model.isDisposed()) return;
@@ -96,7 +107,7 @@ export default function Editor({
       run: () => {
         const d = bound.current,
           p = instance.getPosition();
-        if (d && p)
+        if (d && p && !d.readOnly)
           useApp.setState({
             modal: {
               kind: 'rename-symbol',
@@ -111,7 +122,7 @@ export default function Editor({
       keybindings: [monaco.KeyMod.Alt | monaco.KeyMod.Shift | monaco.KeyCode.KeyF],
       run: async () => {
         const d = bound.current;
-        if (!d) return;
+        if (!d || d.readOnly) return;
         const version = d.version;
         try {
           const text = await desktop.call('python.format', {
@@ -169,6 +180,8 @@ export default function Editor({
       rename.dispose();
       format.dispose();
       opener.dispose();
+      removeHoverNavigation();
+      removeDefinitionLinks();
       focus.dispose();
       instance.dispose();
       editor.current = null;
@@ -196,6 +209,11 @@ export default function Editor({
         bound.current = d;
         setDoc(d);
         editor.current.setModel(d.model);
+        editor.current.updateOptions({
+          readOnly: !!d.readOnly,
+          domReadOnly: !!d.readOnly,
+          ariaLabel: d.readOnly ? 'Read-only editor content' : 'Editor content',
+        });
         const saved =
           useApp.getState().views[session.id]?.editorViews?.[(primary ? 'main:' : 'side:') + path];
         if (saved) editor.current.restoreViewState(saved);
@@ -223,16 +241,25 @@ export default function Editor({
     <div
       className="editor-pane"
       {...(primary
-        ? { role: 'tabpanel', id: 'primary-editor-panel', 'aria-label': path ?? 'Editor' }
+        ? {
+            role: 'tabpanel',
+            id: 'primary-editor-panel',
+            'aria-label': path ? documentPath(path) : 'Editor',
+          }
         : {})}
     >
       <div className="breadcrumb">
         <Braces size={13} />
         <span>{session.branch || 'Project'}</span>
         <span>/</span>
-        <span>{path ?? 'No file selected'}</span>
+        <span>{path ? documentPath(path) : 'No file selected'}</span>
         <div className="spacer" />
-        {doc && (
+        {doc?.readOnly && (
+          <span className="definition-readonly">
+            {doc.path.endsWith('.pyi') ? 'Type stub · Read only' : 'Read only'}
+          </span>
+        )}
+        {doc && !doc.readOnly && (
           <button
             className="icon-button"
             title="Reload disk version…"
@@ -250,7 +277,10 @@ export default function Editor({
             title="Export buffer…"
             onClick={() =>
               void desktop
-                .exportText(doc.model.getValue(undefined, true), doc.path.split('/').at(-1)!)
+                .exportText(
+                  doc.model.getValue(undefined, true),
+                  documentPath(doc.path).split('/').at(-1)!,
+                )
                 .catch(useApp.getState().fail)
             }
           >
