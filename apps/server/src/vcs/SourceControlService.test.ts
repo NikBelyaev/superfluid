@@ -9,6 +9,9 @@ import { LanguageServers } from '../python/LanguageServers';
 import { GitService } from './GitService';
 import { SourceControlService } from './SourceControlService';
 import { git } from './gitCommand';
+import { HostingService } from '../hosting/HostingService';
+import { SourceControlDiscovery } from '../hosting/SourceControlDiscovery';
+import { PullRequestService } from '../pullRequest/PullRequestService';
 import { repository, session, temp } from '../../../../tests/fixtures';
 
 async function fixture(wrapped = true) {
@@ -362,5 +365,85 @@ test('branch operations preserve dirty files and drafts, allow partial results, 
     assert.equal((await git(f.first, ['branch', '--show-current'])).trim(), 'task/example');
   } finally {
     f.store.close();
+  }
+});
+
+test('hosting adapters and remote choices stay scoped to each nested repository and survive reopening', async () => {
+  const f = await fixture();
+  try {
+    await git(f.root, ['remote', 'add', 'origin', 'https://github.com/root/wrapper.git']);
+    await git(f.first, ['remote', 'add', 'origin', 'https://github.com/team/first.git']);
+    await git(f.second, ['remote', 'add', 'origin', 'git@gitlab.company.test:team/second.git']);
+    await git(f.second, ['remote', 'add', 'work', 'git@gitlab.company.test:upstream/second.git']);
+    const project = await f.projects.add(f.root);
+    f.store.put('projects', {
+      ...project,
+      hosting: {
+        provider: 'github',
+        host: 'github.com',
+        remote: 'origin',
+        sourceProject: 'root/wrapper',
+        targetProject: 'root/wrapper',
+      },
+    });
+    const source = (await f.projects.sessions(project.id))[0];
+    const repositories = await f.service.repositories.list(source);
+    const first = await f.service.repositories.target(
+      source,
+      repositories.find((r) => r.path === 'apps/first')!.id,
+    );
+    const secondId = repositories.find((r) => r.path === 'apps/second')!.id;
+    const second = await f.service.repositories.target(source, secondId);
+    const discovery = new SourceControlDiscovery(f.root, async (cli, args) =>
+      args[0] === '--version'
+        ? `${cli === 'git' ? 'git version' : cli === 'gh' ? 'gh version' : 'glab'} 1.2.3`
+        : cli === 'glab'
+          ? '{"hosts":[{"host":"gitlab.company.test","user":"developer","state":"success"}]}'
+          : '{"hosts":{}}',
+    );
+    const calls: { cli: string; cwd: string }[] = [];
+    const hosting = new HostingService(
+      f.store,
+      async (cli, _args, target) => {
+        calls.push({ cli, cwd: target.cwd });
+        return cli === 'gh'
+          ? '{"defaultBranchRef":{"name":"main"}}'
+          : '{"id":1,"default_branch":"develop"}';
+      },
+      discovery,
+    );
+    await f.projects.setRemote(
+      source,
+      { sessionId: source.id, repositoryId: secondId, remote: 'work' },
+      second,
+    );
+    assert.equal((await hosting.context(first)).sourceProject, 'team/first');
+    const context = await hosting.context(second);
+    assert.equal(context.provider, 'gitlab');
+    assert.equal(context.sourceProject, 'upstream/second');
+    assert.equal((await hosting.context(source)).sourceProject, 'root/wrapper');
+    assert.ok(calls.some((call) => call.cli === 'gh' && call.cwd === first.path));
+    assert.ok(calls.some((call) => call.cli === 'glab' && call.cwd === second.path));
+    await assert.rejects(
+      () =>
+        new PullRequestService(hosting).patch(second, {
+          sessionId: source.id,
+          repositoryId: secondId,
+          ref: { provider: 'github', host: 'github.com', project: 'team/first', number: 1 },
+        }),
+      /another repository/,
+    );
+    f.store.close();
+    const reopened = new Store(f.store.directory);
+    try {
+      const restored = new HostingService(reopened);
+      assert.equal((await restored.remotes(second)).selected, 'work');
+      assert.equal((await restored.remotes(first)).selected, 'origin');
+      assert.equal((await restored.remotes(source)).selected, 'origin');
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    if (f.store.db.isOpen) f.store.close();
   }
 });

@@ -6,6 +6,11 @@ const hasHead = (status: GitStatus) => !!status.head && status.head !== '(initia
 const named = (status: GitStatus) =>
   !!status.branch && !['Detached HEAD', 'Git unavailable'].includes(status.branch);
 
+export function repositoryBranch(status: GitStatus | undefined, ref: string) {
+  const prefix = `${status?.remote || 'origin'}/`;
+  return ref.startsWith(prefix) ? ref.slice(prefix.length) : ref;
+}
+
 export function repositoriesForAction(
   action: Action,
   repositories: GitRepository[],
@@ -19,7 +24,9 @@ export function repositoriesForAction(
       hasHead(status) &&
       status.prChanges !== false &&
       status.branches.some(
-        (branch) => branch !== 'origin/HEAD' && branch.replace(/^origin\//, '') !== status.branch,
+        (branch) =>
+          branch !== `${status.remote || 'origin'}/HEAD` &&
+          repositoryBranch(status, branch) !== status.branch,
       );
     switch (action) {
       case 'commit':
@@ -97,7 +104,7 @@ export function gitActionProblem(
     if (action === 'pr') return 'No new commits to include in a pull request.';
     return 'No changes, unpushed commits or pull requests to create.';
   }
-  if (targets.some((r) => !statuses[r.id].hasRemote)) return 'Configure an origin remote first.';
+  if (targets.some((r) => !statuses[r.id].hasRemote)) return 'Choose a Git remote first.';
   if (targets.some((r) => !named(statuses[r.id]))) return 'Create or select a named branch first.';
   return '';
 }
@@ -117,12 +124,14 @@ export function hasRepositoryChanges(
 }
 
 export function canUseRepositoryBase(status: GitStatus | undefined, base: string) {
-  const target = base.replace(/^origin\//, '');
+  const target = repositoryBranch(status, base);
   return (
     !!target &&
     !!status &&
     target !== status.branch &&
-    status.branches.some((branch) => branch === target || branch === `origin/${target}`)
+    status.branches.some(
+      (branch) => branch === target || branch === `${status.remote || 'origin'}/${target}`,
+    )
   );
 }
 

@@ -1,5 +1,5 @@
 import { realpath, stat, mkdir, access } from 'node:fs/promises';
-import { join, basename, dirname, isAbsolute } from 'node:path';
+import { join, basename, dirname, isAbsolute, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Project, Session, ParsedInput } from '@superfluid/contracts';
 import { Store } from '../persistence/Store';
@@ -16,6 +16,7 @@ export class ProjectService {
   constructor(
     private store: Store,
     private languages: LanguageServers,
+    private changed: (project: Project) => void = () => {},
   ) {}
   session(id: string) {
     const s = this.store.get<Session>('sessions', id);
@@ -27,6 +28,7 @@ export class ProjectService {
     if (!(await stat(root)).isDirectory()) throw new Error('Choose a project folder.');
     const existing = this.store.all<Project>('projects').find((p) => p.path === root);
     const project: Project = {
+      ...existing,
       id: existing?.id ?? identity(root),
       name: basename(root),
       path: root,
@@ -126,6 +128,27 @@ export class ProjectService {
     };
     this.store.put('sessions', session);
     return session;
+  }
+  async setRemote(session: Session, input: ParsedInput<'project.remote'>, target = session) {
+    const project = this.store.get<Project>('projects', session.projectId);
+    if (!project) throw new Error('Project not found.');
+    if (input.remote) await git(target.path, ['remote', 'get-url', '--push', input.remote]);
+    const updated = { ...project };
+    const path = relative(session.path, target.path);
+    if (path) {
+      const remotes = { ...project.gitRemotes };
+      if (input.remote) remotes[path] = input.remote;
+      else delete remotes[path];
+      if (Object.keys(remotes).length) updated.gitRemotes = remotes;
+      else delete updated.gitRemotes;
+    } else {
+      delete updated.hosting;
+      if (input.remote) updated.gitRemote = input.remote;
+      else delete updated.gitRemote;
+    }
+    this.store.put('projects', updated);
+    this.changed(updated);
+    return updated;
   }
   async clone(input: ParsedInput<'project.clone'>) {
     if (

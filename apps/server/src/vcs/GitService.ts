@@ -1,5 +1,5 @@
 import type { GitFile, GitStatus, Operation, Session, Input } from '@superfluid/contracts';
-import { command } from '../process/ProcessRunner';
+import { HostingService } from '../hosting/HostingService';
 import { git, safeRef } from './gitCommand';
 import { Gate } from '../utils/Gate';
 
@@ -20,17 +20,6 @@ export const unresolvedPhases = [
   'stashing',
   'applying-stash',
 ];
-
-function hostingRepo(remote: string) {
-  const scp = remote.match(/^[^@]+@([^:]+):(.+)$/);
-  if (scp) return `${scp[1]}/${scp[2].replace(/\.git$/, '')}`;
-  try {
-    const url = new URL(remote);
-    return `${url.hostname}/${url.pathname.replace(/^\//, '').replace(/\.git$/, '')}`;
-  } catch {
-    return remote;
-  }
-}
 
 export function parseStatus(output: string): Omit<GitStatus, 'branches' | 'repo' | 'changes'> {
   let branch = '',
@@ -77,24 +66,15 @@ export function parseStatus(output: string): Omit<GitStatus, 'branches' | 'repo'
 
 export class GitService {
   private reads = new Gate(2);
-  private network = new Gate(2);
+
   private writers = new Map<string, Gate>();
   private statuses = new Map<string, Promise<GitStatus>>();
   private running = new Map<string, Promise<Operation>>();
   constructor(
     private store: Store,
     private notify: (operation: Operation) => void,
+    private hosting = new HostingService(store),
   ) {}
-  async github(s: Session, args: string[], input?: string, remote?: string) {
-    const target = remote ?? (await git(s.path, ['remote', 'get-url', '--push', 'origin'])).trim();
-    return this.network.run(() =>
-      command('gh', [...args, '--repo', hostingRepo(target)], {
-        cwd: s.path,
-        input,
-        timeout: 30000,
-      }),
-    );
-  }
   async status(s: Session): Promise<GitStatus> {
     const key = s.gitDir || s.id;
     const existing = this.statuses.get(key);
@@ -113,7 +93,7 @@ export class GitService {
             repo: false,
             changes: { insertions: 0, deletions: 0 },
           };
-        const [raw, branches, remote, stash] = await Promise.all([
+        const [raw, branches, remotes, stash] = await Promise.all([
           git(
             s.path,
             [
@@ -133,7 +113,7 @@ export class GitService {
             ['for-each-ref', '--format=%(refname:short)', 'refs/heads/', 'refs/remotes/'],
             { timeout: 5000 },
           ),
-          git(s.path, ['remote', 'get-url', '--push', 'origin']).catch(() => ''),
+          this.hosting.remotes(s),
           git(s.path, ['rev-parse', '--verify', '--quiet', 'refs/stash'], { accept: [1] }).catch(
             () => '',
           ),
@@ -170,11 +150,15 @@ export class GitService {
             );
         }
         const refs = branches.trim().split('\n');
+        const remote = remotes.selected;
         const comparison =
           status.upstream ||
-          [`origin/${status.branch}`, 'origin/HEAD', 'origin/main', 'origin/master'].find((ref) =>
-            refs.includes(ref),
-          );
+          [
+            `${remote}/${status.branch}`,
+            `${remote}/HEAD`,
+            `${remote}/main`,
+            `${remote}/master`,
+          ].find((ref) => refs.includes(ref));
         let outgoing: GitStatus['outgoing'] = comparison
           ? { insertions: 0, deletions: 0 }
           : undefined;
@@ -197,11 +181,11 @@ export class GitService {
             ? await readBranchBase(s.path, status.branch)
             : undefined;
         const head = status.head && status.head !== '(initial)';
-        const pushRef = `origin/${status.branch}`;
+        const pushRef = `${remote}/${status.branch}`;
         const baseRef = (
           baseBranch
-            ? [`origin/${baseBranch}`, baseBranch]
-            : ['origin/HEAD', 'origin/main', 'origin/master', 'main', 'master']
+            ? [`${remote}/${baseBranch}`, baseBranch]
+            : [`${remote}/HEAD`, `${remote}/main`, `${remote}/master`, 'main', 'master']
         ).find((ref) => refs.includes(ref));
         const [push, prChanges] = await Promise.all([
           remote && head && status.branch !== 'Detached HEAD'
@@ -216,7 +200,9 @@ export class GitService {
                     .catch(() => undefined)
                 : { ahead: 1, behind: 0 }
             : undefined,
-          baseRef?.replace(/^origin\//, '') === status.branch
+          (baseRef?.startsWith(`${remote}/`)
+            ? baseRef.slice(String(remote).length + 1)
+            : baseRef) === status.branch
             ? false
             : head && baseRef
               ? git(s.path, [
@@ -235,7 +221,8 @@ export class GitService {
         return {
           ...status,
           baseBranch,
-          hasRemote: !!remote.trim(),
+          hasRemote: !!remote,
+          remote: remote ?? undefined,
           push,
           prChanges,
           stash: stash.trim() || undefined,
@@ -435,10 +422,24 @@ export class GitService {
       const initial = (
         await git(s.path, ['rev-parse', '--verify', '--quiet', 'HEAD'], { accept: [1] })
       ).trim();
-      const remote =
-        input.action === 'commit'
-          ? ''
-          : (await git(s.path, ['remote', 'get-url', '--push', 'origin'])).trim();
+      const hosted = input.action === 'pr' || input.action === 'publish';
+      const target = hosted ? await this.hosting.resolve(s, input.targetProject) : undefined;
+      if (target && input.hostingRevision && target.revision !== input.hostingRevision)
+        throw new Error('The hosting target changed. Reopen the publication dialog.');
+      const provider = target ? this.hosting.provider(target) : undefined;
+      let base = '';
+      if (target && provider) {
+        const defaultBranch = target.defaultBranch || (await provider.defaultBranch(target));
+        base = input.base || defaultBranch;
+        safeRef(base);
+        await this.hosting.assertCurrent(s, target);
+      }
+      let remote = target?.remoteUrl ?? '';
+      if (input.action !== 'commit' && !target) {
+        const { selected } = await this.hosting.remotes(s);
+        if (!selected) throw new Error('Choose a Git remote before pushing this branch.');
+        remote = (await git(s.path, ['remote', 'get-url', '--push', selected])).trim();
+      }
       if (remote.startsWith('-'))
         throw new Error('The origin remote is not a valid publication target.');
       if (/^https?:\/\//.test(remote)) {
@@ -447,6 +448,10 @@ export class GitService {
           throw new Error('Use a Git credential helper instead of credentials in the origin URL.');
       }
       const before = operation.evidence;
+      if (before.hosting && before.hosting !== target?.revision)
+        throw new Error(
+          'The hosting target changed. Review the previous publication before continuing.',
+        );
       if (before.branch && (before.branch !== branch || before.remote !== remote))
         throw new Error('The branch or remote changed. Review the target before continuing.');
       Object.assign(before, {
@@ -454,6 +459,7 @@ export class GitService {
         remote,
         initial: before.initial ?? initial,
         destination: branch,
+        ...(target ? { hosting: target.revision, targetProject: target.targetProject, base } : {}),
       });
       update('preparing');
       if (!operation.commit && (input.action === 'commit' || input.action === 'publish')) {
@@ -532,7 +538,7 @@ export class GitService {
         )
           throw new Error('The active branch or commit changed. Publication stopped.');
         update('pushing');
-        await this.network.run(() =>
+        await this.hosting.network.run(() =>
           git(s.path, ['push', '--', remote, `${operation.commit}:${branch}`], { timeout: 120000 }),
         );
         const actual = (await git(s.path, ['ls-remote', '--', remote, branch]))
@@ -543,16 +549,20 @@ export class GitService {
           throw new Error('The remote branch moved. Inspect it before creating the pull request.');
         }
         before.remoteCommit = actual;
-        if ((await git(s.path, ['remote', 'get-url', '--push', 'origin'])).trim() === remote) {
+        const { selected } = await this.hosting.remotes(s);
+        if (
+          selected &&
+          (await git(s.path, ['remote', 'get-url', '--push', selected])).trim() === remote
+        ) {
           const name = branch.slice('refs/heads/'.length);
           // Pushing a pinned OID does not update branch tracking.
-          await git(s.path, ['update-ref', `refs/remotes/origin/${name}`, operation.commit]);
+          await git(s.path, ['update-ref', `refs/remotes/${selected}/${name}`, operation.commit]);
           if (
             !(
               await git(s.path, ['config', '--get', `branch.${name}.remote`], { accept: [1] })
             ).trim()
           )
-            await git(s.path, ['branch', `--set-upstream-to=origin/${name}`, '--', name]);
+            await git(s.path, ['branch', `--set-upstream-to=${selected}/${name}`, '--', name]);
         }
         update('pushed');
       }
@@ -560,73 +570,46 @@ export class GitService {
         update('completed');
         return operation;
       }
+      if (!target || !provider) throw new Error('A hosting target is required.');
+      await this.hosting.assertCurrent(s, target);
       const head = branch.slice('refs/heads/'.length);
-      safeRef(input.base || 'main');
       if (
-        input.action === 'pr' &&
         (await git(s.path, ['ls-remote', '--', remote, branch])).trim().split(/\s/)[0] !==
-          operation.commit
+        operation.commit
       )
-        throw new Error('Push this commit to origin before creating its pull request.');
-      const found = JSON.parse(
-        await this.github(
-          s,
-          [
-            'pr',
-            'list',
-            '--state',
-            'open',
-            '--head',
-            head,
-            '--base',
-            input.base || 'main',
-            '--json',
-            'number,url,headRefOid',
-          ],
-          undefined,
-          remote,
-        ),
-      );
-      if (found.length > 1)
-        throw new Error('Multiple matching pull requests. Open GitHub to choose one.');
-      if (found.length === 1) {
-        if (found[0].headRefOid !== operation.commit) {
-          update('needs-review');
-          throw new Error('The existing pull request points to a different commit.');
-        }
-        operation.url = found[0].url;
+        throw new Error('Push this commit before creating its request.');
+      const found = await provider.list(target, { state: 'open', page: 1, branch: head, base });
+      if (found.items.length > 1 || found.hasMore)
+        throw new Error('Multiple matching requests. Choose one from the repository list.');
+      let actual;
+      if (found.items.length === 1) {
+        actual = await provider.read(target, found.items[0].number);
       } else {
+        await this.hosting.assertCurrent(s, target);
+        if ((await git(s.path, ['rev-parse', 'HEAD'])).trim() !== operation.commit)
+          throw new Error('HEAD changed. Publication stopped.');
         update('creating-pr');
         const title =
           input.title?.trim() ||
           input.message?.trim().split('\n')[0] ||
           (await git(s.path, ['show', '-s', '--format=%s', operation.commit])).trim();
-        const args = [
-          'pr',
-          'create',
-          '--head',
+        const created = await provider.create(target, {
           head,
-          '--base',
-          input.base || 'main',
-          '--title',
+          base,
           title,
-          '--body-file',
-          '-',
-          ...(input.draft !== false ? ['--draft'] : []),
-        ];
-        operation.url = (await this.github(s, args, input.body || '', remote)).trim();
-        const actual = JSON.parse(
-          await this.github(
-            s,
-            ['pr', 'view', operation.url, '--json', 'headRefOid'],
-            undefined,
-            remote,
-          ),
-        );
-        if (actual.headRefOid !== operation.commit) {
-          update('needs-review');
-          throw new Error('The pull request head changed. Review the created pull request.');
-        }
+          body: input.body || '',
+          draft: input.draft !== false,
+        });
+        operation.url = created.url;
+        operation.pullRequest = created.ref;
+        this.store.put('operations', operation);
+        actual = await provider.read(target, created.ref.number);
+      }
+      operation.url = actual.url;
+      operation.pullRequest = actual.ref;
+      if (actual.headRefOid !== operation.commit) {
+        update('needs-review');
+        throw new Error('The request points to a different commit. Review it on the server.');
       }
       update('completed');
       return operation;

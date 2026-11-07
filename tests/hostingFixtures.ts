@@ -1,0 +1,89 @@
+export const githubRequest = {
+  number: 15,
+  title: 'Keep each worktree independent',
+  body: 'Preserve open files and navigation.',
+  state: 'OPEN',
+  url: 'https://github.com/superfluid-tests/fluid-lab/pull/15',
+  author: { login: 'fluid-dev' },
+  baseRefName: 'main',
+  headRefName: 'feature/parallel',
+  headRefOid: 'a'.repeat(40),
+  isDraft: false,
+  updatedAt: '2026-11-07T12:00:00Z',
+  additions: 24,
+  deletions: 8,
+  changedFiles: 2,
+  statusCheckRollup: [{ name: 'Python tests', conclusion: 'SUCCESS' }],
+  headRepository: { name: 'fluid-lab' },
+  headRepositoryOwner: { login: 'superfluid-tests' },
+  comments: [
+    {
+      id: 'comment-1',
+      author: { login: 'reviewer' },
+      body: 'The worktree state is easier to follow now.',
+      createdAt: '2026-11-06T12:00:00Z',
+    },
+  ],
+  commits: [
+    {
+      oid: 'b'.repeat(40),
+      messageHeadline: 'Preserve worktree document state',
+      committedDate: '2026-11-05T12:00:00Z',
+    },
+  ],
+  reviews: [
+    {
+      id: 'review-1',
+      author: { login: 'reviewer' },
+      state: 'APPROVED',
+      body: 'Navigation and recovery look good.',
+      submittedAt: '2026-11-06T12:00:00Z',
+    },
+  ],
+};
+
+export const gitlabRequest = {
+  id: 9001,
+  iid: 42,
+  project_id: 12,
+  source_project_id: 11,
+  target_project_id: 12,
+  title: 'Support enterprise worktrees',
+  description: '## Summary\n\nKeep enterprise worktrees independent.',
+  state: 'opened',
+  web_url: 'https://gitlab.example.test/platform/editor/-/merge_requests/42',
+  author: { username: 'fluid-dev' },
+  source_branch: 'main',
+  target_branch: 'develop',
+  sha: 'a'.repeat(40),
+  draft: false,
+  updated_at: '2026-11-07T12:00:00Z',
+  changes_count: '1000+',
+  head_pipeline: { status: 'success' },
+  Discussions: [
+    {
+      id: 'discussion-1',
+      notes: [
+        {
+          id: 101,
+          author: { username: 'reviewer' },
+          body: 'Ready for review.',
+          created_at: '2026-11-07T11:00:00Z',
+          system: false,
+        },
+      ],
+    },
+    {
+      id: 'discussion-2',
+      notes: [
+        {
+          id: 102,
+          author: { username: 'fluid-dev' },
+          body: 'added 2 commits',
+          created_at: '2026-11-07T10:00:00Z',
+          system: true,
+        },
+      ],
+    },
+  ],
+};

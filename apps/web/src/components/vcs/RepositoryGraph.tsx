@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowRightLeft, GitBranch, LoaderCircle, Plus } from 'lucide-react';
 import type { Session } from '@superfluid/contracts';
 import { createRepositoryWorktree, runGitBatch } from '~/commands/gitBatch';
-import { selectedRepositories } from '~/state/repositories';
+import { selectedRepositories, repositoryBranch } from '~/state/repositories';
 import { useApp } from '~/state/workspaceStore';
 import { RepositoryBranchPicker, RepositoryCreationPicker } from './RepositoryBranchPicker';
 
@@ -37,11 +37,14 @@ export function RepositoryGraph({
       ? current[0]
       : 'HEAD');
   const branches = [...new Set(group.flatMap((r) => statuses?.[r.id]?.branches || []))].sort();
-  const target = destination.replace(/^origin\//, '');
+  const target = repositoryBranch(statuses?.[group[0]?.id], destination);
   const name = (path: string) => path || session.path.split('/').at(-1) || 'root';
   const missingTarget = group
     .filter(
-      (r) => !statuses?.[r.id]?.branches.some((b) => b === target || b === `origin/${target}`),
+      (r) =>
+        !statuses?.[r.id]?.branches.some(
+          (b) => b === target || b === `${statuses?.[r.id]?.remote || 'origin'}/${target}`,
+        ),
     )
     .map((r) => name(r.path));
   const missingSource = group

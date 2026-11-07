@@ -26,7 +26,12 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     pullRequests,
   } = workspace;
   const session = (id: string) => projects.session(id);
+  const repository = (input: { sessionId: string; repositoryId?: string }) =>
+    sourceControl.repositories.target(session(input.sessionId), input.repositoryId);
   return {
+    'sourceControl.discovery': () => workspace.sourceControlDiscovery.scan(),
+    'sourceControl.repository': async (input) =>
+      workspace.hosting.repository(await repository(input)),
     bootstrap: () => ({
       projects: store.all<Project>('projects').sort((a, b) => b.lastOpened - a.lastOpened),
       actions: store.all<Action>('actions'),
@@ -34,6 +39,8 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
       operations: store.all<Operation>('operations'),
     }),
     'project.add': (input) => projects.add(input.path),
+    'project.remote': async (input) =>
+      projects.setRemote(session(input.sessionId), input, await repository(input)),
     'project.clone': (input) => projects.clone(input),
     'session.list': (input) => projects.sessions(input.projectId),
     'session.create': (input) => projects.createWorktree(session(input.sessionId), input),
@@ -72,20 +79,15 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     'lsp.close': (input) => python.closeDocument(session(input.sessionId), input.path),
     'lsp.request': (input) => python.request(session(input.sessionId), input),
     'python.format': (input) => python.format(session(input.sessionId), input.text),
-    'pr.read': async (input) =>
-      pullRequests.read(
-        await sourceControl.repositories.target(session(input.sessionId), input.repositoryId),
-        input,
-      ),
-    'pr.patch': async (input) =>
-      pullRequests.patch(
-        await sourceControl.repositories.target(session(input.sessionId), input.repositoryId),
-        input,
-      ),
-    'pr.comment': async (input) =>
-      pullRequests.comment(
-        await sourceControl.repositories.target(session(input.sessionId), input.repositoryId),
-        input,
-      ),
+    'pr.read': async (input) => pullRequests.read(await repository(input), input),
+    'pr.context': async (input) =>
+      pullRequests.context(await repository(input), input.targetProject),
+    'pr.remotes': async (input) => workspace.hosting.remotes(await repository(input)),
+    'pr.list': async (input) => pullRequests.list(await repository(input), input),
+    'pr.comments': async (input) => pullRequests.comments(await repository(input), input),
+    'pr.timeline': async (input) => pullRequests.timeline(await repository(input), input),
+    'pr.update': async (input) => pullRequests.update(await repository(input), input),
+    'pr.patch': async (input) => pullRequests.patch(await repository(input), input),
+    'pr.comment': async (input) => pullRequests.comment(await repository(input), input),
   };
 }

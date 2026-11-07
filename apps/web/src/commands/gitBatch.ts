@@ -9,6 +9,7 @@ import {
   selectedRepositories,
   gitActionProblem,
   repositoriesForAction,
+  repositoryBranch,
 } from '~/state/repositories';
 
 export type GitAction = Input<'git.act'>['action'];
@@ -65,7 +66,10 @@ export function openRepositoryMenu(
         operationId: crypto.randomUUID(),
         action: page,
         branch: statuses?.[repository.id]?.branch || repository.branch,
-        base: statuses?.[repository.id]?.baseBranch?.replace(/^origin\//, ''),
+        base: repositoryBranch(
+          statuses?.[repository.id],
+          statuses?.[repository.id]?.baseBranch || '',
+        ),
         draft: false,
         stash: page === 'stash-apply' ? statuses?.[repository.id]?.stash : undefined,
       })),
@@ -177,7 +181,10 @@ export async function runGitBatch(
           useApp.setState((s) => ({ revision: s.revision + 1 }));
       }
       if (result.url)
-        showSurface({ kind: 'pr', repositoryId: entry.request.repositoryId }, sessionId);
+        showSurface(
+          { kind: 'pr', repositoryId: entry.request.repositoryId, ref: result.pullRequest },
+          sessionId,
+        );
       batch = {
         ...batch,
         entries: batch.entries.map((e, i) =>

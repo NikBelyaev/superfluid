@@ -1,4 +1,5 @@
 export * from './project';
+export * from './hosting';
 
 export * from './files';
 
