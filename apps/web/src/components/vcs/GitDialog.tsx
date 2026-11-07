@@ -94,7 +94,8 @@ export function GitDialog({ action }: { action: 'commit' | 'push' | 'pr' | 'publ
             ))}
           </div>
           <p className="field-hint">
-            Already staged files are also included. New files are selected explicitly.
+            Already staged files are also included. New files and directories are selected
+            explicitly. Selecting a directory stages its contents.
           </p>
         </>
       )}
