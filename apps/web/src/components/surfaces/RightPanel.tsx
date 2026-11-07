@@ -149,7 +149,12 @@ export default function RightPanel({ session }: { session: Session }) {
               initialMode={active.mode}
             />
           ) : active?.kind === 'pr' ? (
-            <PullRequestSurface key={surfaceKey(active)} session={session} number={active.number} />
+            <PullRequestSurface
+              key={surfaceKey(active)}
+              session={session}
+              number={active.number}
+              repositoryId={active.repositoryId}
+            />
           ) : active?.kind === 'browser' ? (
             <Browser url={active.url} />
           ) : active?.kind === 'file' ? (

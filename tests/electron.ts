@@ -45,6 +45,7 @@ await git(project, ['config', 'user.email', 'test@superfluid.invalid']);
 await git(project, ['add', '.']);
 
 await git(project, ['commit', '-m', 'Initial fixture']);
+await writeFile(join(project, 'README.md'), '# Fluid lab\n\nPending documentation changes.\n');
 
 await git(project, [
   'remote',
@@ -195,6 +196,7 @@ try {
   await page.locator('.tree-row').filter({ hasText: 'bom.py' }).waitFor();
   await page.screenshot({ path: 'test-results/editor-empty.png' });
   const gitMenu = page.getByRole('button', { name: 'Individual Git actions', exact: true });
+  await page.locator('.repository-operation:not(:disabled)').waitFor();
   await gitMenu.focus();
   await page.keyboard.press('ArrowDown');
   await page.getByRole('menu').waitFor();
@@ -202,7 +204,7 @@ try {
   await page.keyboard.press('End');
   assert.equal(
     await page
-      .getByRole('menuitem', { name: 'Create PR', exact: true })
+      .getByRole('menuitem', { name: 'Apply stash', exact: true })
       .evaluate((e) => e === document.activeElement),
     true,
   );
@@ -216,7 +218,7 @@ try {
   await page.keyboard.press('Home');
   await page.keyboard.press('Enter');
   await page.getByRole('dialog').waitFor();
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.keyboard.press('Escape');
   await page.locator('.tree-row').filter({ hasText: 'bom.py' }).click();
   await page.locator('.editor-host').first().click();
   await page.keyboard.press('Meta+ArrowDown');

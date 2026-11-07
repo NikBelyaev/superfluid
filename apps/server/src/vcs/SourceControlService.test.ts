@@ -1,0 +1,366 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdir, readFile, realpath, rename, symlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { vcsRequests } from '@superfluid/contracts';
+import { Store } from '../persistence/Store';
+import { ProjectService } from '../project/ProjectService';
+import { LanguageServers } from '../python/LanguageServers';
+import { GitService } from './GitService';
+import { SourceControlService } from './SourceControlService';
+import { git } from './gitCommand';
+import { repository, session, temp } from '../../../../tests/fixtures';
+
+async function fixture(wrapped = true) {
+  const root = wrapped ? await repository() : await temp();
+  await mkdir(join(root, 'apps'));
+  const first = join(root, 'apps', 'first'),
+    second = join(root, 'apps', 'second');
+  await rename(await repository(), first);
+  await rename(await repository(), second);
+  if (wrapped) {
+    await writeFile(join(root, '.gitignore'), 'apps/\n');
+    await git(root, ['add', '.gitignore']);
+    await git(root, ['commit', '-m', 'Ignore nested repositories']);
+  }
+  const store = new Store(await temp());
+  const projects = new ProjectService(store, new LanguageServers(store, () => {}));
+  const service = new SourceControlService(new GitService(store, () => {}), projects, store);
+  const s = session(root);
+  const repos = await service.repositories.list(s);
+  const firstId = repos.find((r) => r.path === 'apps/first')!.id;
+  const secondId = repos.find((r) => r.path === 'apps/second')!.id;
+  const act = (
+    repositoryId: string,
+    action: 'commit' | 'push' | 'create-branch' | 'checkout' | 'stash' | 'stash-apply',
+    extra: Record<string, unknown> = {},
+  ) =>
+    service.act(
+      s,
+      vcsRequests['git.act'].parse({
+        sessionId: s.id,
+        repositoryId,
+        operationId: crypto.randomUUID(),
+        action,
+        ...extra,
+      }),
+    );
+  return { root, first, second, s, store, service, projects, repos, firstId, secondId, act };
+}
+
+for (const wrapped of [true, false]) {
+  test(`repository worktrees preserve sources and reopen as one context (${wrapped ? 'Git wrapper' : 'plain folder'})`, async () => {
+    const f = await fixture(wrapped);
+    try {
+      const project = await f.projects.add(f.root);
+      const source = (await f.projects.sessions(project.id))[0];
+      const repositories = await f.service.repositories.list(source);
+      const ids = repositories.filter((r) => r.path).map((r) => r.id);
+      await git(f.second, ['switch', '-c', 'stage']);
+      await writeFile(join(f.first, 'main.py'), 'keep original dirty file\n');
+      f.store.draft({
+        sessionId: source.id,
+        path: 'apps/first/main.py',
+        text: 'keep draft',
+        hash: 'old',
+        version: 1,
+      });
+      const created = await f.service.createWorktree(source, {
+        sessionId: source.id,
+        repositoryIds: ids,
+        branch: 'task/worktree',
+        base: 'HEAD',
+      });
+      for (const path of ['apps/first', 'apps/second']) {
+        assert.equal(
+          (await git(join(created.path, path), ['branch', '--show-current'])).trim(),
+          'task/worktree',
+        );
+        assert.equal(
+          (await git(join(f.root, path), ['branch', '--show-current'])).trim(),
+          path === 'apps/second' ? 'stage' : 'main',
+        );
+      }
+      assert.match(await readFile(join(f.first, 'main.py'), 'utf8'), /keep original/);
+      f.projects.saveState(created, {
+        sessionId: created.id,
+        state: { active: 'apps/first/main.py' },
+      });
+      const reopened = (await f.projects.sessions(project.id)).find((s) => s.id === created.id);
+      assert.equal(reopened?.branch, 'task/worktree');
+      assert.equal(reopened?.state.active, 'apps/first/main.py');
+      assert.equal((await f.service.repositories.list(reopened!)).filter((r) => r.path).length, 2);
+      for (const r of (await f.service.repositories.list(reopened!)).filter((r) => r.path))
+        assert.equal(
+          (await f.service.status(reopened!, r.id)).baseBranch,
+          r.path === 'apps/second' ? 'stage' : 'main',
+        );
+      if (wrapped) {
+        const single = await f.projects.createWorktree(source, {
+          sessionId: source.id,
+          branch: 'task/root',
+          base: 'HEAD',
+        });
+        assert.equal((await f.service.status(single)).baseBranch, 'main');
+      }
+      assert.notEqual(created.id, source.id);
+    } finally {
+      f.store.close();
+    }
+  });
+}
+
+test('worktree preflight rejects a conflicting branch without creating other branches', async () => {
+  const f = await fixture();
+  try {
+    const project = await f.projects.add(f.root);
+    const source = (await f.projects.sessions(project.id))[0];
+    const ids = (await f.service.repositories.list(source)).filter((r) => r.path).map((r) => r.id);
+    await git(f.second, ['branch', 'already-exists']);
+    await assert.rejects(
+      () =>
+        f.service.createWorktree(source, {
+          sessionId: source.id,
+          repositoryIds: ids,
+          branch: 'already-exists',
+          base: 'HEAD',
+        }),
+      /already exists/,
+    );
+    assert.equal((await git(f.first, ['branch', '--list', 'already-exists'])).trim(), '');
+    assert.equal((await f.projects.sessions(project.id)).length, 1);
+    await assert.rejects(
+      () =>
+        f.service.createWorktree(source, {
+          sessionId: source.id,
+          repositoryIds: ['outside'],
+          branch: 'safe',
+          base: 'HEAD',
+        }),
+      /belong/,
+    );
+  } finally {
+    f.store.close();
+  }
+});
+
+test('a failing checkout hook rolls back newly created repository worktrees and branches', async () => {
+  const f = await fixture();
+  try {
+    const project = await f.projects.add(f.root);
+    const source = (await f.projects.sessions(project.id))[0];
+    const ids = (await f.service.repositories.list(source)).filter((r) => r.path).map((r) => r.id);
+    await writeFile(join(f.second, '.git/hooks/post-checkout'), '#!/bin/sh\nexit 1\n', {
+      mode: 0o755,
+    });
+    await assert.rejects(() =>
+      f.service.createWorktree(source, {
+        sessionId: source.id,
+        repositoryIds: ids,
+        branch: 'hook-failure',
+        base: 'HEAD',
+      }),
+    );
+    for (const path of [f.root, f.first, f.second]) {
+      assert.equal(
+        (await git(path, ['worktree', 'list', '--porcelain'])).match(/^worktree /gm)?.length,
+        1,
+      );
+      assert.equal((await git(path, ['branch', '--list', 'hook-failure'])).trim(), '');
+      assert.equal(
+        (
+          await git(path, ['config', '--get', 'branch.hook-failure.gh-merge-base'], { accept: [1] })
+        ).trim(),
+        '',
+      );
+    }
+    assert.equal((await f.projects.sessions(project.id)).length, 1);
+  } finally {
+    f.store.close();
+  }
+});
+
+test('nested repositories are discovered independently of parent ignores, with worktree Git files and no symlink escapes', async () => {
+  const f = await fixture();
+  try {
+    assert.deepEqual(
+      f.repos.map((r) => r.path),
+      ['', 'apps/first', 'apps/second'],
+    );
+    for (const [url, provider] of [
+      ['https://github.com/example/project.git', 'github'],
+      ['git@github.com:example/project.git', 'github'],
+      ['ssh://git@company.ghe.com/team/project.git', 'github'],
+      ['ssh://git@gitlab.company.test:2222/team/project.git', 'gitlab'],
+      ['https://gitlab.com/team/project.git', 'gitlab'],
+      ['https://example.test/github.com/project.git', undefined],
+      ['file:///tmp/github.com/project.git', undefined],
+    ] as const) {
+      await git(f.root, ['config', 'remote.origin.url', url]);
+      const repos = await f.service.repositories.list(f.s, true);
+      assert.equal(repos.find((r) => !r.path)!.provider, provider, url);
+    }
+    await git(f.root, ['config', 'remote.origin.url', 'https://github.com/example/project.git']);
+    await git(f.root, [
+      'config',
+      'remote.origin.pushurl',
+      'git@gitlab.company.test:team/project.git',
+    ]);
+    assert.equal(
+      (await f.service.repositories.list(f.s, true)).find((r) => !r.path)!.provider,
+      'gitlab',
+    );
+    await symlink(await repository(), join(f.root, 'apps', 'outside'));
+    await mkdir(join(f.root, '.venv'));
+    await rename(await repository(), join(f.root, '.venv', 'hidden'));
+    await mkdir(join(f.root, 'apps', 'broken'));
+    await writeFile(join(f.root, 'apps', 'broken', '.git'), 'gitdir: missing\n');
+    const worktree = join(f.root, 'apps', 'linked');
+    await git(f.first, ['worktree', 'add', '-b', 'linked', worktree]);
+    const repos = await f.service.repositories.list(f.s, true);
+    assert.deepEqual(
+      repos.map((r) => r.path),
+      ['', 'apps/broken', 'apps/first', 'apps/linked', 'apps/second'],
+    );
+    assert.equal(repos.find((r) => r.path === 'apps/broken')!.branch, 'Git unavailable');
+    await assert.rejects(() =>
+      f.service.status(f.s, repos.find((r) => r.path === 'apps/broken')!.id),
+    );
+    assert.equal(repos.find((r) => r.path === 'apps/first')!.id, f.firstId);
+    assert.equal(
+      (await f.service.repositories.target(f.s, repos.find((r) => r.path === 'apps/linked')!.id))
+        .path,
+      await realpath(worktree),
+    );
+    await assert.rejects(() => f.service.status(f.s, 'outside'), /does not belong/);
+    await rename(f.first, join(f.root, 'old-first'));
+    await symlink(await repository(), f.first);
+    await assert.rejects(() => f.service.status(f.s, f.firstId), /outside the worktree/);
+  } finally {
+    f.store.close();
+  }
+});
+
+test('repository status, diffs, commits and pushes stay in their destination session and repository', async () => {
+  const f = await fixture();
+  try {
+    await writeFile(join(f.first, 'main.py'), 'first\nextra\n');
+    await writeFile(join(f.second, 'main.py'), 'second\n');
+    const [first, second] = await Promise.all([
+      f.service.status(f.s, f.firstId),
+      f.service.status(f.s, f.secondId),
+    ]);
+    assert.deepEqual(first.changes, { insertions: 2, deletions: 1 });
+    assert.deepEqual(second.changes, { insertions: 1, deletions: 1 });
+    assert.match(
+      await f.service.diff(
+        f.s,
+        vcsRequests['git.diff'].parse({ sessionId: f.s.id, path: 'apps/first/main.py' }),
+      ),
+      /\+first/,
+    );
+    const parent = (await git(f.root, ['rev-parse', 'HEAD'])).trim();
+    const sibling = (await git(f.second, ['rev-parse', 'HEAD'])).trim();
+    const saved = await f.act(f.secondId, 'stash');
+    assert.equal(saved.phase, 'completed', saved.error ?? '');
+    assert.equal(await git(f.second, ['diff']), '');
+    assert.match(await git(f.first, ['diff']), /first/);
+    assert.equal(
+      (await f.act(f.secondId, 'stash-apply', { stash: saved.evidence.stash })).phase,
+      'completed',
+    );
+    assert.match(await git(f.second, ['diff']), /second/);
+    f.store.put('operations', {
+      id: 'unresolved-sibling',
+      sessionId: f.s.id,
+      repositoryId: f.secondId,
+      phase: 'uncertain',
+      evidence: {},
+    });
+    const op = await f.act(f.firstId, 'commit', { message: 'First only', paths: ['main.py'] });
+    assert.equal(op.phase, 'completed', op.error ?? '');
+    assert.equal(op.sessionId, f.s.id);
+    assert.equal(op.repositoryId, f.firstId);
+    assert.equal((await git(f.root, ['rev-parse', 'HEAD'])).trim(), parent);
+    assert.equal((await git(f.second, ['rev-parse', 'HEAD'])).trim(), sibling);
+    assert.match((await f.service.inspect(f.s, op.id)).log, /First only/);
+    f.store.put('operations', {
+      id: 'unresolved-root',
+      sessionId: f.s.id,
+      phase: 'uncertain',
+      evidence: {},
+    });
+    await assert.rejects(
+      () => f.act(f.repos.find((r) => !r.path)!.id, 'commit', { message: 'Root' }),
+      /previous Git operation/,
+    );
+    await assert.rejects(
+      () => f.service.status({ ...f.s, id: 'inactive-session' }, f.firstId),
+      /does not belong/,
+    );
+    const remote = await temp();
+    await git(remote, ['init', '--bare']);
+    await git(f.first, ['remote', 'add', 'origin', remote]);
+    assert.equal((await f.act(f.firstId, 'push')).phase, 'completed');
+    assert.equal((await git(remote, ['rev-parse', 'refs/heads/main'])).trim(), op.commit);
+    await assert.rejects(
+      () => f.act(f.firstId, 'commit', { message: 'Escape', paths: ['../second/main.py'] }),
+      /outside the worktree/,
+    );
+  } finally {
+    f.store.close();
+  }
+});
+
+test('branch operations preserve dirty files and drafts, allow partial results, and replay without switching again', async () => {
+  const f = await fixture();
+  try {
+    await writeFile(join(f.second, 'main.py'), 'keep dirty\n');
+    const input = vcsRequests['git.act'].parse({
+      sessionId: f.s.id,
+      repositoryId: f.firstId,
+      operationId: 'create-first',
+      action: 'create-branch',
+      branch: 'task/example',
+      base: 'HEAD',
+    });
+    assert.equal((await f.service.act(f.s, input)).phase, 'completed');
+    const blocked = await f.act(f.secondId, 'create-branch', {
+      branch: 'task/example',
+      base: 'HEAD',
+    });
+    assert.match(blocked.error!, /local changes/);
+    assert.equal((await git(f.second, ['branch', '--show-current'])).trim(), 'main');
+    assert.equal((await git(f.root, ['branch', '--show-current'])).trim(), 'main');
+    await git(f.first, ['switch', 'main']);
+    assert.equal((await f.service.act(f.s, input)).phase, 'completed');
+    assert.equal((await git(f.first, ['branch', '--show-current'])).trim(), 'main');
+    f.store.draft({
+      sessionId: f.s.id,
+      path: 'apps/first/main.py',
+      text: 'unsaved',
+      hash: 'old',
+      version: 1,
+    });
+    await assert.rejects(
+      () => f.act(f.firstId, 'checkout', { branch: 'task/example' }),
+      /unsaved recovery/,
+    );
+    await assert.rejects(() => f.act(f.firstId, 'stash'), /unsaved recovery/);
+    f.store.dropDraft(f.s.id, 'apps/first/main.py', 1);
+    f.store.draft({
+      sessionId: f.s.id,
+      path: 'apps/second/main.py',
+      text: 'sibling draft',
+      hash: 'old',
+      version: 1,
+    });
+    assert.equal(
+      (await f.act(f.firstId, 'checkout', { branch: 'task/example' })).phase,
+      'completed',
+    );
+    assert.equal((await git(f.first, ['branch', '--show-current'])).trim(), 'task/example');
+  } finally {
+    f.store.close();
+  }
+});

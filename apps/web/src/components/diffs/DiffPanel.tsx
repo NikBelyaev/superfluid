@@ -15,6 +15,8 @@ export function Diff({
   initialMode?: 'unstaged' | 'staged' | 'branch';
 }) {
   const status = useApp((a) => a.git[session.id]);
+  const repositories = useApp((a) => a.repositories[session.id]);
+  const ids = useApp((a) => a.views[session.id]?.repositoryIds);
   const [mode, setMode] = useState(initialMode ?? 'unstaged'),
     [base, setBase] = useState('origin/main'),
     [split, setSplit] = useState(false),
@@ -23,12 +25,25 @@ export function Diff({
     [busy, setBusy] = useState(false),
     [token, setToken] = useState(0);
   const selected = path ?? status?.files[0]?.path;
+  const repository =
+    (repositories || [])
+      .filter((r) => selected && (!r.path || selected.startsWith(r.path + '/')))
+      .sort((a, b) => b.path.length - a.path.length)[0] ||
+    (!selected ? repositories?.find((r) => r.id === ids?.[0]) : undefined);
+  const repositoryPath =
+    selected && repository?.path ? selected.slice(repository.path.length + 1) : selected;
   useEffect(() => {
     let cancelled = false;
     setBusy(true);
     setError('');
     void desktop
-      .call('git.diff', { sessionId: session.id, path: selected, mode, base })
+      .call('git.diff', {
+        sessionId: session.id,
+        repositoryId: repository?.id,
+        path: repositoryPath,
+        mode,
+        base,
+      })
       .then((text) => {
         if (!cancelled) setPatch(text);
       })
@@ -41,7 +56,7 @@ export function Diff({
     return () => {
       cancelled = true;
     };
-  }, [session.id, selected, mode, base, token]);
+  }, [session.id, repository?.id, repositoryPath, mode, base, token]);
   return (
     <div className="surface-content">
       <div className="surface-toolbar">

@@ -8,7 +8,15 @@ import { useApp } from '~/state/workspaceStore';
 import { navigateTabs } from '~/hooks/useTabs';
 import { Patch } from '~/components/diffs/Patch';
 
-export function PullRequestSurface({ session, number }: { session: Session; number?: number }) {
+export function PullRequestSurface({
+  session,
+  number,
+  repositoryId,
+}: {
+  session: Session;
+  number?: number;
+  repositoryId?: string;
+}) {
   const [pr, setPr] = useState<PullRequest | null>(null),
     [tab, setTab] = useState<'summary' | 'timeline' | 'code'>('summary'),
     [error, setError] = useState(''),
@@ -20,7 +28,7 @@ export function PullRequestSurface({ session, number }: { session: Session; numb
     let cancelled = false;
     setError('');
     void desktop
-      .call('pr.read', { sessionId: session.id, number })
+      .call('pr.read', { sessionId: session.id, number, repositoryId })
       .then((p) => {
         if (!cancelled) setPr(p);
       })
@@ -30,12 +38,12 @@ export function PullRequestSurface({ session, number }: { session: Session; numb
     return () => {
       cancelled = true;
     };
-  }, [session.id, number, token]);
+  }, [session.id, number, repositoryId, token]);
   useEffect(() => {
     let cancelled = false;
     if (tab === 'code' && pr) {
       void desktop
-        .call('pr.patch', { sessionId: session.id, number: pr.number })
+        .call('pr.patch', { sessionId: session.id, number: pr.number, repositoryId })
         .then((p) => {
           if (!cancelled) setPatch(p);
         })
@@ -46,7 +54,7 @@ export function PullRequestSurface({ session, number }: { session: Session; numb
     return () => {
       cancelled = true;
     };
-  }, [tab, pr?.headRefOid]);
+  }, [tab, pr?.headRefOid, repositoryId, session.id]);
   const markdown = (text: string) => (
     <Markdown
       remarkPlugins={[remarkGfm]}
@@ -164,6 +172,7 @@ export function PullRequestSurface({ session, number }: { session: Session; numb
                 try {
                   await desktop.call('pr.comment', {
                     sessionId: session.id,
+                    repositoryId,
                     number: pr.number,
                     body: comment,
                   });

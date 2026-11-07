@@ -901,7 +901,7 @@ kbd {
   right: 18px;
   width: 280px;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: var(--floating-radius);
   z-index: 15;
   background: var(--card);
   box-shadow: none;
@@ -1095,13 +1095,102 @@ kbd {
 .lineage .island-row small {
   margin: 0;
 }
-.operation-state {
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  padding: 6px 10px;
+.repository-branch-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+}
+.repository-branch-summary > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.repository-extra-branches {
+  color: var(--muted-foreground);
+  font-weight: 400;
+  flex: none;
+}
+.repository-selection-count {
+  margin-left: auto;
+}
+.repository-operation-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.repository-elapsed,
+.repository-operation-count {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex: none;
+}
+.repository-operation[aria-busy='true'] {
+  opacity: 1;
+}
+.repository-operation.completed > svg {
+  color: var(--success-foreground);
+}
+.repository-operation.failed > svg {
   color: var(--warning-foreground);
-  max-height: 100px;
+}
+.repository-popup {
+  width: 360px;
+  max-width: calc(100vw - 24px);
+  max-height: var(--available-height);
   overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--floating-radius);
+  background: var(--popover);
+  color: var(--foreground);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--text-detail);
+  line-height: 20px;
+}
+.repository-choice {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: var(--control-radius);
+  text-align: left;
+}
+.repository-choice:hover {
+  background: var(--sidebar);
+}
+.repository-choice-label {
+  min-width: 0;
+  flex: 1;
+}
+.repository-choice-label > span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.repository-choice-label small {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+.repository-check {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--foreground);
 }
 .right-group {
   width: var(--right-width);

@@ -22,13 +22,22 @@ export interface PullRequest {
 }
 
 export const pullRequestRequests = {
-  'pr.read': z.object({ sessionId: id, number: z.number().int().positive().optional() }),
+  'pr.read': z.object({
+    sessionId: id,
+    repositoryId: id.optional(),
+    number: z.number().int().positive().optional(),
+  }),
   'pr.comment': z.object({
     sessionId: id,
+    repositoryId: id.optional(),
     number: z.number().int().positive(),
     body: z.string().min(1).max(65536),
   }),
-  'pr.patch': z.object({ sessionId: id, number: z.number().int().positive() }),
+  'pr.patch': z.object({
+    sessionId: id,
+    repositoryId: id.optional(),
+    number: z.number().int().positive(),
+  }),
 } as const;
 
 export interface PullRequestResults {

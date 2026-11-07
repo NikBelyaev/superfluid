@@ -17,7 +17,8 @@
     "lint": "eslint .",
     "format:check": "prettier --check apps packages/contracts scripts tests vite.config.ts tsconfig.json package.json eslint.config.mjs",
     "setup": "node scripts/setup.mjs",
-    "postinstall": "node scripts/setup.mjs"
+    "postinstall": "node scripts/setup.mjs",
+    "test:electron:repositories": "tsx tests/electronRepositories.ts"
   },
   "build": {
     "appId": "dev.superfluid.ide",

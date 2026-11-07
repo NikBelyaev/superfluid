@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { within } from '../files/paths';
 import { Store } from '../persistence/Store';
@@ -47,6 +47,41 @@ test('status totals count staged, unstaged and untracked lines without counting 
   }
 });
 
+test('branch bases follow creation, persist through checkout, and respect explicit GitHub configuration', async () => {
+  const root = await repository(),
+    store = new Store(await temp()),
+    service = new GitService(store, () => {}),
+    s = session(root);
+  try {
+    await git(root, ['switch', '-c', 'stage']);
+    const created = await service.act(s, {
+      sessionId: s.id,
+      operationId: 'branch-base',
+      action: 'create-branch',
+      branch: 'task/from-stage',
+      base: 'HEAD',
+    });
+    assert.equal(created.phase, 'completed', created.error ?? '');
+    assert.equal((await service.status(s)).baseBranch, 'stage');
+    assert.equal((await service.status(s)).prChanges, false);
+    await writeFile(join(root, 'main.py'), 'task changes\n');
+    await git(root, ['commit', '-am', 'Task changes']);
+    assert.equal((await service.status(s)).prChanges, true);
+    await git(root, ['switch', 'main']);
+    assert.equal((await service.status(s)).baseBranch, undefined);
+    await git(root, ['switch', 'task/from-stage']);
+    assert.equal((await service.status(s)).baseBranch, 'stage');
+    await git(root, ['switch', '-c', 'external', 'main']);
+    assert.equal((await service.status(s)).baseBranch, 'main');
+    await git(root, ['config', 'branch.external.gh-merge-base', 'stage']);
+    assert.equal((await service.status(s)).baseBranch, 'stage');
+    await git(root, ['switch', '-c', 'unknown', (await git(root, ['rev-parse', 'HEAD'])).trim()]);
+    assert.equal((await service.status(s)).baseBranch, undefined);
+  } finally {
+    store.close();
+  }
+});
+
 test('publication uses a verified commit and explicit destination ref', async () => {
   const root = await repository(),
     remote = await temp();
@@ -57,27 +92,48 @@ test('publication uses a verified commit and explicit destination ref', async ()
     service = new GitService(store, (o) => events.push(structuredClone(o)));
   const s = session(root);
   try {
+    await writeFile(join(root, 'removed.py'), 'old\n');
+    await git(root, ['add', 'removed.py']);
+    await git(root, ['commit', '-m', 'File to remove']);
+    await git(root, ['rm', 'removed.py']);
     await writeFile(join(root, 'main.py'), 'print("modified")\n');
+    await writeFile(join(root, 'added.py'), 'print("new")\n');
+    await rename(await repository(), join(root, 'nested'));
     const op = await service.act(s, {
       sessionId: s.id,
       operationId: 'commit-1',
       action: 'commit',
       message: 'Change',
-      paths: ['main.py'],
+      allChanges: true,
     });
     assert.equal(op.phase, 'completed');
     assert.ok(op.commit);
+    assert.equal(await git(root, ['show', `${op.commit}:added.py`]), 'print("new")\n');
+    assert.equal(await git(root, ['ls-tree', 'HEAD', 'nested']), '');
+    await writeFile(join(root, 'later.py'), 'print("later")\n');
     const again = await service.act(s, {
       sessionId: s.id,
       operationId: 'commit-1',
       action: 'commit',
       message: 'Change',
-      paths: ['main.py'],
+      allChanges: true,
     });
     assert.equal(again.commit, op.commit);
+    assert.equal(await git(root, ['diff', '--cached', '--name-only']), '');
+    const unchanged = await service.act(s, {
+      sessionId: s.id,
+      operationId: 'unchanged',
+      action: 'commit',
+      message: 'No changes',
+    });
+    assert.equal(unchanged.phase, 'completed');
+    assert.equal(unchanged.evidence.skipped, true);
     const push = await service.act(s, { sessionId: s.id, operationId: 'push-1', action: 'push' });
     assert.equal(push.phase, 'completed');
     assert.equal((await git(remote, ['rev-parse', 'refs/heads/main'])).trim(), op.commit);
+    assert.equal((await service.status(s)).upstream, 'origin/main');
+    assert.deepEqual((await service.status(s)).push, { ahead: 0, behind: 0 });
+    assert.deepEqual((await service.status(s)).outgoing, { insertions: 0, deletions: 0 });
     assert.ok(events.some((e) => e.phase === 'committing'));
   } finally {
     store.close();
@@ -107,6 +163,45 @@ test('a first local commit needs no Git remote', async () => {
     });
     assert.equal(op.phase, 'completed', op.error ?? '');
     assert.equal((await git(root, ['rev-list', '--count', 'HEAD'])).trim(), '1');
+  } finally {
+    store.close();
+  }
+});
+
+test('committing all changes preserves unresolved merge conflicts', async () => {
+  const root = await repository(),
+    store = new Store(await temp()),
+    service = new GitService(store, () => {}),
+    s = session(root);
+  try {
+    await git(root, ['switch', '-c', 'incoming']);
+    await writeFile(join(root, 'main.py'), 'incoming\n');
+    await git(root, ['commit', '-am', 'Incoming']);
+    await git(root, ['switch', 'main']);
+    await writeFile(join(root, 'main.py'), 'current\n');
+    await git(root, ['commit', '-am', 'Current']);
+    const head = await git(root, ['rev-parse', 'HEAD']);
+    await git(root, ['merge', 'incoming'], { accept: [1] });
+    const conflicts = await git(root, ['ls-files', '--unmerged', '-z']);
+    assert.ok(conflicts);
+    const stash = await service.act(s, {
+      sessionId: s.id,
+      operationId: 'stash-unresolved',
+      action: 'stash',
+    });
+    assert.equal(stash.phase, 'failed');
+    assert.match(stash.error || '', /merge conflicts/);
+    const result = await service.act(s, {
+      sessionId: s.id,
+      operationId: 'unresolved-merge',
+      action: 'commit',
+      message: 'Do not commit conflict markers',
+      allChanges: true,
+    });
+    assert.equal(result.phase, 'failed');
+    assert.match(result.error || '', /merge conflicts/i);
+    assert.equal(await git(root, ['rev-parse', 'HEAD']), head);
+    assert.equal(await git(root, ['ls-files', '--unmerged', '-z']), conflicts);
   } finally {
     store.close();
   }
@@ -161,7 +256,7 @@ test('publish pipeline creates one PR and retries the same operation without sid
         sessionId: 'test',
         operationId: 'publish',
         action: 'publish' as const,
-        message: 'Publish',
+        message: 'Publish title\n\nCommit details',
         paths: ['main.py'],
         body: 'A multiline\nbody',
       };
@@ -173,6 +268,37 @@ test('publish pipeline creates one PR and retries the same operation without sid
       JSON.parse(await readFile(calls, 'utf8')).filter((a: string[]) => a[1] === 'create').length,
       1,
     );
+    const separate = await service.act(session(root), {
+      sessionId: 'test',
+      operationId: 'separate-pr',
+      action: 'pr',
+    });
+    assert.equal(separate.phase, 'completed', separate.error ?? '');
+    const creates = (JSON.parse(await readFile(calls, 'utf8')) as string[][]).filter(
+      (a) => a[1] === 'create',
+    );
+    assert.equal(creates[0][creates[0].indexOf('--title') + 1], 'Publish title');
+    assert.equal(creates[1][creates[1].indexOf('--title') + 1], 'Publish title');
+    for (const message of ['', 'Already committed']) {
+      const clean = await service.act(session(root), {
+        sessionId: 'test',
+        operationId: `push-pr-${message || 'no-message'}`,
+        action: 'publish',
+        allChanges: true,
+        message,
+      });
+      assert.equal(clean.phase, 'completed', clean.error ?? '');
+      assert.equal(clean.commit, op.commit);
+      assert.equal((await git(root, ['rev-parse', 'HEAD'])).trim(), op.commit);
+    }
+    const changed = await service.act(session(root), {
+      sessionId: 'test',
+      operationId: 'changed-compare',
+      action: 'pr',
+      branch: 'another-branch',
+    });
+    assert.equal(changed.phase, 'failed');
+    assert.match(changed.error!, /branch changed/);
   } finally {
     process.env.PATH = oldPath;
     store.close();
@@ -203,6 +329,64 @@ test('a post-commit ref change stops publication without resetting the branch', 
     assert.equal(op.phase, 'needs-review');
     assert.equal((await git(root, ['branch', '--show-current'])).trim(), 'other');
     assert.equal((await git(remote, ['show-ref'], { accept: [1] })).trim(), '');
+  } finally {
+    store.close();
+  }
+});
+
+test('stash preserves staged and new files, pins restoration, and retains recovery data on conflicts', async () => {
+  const root = await repository(),
+    store = new Store(await temp()),
+    service = new GitService(store, () => {}),
+    s = session(root);
+  try {
+    const nested = join(root, 'nested');
+    await rename(await repository(), nested);
+    const nestedHead = await git(nested, ['rev-parse', 'HEAD']);
+    await writeFile(join(root, 'removed.py'), 'remove me\n');
+    await git(root, ['add', 'removed.py']);
+    await git(root, ['commit', '-m', 'Tracked deletion fixture']);
+    await git(root, ['rm', 'removed.py']);
+    await writeFile(join(root, 'main.py'), 'staged\n');
+    await git(root, ['add', 'main.py']);
+    await writeFile(join(root, 'main.py'), 'working\n');
+    await writeFile(join(root, 'new.py'), 'new\n');
+    const staged = await git(root, ['diff', '--cached']);
+    const request = { sessionId: s.id, operationId: 'stash-1', action: 'stash' as const };
+    const saved = await service.act(s, request);
+    assert.equal(saved.phase, 'completed', saved.error ?? '');
+    const oid = String(saved.evidence.stash);
+    assert.equal((await service.status(s)).stash, oid);
+    assert.equal((await service.status(s)).files.length, 0);
+    assert.equal(await git(nested, ['rev-parse', 'HEAD']), nestedHead);
+    await service.act(s, request);
+    assert.equal((await git(root, ['stash', 'list'])).trim().split('\n').length, 1);
+    await writeFile(join(root, 'main.py'), 'other changes\n');
+    const other = await service.act(s, { ...request, operationId: 'stash-2' });
+    assert.equal(other.phase, 'completed', other.error ?? '');
+    const restore = {
+      sessionId: s.id,
+      operationId: 'apply-1',
+      action: 'stash-apply' as const,
+      stash: oid,
+    };
+    assert.equal((await service.act(s, restore)).phase, 'completed');
+    assert.equal(await readFile(join(root, 'main.py'), 'utf8'), 'working\n');
+    assert.equal(await readFile(join(root, 'new.py'), 'utf8'), 'new\n');
+    assert.equal(await git(root, ['diff', '--cached']), staged);
+    assert.equal((await service.status(s)).stash, other.evidence.stash);
+    assert.equal((await service.act(s, restore)).phase, 'completed');
+    const dirty = await service.act(s, { ...restore, operationId: 'apply-dirty' });
+    assert.equal(dirty.phase, 'failed');
+    assert.match(dirty.error || '', /local changes/);
+    await git(root, ['stash', 'push', '-u']);
+    await writeFile(join(root, 'main.py'), 'conflicting base\n');
+    await git(root, ['commit', '-am', 'Conflicting base']);
+    const conflict = await service.act(s, { ...restore, operationId: 'apply-conflict' });
+    assert.equal(conflict.phase, 'uncertain');
+    assert.equal(await readFile(join(root, 'main.py'), 'utf8'), 'conflicting base\n');
+    assert.match((await service.inspect(s, conflict.id)).log, new RegExp(oid));
+    assert.ok((await git(root, ['stash', 'list', '--format=%H'])).includes(oid));
   } finally {
     store.close();
   }

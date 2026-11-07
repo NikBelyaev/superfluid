@@ -15,6 +15,7 @@
   --diffs-font-size: var(--font-size-code);
   --radius: 0.5rem;
   --control-radius: 0.5rem;
+  --floating-radius: 1rem;
   --sidebar-content-inset: 0.5rem;
   --sidebar-control-gap: 0.5rem;
   --sidebar-row-content-inset: 0.625rem;
