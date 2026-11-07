@@ -9,10 +9,17 @@ import type {
   Run,
   Session,
 } from '@superfluid/contracts';
-import { emptyView, surfaceKey, type ViewState, type Surface } from './workspaceView';
+import {
+  emptyView,
+  surfaceKey,
+  type ViewState,
+  type Surface,
+  type Location,
+} from './workspaceView';
 import type { Modal } from './dialogs';
 import { repositorySummary } from './repositories';
 import type { GitMenuPage, GitBatch } from '~/commands/gitBatch';
+import { symbolAt, type DocumentSymbol } from '~/components/python/symbols';
 
 export { surfaceKey, type Surface, type Location, type ViewState } from './workspaceView';
 
@@ -183,6 +190,14 @@ export const useApp = create<State>((set, get) => ({
       if (line) doc.reveal = { line, column: column ?? 1 };
       set({ revision: get().revision + 1, palette: null });
       get().setView({ tabs, active: path, history, historyIndex: index }, s.id);
+      const location = history[index];
+      if (
+        line &&
+        location?.path === path &&
+        location.line === line &&
+        location.symbolKind === undefined
+      )
+        void resolveLocationSymbol(s.id, location);
     } catch (e) {
       get().fail(e);
     }
@@ -278,6 +293,35 @@ export const useApp = create<State>((set, get) => ({
     }
   },
 }));
+
+export async function resolveLocationSymbol(sessionId: string, location: Location) {
+  try {
+    const { documents } = await import('~/state/editor/Documents');
+    const doc = documents.items.get(documents.key(sessionId, location.path));
+    if (!doc || doc.model.getLanguageId() !== 'python') return;
+    const version = doc.version;
+    await documents.sync(doc);
+    const symbols: DocumentSymbol[] | null = await desktop.call('lsp.request', {
+      sessionId,
+      method: 'textDocument/documentSymbol',
+      params: { textDocument: { uri: documents.diskUri(doc) } },
+    });
+    const symbol = symbolAt(symbols ?? [], location.line - 1, location.column - 1);
+    const app = useApp.getState(),
+      view = app.views[sessionId];
+    if (!symbol || doc.version !== version || !view?.history.includes(location)) return;
+    app.setView(
+      {
+        history: view.history.map((item) =>
+          item === location ? { ...item, symbol: symbol.name, symbolKind: symbol.kind } : item,
+        ),
+      },
+      sessionId,
+    );
+  } catch {
+    // Symbol metadata is optional; the recorded file position remains usable.
+  }
+}
 
 export async function flushLayouts() {
   const state = useApp.getState();

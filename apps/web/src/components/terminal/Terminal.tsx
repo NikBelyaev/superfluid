@@ -7,6 +7,7 @@ import {
 } from '@superfluid/ghostty/renderer';
 import type { GhosttySnapshot } from '@superfluid/ghostty/core';
 import { useApp } from '~/state/workspaceStore';
+import { resolveAppearance, useAppearance, useSystemDark } from '~/state/appearance';
 
 export default function Terminal({ id }: { id: string }) {
   const host = useRef<HTMLDivElement>(null),
@@ -14,6 +15,7 @@ export default function Terminal({ id }: { id: string }) {
     input = useRef<HTMLTextAreaElement>(null),
     snapshot = useRef<GhosttySnapshot | null>(null);
   const output = useRef<HTMLPreElement>(null);
+  const { scheme } = resolveAppearance(useAppearance(), useSystemDark());
   useEffect(() => {
     const c = canvas.current!,
       element = host.current!,
@@ -120,6 +122,24 @@ export default function Terminal({ id }: { id: string }) {
       snapshot.current = null;
     };
   }, [id]);
+  useEffect(() => {
+    const appearance = getComputedStyle(document.documentElement);
+    const color = (value: string) => {
+      const [r, g, b] = value.match(/[\d.]+/g)!.map(Number);
+      return { r, g, b };
+    };
+    void desktop
+      .call('terminal.command', {
+        id,
+        command: 'theme',
+        data: {
+          foreground: color(appearance.color),
+          background: color(appearance.backgroundColor),
+          cursor: color(appearance.color),
+        },
+      })
+      .catch(useApp.getState().fail);
+  }, [id, scheme]);
   const send = (command: any, data: unknown) =>
     void desktop.call('terminal.command', { id, command, data }).catch(useApp.getState().fail);
   return (

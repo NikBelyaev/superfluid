@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import { AlertCircle, Braces, Save, Download, RefreshCw } from 'lucide-react';
 import { documents, monaco, subscribe, getRevision, type Doc } from '~/state/editor/Documents';
 import { useApp } from '~/state/workspaceStore';
+import { editorTheme, useAppearance, useSystemDark } from '~/state/appearance';
 import type { Session } from '@superfluid/contracts';
 import './theme';
 import '~/components/python/languageProviders';
@@ -25,12 +26,14 @@ export default function Editor({
     [loading, setLoading] = useState(false),
     [error, setError] = useState('');
   const revision = useApp((a) => a.revision);
+  const theme = editorTheme(useAppearance(), useSystemDark());
+  useEffect(() => monaco.editor.setTheme(theme), [theme]);
   useSyncExternalStore(subscribe, getRevision);
   useEffect(() => {
     if (!host.current) return;
     const appearance = getComputedStyle(document.documentElement);
     const instance = monaco.editor.create(host.current, {
-      theme: 'superfluid-light',
+      theme: editorTheme(useAppearance.getState(), useSystemDark.getState()),
       model: null,
       fontFamily: appearance.getPropertyValue('--font-mono').trim(),
       fontSize: parseFloat(appearance.getPropertyValue('--font-size-editor')),

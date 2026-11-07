@@ -21,7 +21,7 @@ test('porcelain parsing preserves whitespace and rename paths', () => {
   assert.equal(result.files[2].path, 'brand new.py');
 });
 
-test('status totals count staged, unstaged and untracked lines without counting binary files', async () => {
+test('status groups untracked directories and counts staged, unstaged and loose untracked lines', async () => {
   const root = await repository(),
     store = new Store(await temp()),
     service = new GitService(store, () => {}),
@@ -31,9 +31,14 @@ test('status totals count staged, unstaged and untracked lines without counting 
     await git(root, ['add', 'main.py']);
     await writeFile(join(root, 'main.py'), 'working\nextra\n');
     await mkdir(join(root, 'new'));
-    await writeFile(join(root, 'new', 'odd\tname\n.py'), 'one\ntwo');
+    await writeFile(join(root, 'odd\tname\n.py'), 'one\ntwo');
+    await writeFile(join(root, 'new', 'generated.py'), 'not\ncounted\nrecursively\n');
     await writeFile(join(root, 'binary'), Buffer.from([0, 1, 2, 10]));
     const status = await service.status(s);
+    assert.deepEqual(
+      status.files.filter((file) => file.path.startsWith('new/')),
+      [{ path: 'new/', index: '?', worktree: '?' }],
+    );
     assert.deepEqual(status.changes, { insertions: 4, deletions: 1 });
     await git(root, ['add', '.']);
     await git(root, ['commit', '-m', 'Save changes']);
@@ -98,7 +103,10 @@ test('publication uses a verified commit and explicit destination ref', async ()
     await git(root, ['rm', 'removed.py']);
     await writeFile(join(root, 'main.py'), 'print("modified")\n');
     await writeFile(join(root, 'added.py'), 'print("new")\n');
+    await mkdir(join(root, 'new'));
+    await writeFile(join(root, 'new', 'task.py'), 'print("task")\n');
     await rename(await repository(), join(root, 'nested'));
+    assert.ok((await service.status(s)).files.some((file) => file.path === 'new/'));
     const op = await service.act(s, {
       sessionId: s.id,
       operationId: 'commit-1',
@@ -109,6 +117,7 @@ test('publication uses a verified commit and explicit destination ref', async ()
     assert.equal(op.phase, 'completed');
     assert.ok(op.commit);
     assert.equal(await git(root, ['show', `${op.commit}:added.py`]), 'print("new")\n');
+    assert.equal(await git(root, ['show', `${op.commit}:new/task.py`]), 'print("task")\n');
     assert.equal(await git(root, ['ls-tree', 'HEAD', 'nested']), '');
     await writeFile(join(root, 'later.py'), 'print("later")\n');
     const again = await service.act(s, {
@@ -216,6 +225,14 @@ test('diffs include untracked files and files whose parent directory was deleted
     assert.match(await service.diff(session(root), 'new.py', 'unstaged', 'HEAD'), /\+new value/);
     await mkdir(join(root, 'removed'));
     await writeFile(join(root, 'removed', 'old.py'), 'old value\n');
+    await assert.rejects(
+      () => service.diff(session(root), 'removed/', 'unstaged', 'HEAD'),
+      /Open individual files from the project tree/,
+    );
+    assert.match(
+      await service.diff(session(root), 'removed/old.py', 'unstaged', 'HEAD'),
+      /\+old value/,
+    );
     await git(root, ['add', '.']);
     await git(root, ['commit', '-m', 'More files']);
     await import('node:fs/promises').then((fs) =>
@@ -357,7 +374,9 @@ test('stash preserves staged and new files, pins restoration, and retains recove
     assert.equal(saved.phase, 'completed', saved.error ?? '');
     const oid = String(saved.evidence.stash);
     assert.equal((await service.status(s)).stash, oid);
-    assert.equal((await service.status(s)).files.length, 0);
+    assert.deepEqual((await service.status(s)).files, [
+      { path: 'nested/', index: '?', worktree: '?' },
+    ]);
     assert.equal(await git(nested, ['rev-parse', 'HEAD']), nestedHead);
     await service.act(s, request);
     assert.equal((await git(root, ['stash', 'list'])).trim().split('\n').length, 1);

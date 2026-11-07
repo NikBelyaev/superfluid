@@ -121,7 +121,7 @@ export class GitService {
               'status',
               '--porcelain=v2',
               '--branch',
-              '--untracked-files=all',
+              '--untracked-files=normal',
               '-z',
             ],
             {
@@ -239,7 +239,7 @@ export class GitService {
           push,
           prChanges,
           stash: stash.trim() || undefined,
-          files: status.files.filter((file) => file.index !== '?' || !file.path.endsWith('/')),
+          files: status.files,
           changes,
           outgoing,
           branches: branches.trim().split('\n').filter(Boolean).slice(0, 1000),
@@ -259,12 +259,17 @@ export class GitService {
         const tracked = await git(s.path, ['ls-files', '--error-unmatch', '--', path], {
           accept: [1],
         });
-        if (!tracked.trim())
+        if (!tracked.trim()) {
+          if (path.endsWith('/'))
+            throw new Error(
+              'Untracked directory. Open individual files from the project tree to review changes.',
+            );
           return git(
             s.path,
             ['diff', '--no-index', '--no-ext-diff', '--no-color', '--', '/dev/null', path],
             { accept: [1] },
           );
+        }
       }
       const args = [
         'diff',

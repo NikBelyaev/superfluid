@@ -1,4 +1,4 @@
-import { Files, GitCompareArrows, Search, Settings2 } from 'lucide-react';
+import { Files, GitCompareArrows, Search, Settings2, Settings } from 'lucide-react';
 import { useApp, showSurface } from '~/state/workspaceStore';
 import type { Session } from '@superfluid/contracts';
 
@@ -45,6 +45,13 @@ export function ActivityRail({ session }: { session: Session }) {
         onClick={() => useApp.setState({ modal: { kind: 'interpreter' } })}
       >
         <Settings2 size={18} />
+      </button>
+      <button
+        className="rail-button"
+        title="Settings (⌘,)"
+        onClick={() => useApp.setState({ modal: { kind: 'settings' } })}
+      >
+        <Settings size={18} />
       </button>
     </nav>
   );

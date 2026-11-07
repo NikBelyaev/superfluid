@@ -12,6 +12,8 @@ export interface Location {
   line: number;
   column: number;
   label: string;
+  symbol?: string;
+  symbolKind?: number;
 }
 
 export interface ViewState {

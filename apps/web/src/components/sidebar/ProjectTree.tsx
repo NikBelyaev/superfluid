@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { FileEntry, Session } from '@superfluid/contracts';
 import { useApp, showSurface } from '~/state/workspaceStore';
+import { TREE_ROW_HEIGHT, treeWindow } from './treeWindow';
 
 const cache = new Map<string, Record<string, FileEntry[]>>();
 
@@ -70,30 +71,46 @@ export default function ProjectTree({ session }: { session: Session }) {
       for (const path of view.expanded) if (!dirs[path]) await load(path);
     })();
   }, [view.expanded, session.id]);
-  const toggle = (path: string) =>
-    useApp.getState().setView({
-      expanded: view.expanded.includes(path)
-        ? view.expanded.filter((x) => x !== path)
-        : [...view.expanded, path],
-    });
-  const rows: { entry: FileEntry; depth: number }[] = [];
+  const rows: { entry: FileEntry; depth: number; subtreeEnd: number }[] = [];
   if (view.changes) {
     for (const f of status?.files ?? [])
       rows.push({
         entry: { name: f.path.split('/').at(-1)!, path: f.path, directory: false, symlink: false },
         depth: 0,
+        subtreeEnd: rows.length + 1,
       });
   } else {
     const flatten = (path: string, depth: number) => {
       for (const entry of dirs[path] ?? []) {
-        rows.push({ entry, depth });
+        const row = { entry, depth, subtreeEnd: rows.length + 1 };
+        rows.push(row);
         if (entry.directory && view.expanded.includes(entry.path)) flatten(entry.path, depth + 1);
+        row.subtreeEnd = rows.length;
       }
     };
     flatten('', 0);
   }
-  const start = Math.max(0, Math.floor(scroll / 28) - 10),
-    end = Math.min(rows.length, start + Math.ceil(height / 28) + 20);
+  const toggle = (index: number) => {
+    const { entry } = rows[index],
+      expanded = view.expanded.includes(entry.path),
+      container = host.current!,
+      element = container.querySelector<HTMLElement>(`[data-path="${CSS.escape(entry.path)}"]`);
+    if (expanded && element) {
+      const offset = element.getBoundingClientRect().top - container.getBoundingClientRect().top;
+      container.scrollTop = Math.max(0, index * TREE_ROW_HEIGHT - offset);
+      setScroll(container.scrollTop);
+    }
+    setFocused(entry.path);
+    element?.focus({ preventScroll: true });
+    useApp.getState().setView(
+      {
+        expanded: expanded
+          ? view.expanded.filter((path) => path !== entry.path)
+          : [...view.expanded, entry.path],
+      },
+      session.id,
+    );
+  };
   const selected =
     view.changes && view.surface?.kind === 'diff'
       ? (view.surface.path ?? status?.files[0]?.path)
@@ -152,16 +169,26 @@ export default function ProjectTree({ session }: { session: Session }) {
         onScroll={(e) => setScroll(e.currentTarget.scrollTop)}
       >
         {error && <p className="inline-error">{error}</p>}
-        <div style={{ height: rows.length * 28, position: 'relative' }}>
-          {rows.slice(start, end).map(({ entry, depth }, index) => {
-            const expanded = view.expanded.includes(entry.path),
+        <div
+          style={{
+            height: rows.length * TREE_ROW_HEIGHT,
+            position: 'relative',
+            isolation: 'isolate',
+          }}
+        >
+          {treeWindow(rows, scroll, height).map(({ index, top, sticky }) => {
+            const { entry, depth, subtreeEnd } = rows[index],
+              expanded = view.expanded.includes(entry.path),
               change = status?.files.find((f) => f.path === entry.path);
-            return (
+            const row = (
               <div
                 key={entry.path}
                 data-path={entry.path}
-                className={`tree-row ${selected === entry.path ? 'selected' : ''}`}
-                style={{ top: (start + index) * 28, paddingLeft: 12 + depth * 14 }}
+                className={`tree-row ${sticky ? 'sticky' : ''} ${selected === entry.path ? 'selected' : ''}`}
+                style={{
+                  top: entry.directory ? depth * TREE_ROW_HEIGHT : top,
+                  paddingLeft: 12 + depth * 14 + (sticky ? 6 : 0),
+                }}
                 role="treeitem"
                 aria-level={depth + 1}
                 aria-expanded={entry.directory ? expanded : undefined}
@@ -179,23 +206,23 @@ export default function ProjectTree({ session }: { session: Session }) {
                 }
                 onFocus={() => setFocused(entry.path)}
                 onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
                   if (e.key === 'Enter') {
                     e.preventDefault();
                     entry.directory
-                      ? toggle(entry.path)
+                      ? toggle(index)
                       : view.changes
                         ? showSurface({ kind: 'diff', path: entry.path })
                         : void useApp.getState().openFile(entry.path);
-                  } else if (e.key === 'ArrowRight' && entry.directory && !expanded)
-                    toggle(entry.path);
-                  else if (e.key === 'ArrowLeft' && entry.directory && expanded) toggle(entry.path);
+                  } else if (e.key === 'ArrowRight' && entry.directory && !expanded) toggle(index);
+                  else if (e.key === 'ArrowLeft' && entry.directory && expanded) toggle(index);
                   else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                     e.preventDefault();
                     const next = Math.max(
                       0,
-                      Math.min(rows.length - 1, start + index + (e.key === 'ArrowDown' ? 1 : -1)),
+                      Math.min(rows.length - 1, index + (e.key === 'ArrowDown' ? 1 : -1)),
                     );
-                    host.current!.scrollTop = Math.max(0, next * 28 - height / 2);
+                    host.current!.scrollTop = Math.max(0, next * TREE_ROW_HEIGHT - height / 2);
                     const target = rows[next].entry.path;
                     setFocused(target);
                     requestAnimationFrame(() => {
@@ -206,24 +233,32 @@ export default function ProjectTree({ session }: { session: Session }) {
                     });
                   }
                 }}
-                onClick={() =>
-                  entry.directory
-                    ? toggle(entry.path)
-                    : view.changes
-                      ? showSurface({ kind: 'diff', path: entry.path })
-                      : void useApp.getState().openFile(entry.path)
-                }
+                onClick={(e) => {
+                  if (entry.directory && sticky) {
+                    host.current!.scrollTop = Math.max(0, (index - depth) * TREE_ROW_HEIGHT);
+                    setScroll(host.current!.scrollTop);
+                    e.currentTarget.focus({ preventScroll: true });
+                  } else if (entry.directory) toggle(index);
+                  else if (view.changes) showSurface({ kind: 'diff', path: entry.path });
+                  else void useApp.getState().openFile(entry.path);
+                }}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   useApp.setState({ modal: { kind: 'rename', path: entry.path } });
                 }}
               >
                 {entry.directory ? (
-                  expanded ? (
-                    <ChevronDown size={12} />
-                  ) : (
-                    <ChevronRight size={12} />
-                  )
+                  <button
+                    className="tree-twist"
+                    tabIndex={-1}
+                    aria-label={`${expanded ? 'Collapse' : 'Expand'} ${entry.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggle(index);
+                    }}
+                  >
+                    {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  </button>
                 ) : (
                   <span className="tree-indent" />
                 )}
@@ -245,6 +280,21 @@ export default function ProjectTree({ session }: { session: Session }) {
                   </span>
                 )}
               </div>
+            );
+            return entry.directory ? (
+              <div
+                key={entry.path}
+                className="tree-branch"
+                style={{
+                  top: index * TREE_ROW_HEIGHT,
+                  height: (subtreeEnd - index) * TREE_ROW_HEIGHT,
+                  zIndex: rows.length - index,
+                }}
+              >
+                {row}
+              </div>
+            ) : (
+              row
             );
           })}
         </div>

@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { GhosttyTerminalCore } from '@superfluid/ghostty/core';
 import { command } from '../process/ProcessRunner';
 import type { Run, TerminalFrame } from '@superfluid/contracts';
+import { terminalThemeSchema } from '@superfluid/contracts';
 
 const port = parentPort!;
 
@@ -207,6 +208,11 @@ async function handle(method: string, input: any) {
   const t = terminals.get(input.id);
   if (!t) throw new Error('This terminal is no longer available.');
   switch (input.command) {
+    case 'theme':
+      t.core.setTheme(terminalThemeSchema.parse(input.data));
+      t.full = true;
+      schedule(t);
+      break;
     case 'rename':
       if (typeof input.data !== 'string' || !input.data.trim() || input.data.length > 80)
         throw new Error('Use a terminal name with 1–80 characters.');

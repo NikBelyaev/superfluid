@@ -135,7 +135,7 @@ select:focus-visible,
 }
 .button.primary {
   background: var(--primary);
-  color: white;
+  color: var(--primary-foreground);
   border-color: var(--primary);
 }
 .button.primary:hover {
@@ -155,7 +155,7 @@ select:focus-visible,
 kbd {
   font: 500 12px/20px var(--font-sans);
   color: var(--control-muted-foreground);
-  background: rgb(24 24 27 / 7%);
+  background: color-mix(in srgb, var(--foreground) 7%, transparent);
   border-radius: 4px;
   padding: 0 4px;
   white-space: nowrap;
@@ -533,7 +533,7 @@ kbd {
   flex: 1;
   min-height: 0;
   position: relative;
-  background: white;
+  background: var(--background);
 }
 .activity-rail {
   width: 40px;
@@ -638,12 +638,38 @@ kbd {
   margin: 0 6px;
   line-height: 20px;
 }
+.tree-branch {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+.tree-branch > .tree-row {
+  position: sticky;
+  pointer-events: auto;
+}
+.tree-row.sticky {
+  margin: 0;
+  padding-right: 18px;
+  border-radius: 0;
+  background: var(--sidebar);
+}
 .tree-row:hover {
   background: var(--accent);
 }
 .tree-row.selected {
   background: var(--accent);
   color: var(--foreground);
+}
+.tree-twist {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 28px;
+  margin: 0 -4px;
+  padding: 0;
 }
 .tree-indent {
   width: 12px;
@@ -1088,12 +1114,61 @@ kbd {
   font-size: var(--text-xs);
   line-height: 18px;
 }
+.lineage .island-row {
+  color: var(--muted-foreground);
+}
+.lineage .island-row > svg {
+  color: currentColor;
+}
 .lineage .current {
   background: var(--sidebar);
-  color: var(--muted-foreground);
+  color: color-mix(in srgb, var(--foreground) 80%, var(--card));
 }
 .lineage .island-row small {
   margin: 0;
+}
+.lineage-list {
+  max-height: 102px;
+  overflow-y: auto;
+}
+.lineage-list::-webkit-scrollbar {
+  width: 3px;
+}
+.lineage-list::-webkit-scrollbar-button {
+  display: none;
+}
+.lineage-list:hover {
+  --app-scrollbar-thumb: var(--app-scrollbar-thumb-hover);
+}
+.lineage-row {
+  position: relative;
+}
+.lineage-row:is(:hover, :focus-within) .island-row {
+  background: var(--sidebar);
+  color: var(--foreground);
+  padding-right: 34px;
+}
+.lineage-remove {
+  position: absolute;
+  inset-block: 0;
+  right: 6px;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+  visibility: hidden;
+}
+.lineage-row:hover .lineage-remove,
+.lineage-row:focus-within .lineage-remove {
+  visibility: visible;
+}
+.lineage-row:hover small,
+.lineage-row:focus-within small {
+  display: none;
+}
+.lineage-remove:hover {
+  color: var(--foreground);
 }
 .repository-branch-summary {
   display: flex;
@@ -1429,7 +1504,7 @@ kbd {
   align-items: center;
   gap: 5px;
   font-size: var(--text-xs);
-  color: #7e22ce;
+  color: var(--pr-foreground);
 }
 .pr-heading h2 {
   font-size: 16px;
@@ -1441,9 +1516,9 @@ kbd {
 .pr-state {
   font-size: var(--text-2xs);
   padding: 2px 6px;
-  border: 1px solid #e9d5ff;
+  border: 1px solid color-mix(in srgb, var(--pr-foreground) 25%, var(--border));
   border-radius: 4px;
-  color: #7e22ce;
+  color: var(--pr-foreground);
   text-transform: capitalize;
 }
 .pr-state.open {
@@ -1626,7 +1701,7 @@ kbd {
   width: 7px;
   height: 7px;
   border: 1px solid var(--muted-foreground);
-  background: white;
+  background: var(--card);
   border-radius: 50%;
 }
 .timeline-item strong {
@@ -1808,7 +1883,7 @@ kbd {
   font-size: var(--text-detail);
   color: var(--error-foreground);
   line-height: 20px;
-  background: #fef2f2;
+  background: color-mix(in srgb, var(--error-foreground) 10%, var(--card));
   border-radius: 5px;
   padding: 9px 11px;
   margin-top: 13px;

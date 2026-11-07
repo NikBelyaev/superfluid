@@ -33,6 +33,7 @@ export function Diff({
   const repositoryPath =
     selected && repository?.path ? selected.slice(repository.path.length + 1) : selected;
   useEffect(() => {
+    if (selected?.endsWith('/') && mode === 'unstaged') return;
     let cancelled = false;
     setBusy(true);
     setError('');
@@ -85,13 +86,22 @@ export function Diff({
         </button>
       </div>
       {selected && (
-        <button className="diff-path" onClick={() => void useApp.getState().openFile(selected)}>
+        <button
+          className="diff-path"
+          disabled={selected.endsWith('/')}
+          onClick={() => void useApp.getState().openFile(selected)}
+        >
           <FileCode2 size={13} />
           {selected}
-          <ArrowUpRight size={12} />
+          {!selected.endsWith('/') && <ArrowUpRight size={12} />}
         </button>
       )}
-      {error ? (
+      {selected?.endsWith('/') && mode === 'unstaged' ? (
+        <div className="surface-empty">
+          <h3>Untracked directory</h3>
+          <p>Open individual files from the project tree to review changes.</p>
+        </div>
+      ) : error ? (
         <div className="surface-empty error-text">{error}</div>
       ) : busy ? (
         <div className="surface-empty">Loading changes…</div>
