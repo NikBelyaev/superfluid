@@ -62,7 +62,11 @@ export function SourceControlSection({ session }: { session: Session }) {
           </Menu.Portal>
         </Menu.Root>
       </div>
-      <button className="island-row" onClick={() => showSurface({ kind: 'diff' })}>
+      <button
+        className="island-row"
+        title="Line totals exclude untracked directories"
+        onClick={() => showSurface({ kind: 'diff' })}
+      >
         <FileDiff className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         <span>Changes</span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-xs leading-5 font-normal whitespace-nowrap tabular-nums">

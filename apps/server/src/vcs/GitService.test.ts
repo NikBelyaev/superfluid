@@ -21,7 +21,7 @@ test('porcelain parsing preserves whitespace and rename paths', () => {
   assert.equal(result.files[2].path, 'brand new.py');
 });
 
-test('status totals count staged, unstaged and untracked lines without counting binary files', async () => {
+test('status groups untracked directories and counts staged, unstaged and loose untracked lines', async () => {
   const root = await repository(),
     store = new Store(await temp()),
     service = new GitService(store, () => {}),
@@ -31,9 +31,14 @@ test('status totals count staged, unstaged and untracked lines without counting 
     await git(root, ['add', 'main.py']);
     await writeFile(join(root, 'main.py'), 'working\nextra\n');
     await mkdir(join(root, 'new'));
-    await writeFile(join(root, 'new', 'odd\tname\n.py'), 'one\ntwo');
+    await writeFile(join(root, 'odd\tname\n.py'), 'one\ntwo');
+    await writeFile(join(root, 'new', 'generated.py'), 'not\ncounted\nrecursively\n');
     await writeFile(join(root, 'binary'), Buffer.from([0, 1, 2, 10]));
     const status = await service.status(s);
+    assert.deepEqual(
+      status.files.filter((file) => file.path.startsWith('new/')),
+      [{ path: 'new/', index: '?', worktree: '?' }],
+    );
     assert.deepEqual(status.changes, { insertions: 4, deletions: 1 });
     await git(root, ['add', '.']);
     await git(root, ['commit', '-m', 'Save changes']);
@@ -121,6 +126,14 @@ test('diffs include untracked files and files whose parent directory was deleted
     assert.match(await service.diff(session(root), 'new.py', 'unstaged', 'HEAD'), /\+new value/);
     await mkdir(join(root, 'removed'));
     await writeFile(join(root, 'removed', 'old.py'), 'old value\n');
+    await assert.rejects(
+      () => service.diff(session(root), 'removed/', 'unstaged', 'HEAD'),
+      /Open individual files from the project tree/,
+    );
+    assert.match(
+      await service.diff(session(root), 'removed/old.py', 'unstaged', 'HEAD'),
+      /\+old value/,
+    );
     await git(root, ['add', '.']);
     await git(root, ['commit', '-m', 'More files']);
     await import('node:fs/promises').then((fs) =>
