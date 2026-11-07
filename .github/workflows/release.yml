@@ -45,15 +45,15 @@ jobs:
           if [ "$SIGNING_READY" != true ]; then
             if [ "$GITHUB_EVENT_NAME" = schedule ]; then
               echo 'skip=true' >> "$GITHUB_OUTPUT"
-              echo 'Scheduled releases are disabled until Apple signing secrets are configured.'
+              echo 'Scheduled releases are disabled until signing secrets are configured.'
               exit 0
             fi
-            echo 'Configure the Apple signing secrets listed in docs/operations/releases.md.' >&2
+            echo 'Configure the signing secrets listed in docs/operations/releases.md.' >&2
             exit 1
           fi
           node scripts/release.ts plan
         env:
-          SIGNING_READY: ${{ secrets.CSC_LINK != '' && secrets.CSC_KEY_PASSWORD != '' && secrets.APPLE_API_KEY != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER != '' }}
+          SIGNING_READY: ${{ secrets.CSC_LINK != '' && secrets.CSC_KEY_PASSWORD != '' }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_CHANNEL: ${{ github.event_name == 'push' && 'stable' || inputs.channel || 'nightly' }}
           RELEASE_VERSION: ${{ inputs.version }}
@@ -94,22 +94,15 @@ jobs:
         env:
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       - run: pnpm build
-      - name: Sign and notarize DMG and update ZIP
+      - name: Sign DMG and update ZIP with the pinned release certificate
         run: |
           test -n "$CSC_LINK" && test -n "$CSC_KEY_PASSWORD"
-          test -n "$APPLE_API_KEY_BASE64" && test -n "$APPLE_API_KEY_ID" && test -n "$APPLE_API_ISSUER"
-          printf '%s' "$APPLE_API_KEY_BASE64" | base64 -D > "$APPLE_API_KEY"
-          trap 'rm -f "$APPLE_API_KEY"' EXIT
           pnpm exec electron-builder --config scripts/electron-builder.cjs --mac --"$ARCH" --publish never
         env:
           ARCH: ${{ matrix.arch }}
           SF_RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY: ${{ runner.temp }}/AuthKey.p8
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
       - name: Verify packaged app in an isolated profile
         run: pnpm test:electron
         env:

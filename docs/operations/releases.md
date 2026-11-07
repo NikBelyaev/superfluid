@@ -1,8 +1,10 @@
 # Releasing Superfluid
 
 Releases are public GitHub Releases in `NikBelyaev/superfluid`. Only macOS is
-currently supported: each release includes signed, notarized DMG and ZIP files for
-Apple Silicon and Intel. Users need no GitHub account or token to update.
+currently supported: each release includes DMG and ZIP files for Apple Silicon and
+Intel, signed with one persistent self-signed certificate. Users need no GitHub
+account or token to update. These builds are not notarized by Apple; Gatekeeper
+can require explicit approval for the first launch.
 
 ## Set up signing
 
@@ -10,17 +12,29 @@ Add these GitHub Actions repository secrets before the first release:
 
 | Secret             | Value                                                                    |
 | ------------------ | ------------------------------------------------------------------------ |
-| `CSC_LINK`         | Base64-encoded Developer ID Application certificate exported as a `.p12` |
+| `CSC_LINK`         | Base64-encoded `.p12` containing the release certificate and private key |
 | `CSC_KEY_PASSWORD` | Password for that `.p12`                                                 |
-| `APPLE_API_KEY`    | Base64-encoded App Store Connect API private key (`.p8`)                 |
-| `APPLE_API_KEY_ID` | API key ID                                                               |
-| `APPLE_API_ISSUER` | API issuer ID                                                            |
 
-Keep the signing identity consistent across releases. macOS verifies that an
-update belongs to the same developer as the installed app. Local `pnpm dist`
-builds retain ad-hoc signing and have no update feed; install a signed release
-once to start receiving updates. Release builds fail if signing or notarization
-fails. Scheduled releases skip work until all signing secrets are present.
+The public certificate is pinned in `build/signing-cert.pem`. Keep the encrypted
+`.p12` and its password backed up outside the repository. Never regenerate or
+replace this certificate casually: installed apps require its signature when
+accepting an update. Losing the private key prevents further updates of those
+installs; a replacement certificate requires a planned transition or manual
+reinstallation. This certificate expires in November 2036.
+
+[`scripts/sign-mac.cjs`](../../scripts/sign-mac.cjs) signs the app and nested code
+with the exact pinned identity and verifies the result. A mismatched `.p12`
+fails the build. The custom signer avoids the default Apple trust-anchor lookup;
+it does not disable signature verification of update payloads. The hardened
+runtime remains enabled. Notarization and Apple's timestamp service are disabled;
+no Apple Developer membership or API key is needed.
+
+CI imports the `.p12` into a temporary keychain. Local signing can use the same
+`CSC_LINK` and `CSC_KEY_PASSWORD`, or an unlocked `CSC_KEYCHAIN` that is in the
+keychain search list. Do not add this certificate to system trust or disable
+Gatekeeper globally. Local `pnpm dist` builds retain ad-hoc signing and have no
+update feed; install a release manually once to start receiving updates.
+Scheduled releases skip work until both signing secrets are present.
 
 ## Nightly, then Stable
 
@@ -72,4 +86,4 @@ Before shipping the first update, test a signed installed release against its
 successor in a disposable `SF_DATA_DIR`, including dirty buffers in multiple
 worktrees and running processes. Check Keep working, successful restart,
 Stable/Nightly switching, and failed downloads. Unit tests cannot verify
-Squirrel.Mac's signature checks or notarization.
+Squirrel.Mac's signature checks or Gatekeeper behavior on another Mac.
