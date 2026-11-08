@@ -38,7 +38,7 @@ export default function Editor({
   const theme = editorTheme(useAppearance(), useSystemDark());
   useEffect(() => monaco.editor.setTheme(theme), [theme]);
   useSyncExternalStore(subscribe, getRevision);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!host.current) return;
     const appearance = getComputedStyle(document.documentElement);
     const instance = monaco.editor.create(host.current, {
@@ -197,35 +197,59 @@ export default function Editor({
       setDoc(null);
       return;
     }
-    setLoading(true);
     setError('');
-    editor.current?.setModel(null);
-    bound.current = null;
-    setDoc(null);
-    void documents
-      .open(session, path)
-      .then((d) => {
-        if (cancelled || !editor.current) return;
-        bound.current = d;
-        setDoc(d);
-        editor.current.setModel(d.model);
-        editor.current.updateOptions({
-          readOnly: !!d.readOnly,
-          domReadOnly: !!d.readOnly,
-          ariaLabel: d.readOnly ? 'Read-only editor content' : 'Editor content',
-        });
-        const saved =
-          useApp.getState().views[session.id]?.editorViews?.[(primary ? 'main:' : 'side:') + path];
-        if (saved) editor.current.restoreViewState(saved);
-        if (d.reveal) {
-          editor.current.setPosition({ lineNumber: d.reveal.line, column: d.reveal.column });
-          editor.current.revealLineInCenterIfOutsideViewport(d.reveal.line);
-          d.reveal = undefined;
+    const bind = (d: Doc) => {
+      if (cancelled || !editor.current) return;
+      bound.current = d;
+      setDoc(d);
+      const changed = editor.current.getModel() !== d.model;
+      if (changed) editor.current.setModel(d.model);
+      editor.current.updateOptions({
+        readOnly: !!d.readOnly,
+        domReadOnly: !!d.readOnly,
+        ariaLabel: d.readOnly ? 'Read-only editor content' : 'Editor content',
+      });
+      const saved =
+        useApp.getState().views[session.id]?.editorViews?.[(primary ? 'main:' : 'side:') + path];
+      if (saved) editor.current.restoreViewState(saved);
+      if (d.reveal) {
+        editor.current.setPosition({ lineNumber: d.reveal.line, column: d.reveal.column });
+        editor.current.revealLineInCenterIfOutsideViewport(d.reveal.line);
+        d.reveal = undefined;
+      }
+      // Finish the new view before React allows the next paint.
+      if (changed) {
+        const visible = editor.current.getVisibleRanges()[0];
+        if (d.model.getLanguageId() === 'python' && visible?.startLineNumber === 1) {
+          // Prime one screen; tokenizing up to a deep saved position can block the UI.
+          const lines = Math.max(
+            1,
+            Math.ceil(
+              editor.current.getLayoutInfo().height /
+                editor.current.getOption(monaco.editor.EditorOption.lineHeight),
+            ),
+          );
+          monaco.editor.colorizeModelLine(d.model, Math.min(visible.endLineNumber, lines));
         }
-        editor.current.focus();
-        documents.focused = d;
-        setLoading(false);
-        performance.mark('superfluid:editor-bound');
+        editor.current.render();
+      }
+      editor.current.focus();
+      documents.focused = d;
+      setLoading(false);
+      performance.mark('superfluid:editor-bound');
+    };
+    const cached = documents.items.get(documents.key(session.id, path));
+    if (!cached) {
+      setLoading(true);
+      editor.current?.setModel(null);
+      bound.current = null;
+      setDoc(null);
+    }
+    const opening = documents.open(session, path);
+    if (cached) bind(cached);
+    void opening
+      .then((d) => {
+        if (!cached) bind(d);
       })
       .catch((e) => {
         if (!cancelled) {

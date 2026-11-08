@@ -1,5 +1,12 @@
 import { BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
-import { requests, type Input, type Method, type Bridge } from '@superfluid/contracts';
+import {
+  requests,
+  updateRequest,
+  type Input,
+  type Method,
+  type Bridge,
+} from '@superfluid/contracts';
+import type { DesktopUpdates } from '../updates/DesktopUpdates';
 import { WorkspaceClient } from '../backend/WorkspaceClient';
 import { BrowserView } from '../preview/BrowserView';
 import { chooseProject, chooseDirectory, exportText } from '../shell/nativeFiles';
@@ -19,7 +26,12 @@ export function installDesktopIpc(
   backend: WorkspaceClient,
   preview: BrowserView,
   devUrl: string | undefined,
+  updates: DesktopUpdates,
 ) {
+  ipcMain.handle('desktop:update', (event, input: unknown) => {
+    trusted(event, window, devUrl);
+    return updates.run(updateRequest.parse(input));
+  });
   ipcMain.handle('workspace', async (event, method: Method, input: Input<Method>) => {
     trusted(event, window, devUrl);
     if (!(method in requests) || Buffer.byteLength(JSON.stringify(input)) > 5 * 1024 * 1024)

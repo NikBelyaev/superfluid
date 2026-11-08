@@ -1,7 +1,9 @@
+import { callPython, syncPythonDocument, forgetPythonDocument } from '~/rpc/python';
 import { monaco } from '~/components/editor/monaco';
 import { desktop } from '~/rpc/desktop';
 import type { Session, DocumentData } from '@superfluid/contracts';
 import { Recovery } from '~/state/editor/Recovery';
+import { assertPythonGeneration, pythonGeneration } from '~/state/python';
 
 export interface Doc {
   key: string;
@@ -88,7 +90,7 @@ class Documents {
     const { useApp } = await import('~/state/workspaceStore');
     const source = useApp.getState().views[session.id]?.definitionSources?.[path];
     if (!source) throw new Error('Open this definition from a Python symbol first.');
-    const data = await desktop.call('python.source', { ...source, sessionId: session.id });
+    const data = await callPython('python.source', { ...source, sessionId: session.id });
     return { path, text: data.text, hash: '', version: 0 };
   }
   async open(session: Session, path: string) {
@@ -97,6 +99,7 @@ class Documents {
     if (existing) {
       existing.closed = false;
       existing.lastUsed = Date.now();
+      if (existing.model.getLanguageId() === 'python') void this.sync(existing).catch(() => {});
       return existing;
     }
     await this.prune();
@@ -153,13 +156,19 @@ class Documents {
     return doc;
   }
   async sync(doc: Doc) {
-    if (doc.readOnly || doc.model.isDisposed()) return;
-    return desktop.call('lsp.open', {
-      sessionId: doc.session.id,
-      path: doc.path,
-      text: doc.model.getValue(undefined, true),
-      version: doc.version,
-    });
+    return syncPythonDocument(doc);
+  }
+  async syncSession(sessionId: string, generation: number) {
+    for (const doc of this.items.values()) {
+      if (pythonGeneration(sessionId) !== generation) return;
+      if (
+        doc.session.id !== sessionId ||
+        doc.model.getLanguageId() !== 'python' ||
+        (doc.closed && !doc.dirty)
+      )
+        continue;
+      await this.sync(doc).catch(() => {});
+    }
   }
   async save(doc: Doc): Promise<void> {
     if (doc.readOnly) return;
@@ -230,9 +239,16 @@ class Documents {
   async close(sessionId: string, path: string) {
     const doc = this.items.get(this.key(sessionId, path));
     if (!doc) return;
-    if (doc.dirty) await this.recovery.flush(doc.key);
-    else if (!doc.readOnly) await desktop.call('lsp.close', { sessionId, path }).catch(() => {});
-    doc.closed = true;
+    if (doc.dirty) {
+      await this.recovery.flush(doc.key);
+      doc.closed = true;
+    } else {
+      doc.closed = true;
+      forgetPythonDocument(doc);
+      if (!doc.readOnly) await desktop.call('lsp.close', { sessionId, path }).catch(() => {});
+      forgetPythonDocument(doc);
+      if (!doc.closed) await this.sync(doc).catch(() => {});
+    }
     requestAnimationFrame(() => void this.prune());
   }
   assertClean(sessionId: string, path: string) {
@@ -306,6 +322,7 @@ class Documents {
     }
   }
   async applyWorkspaceEdit(session: Session, edit: any) {
+    assertPythonGeneration(session.id, edit.generation);
     const changes: any[] =
       edit.documentChanges ??
       Object.entries(edit.changes ?? {}).map(([uri, edits]) => ({
@@ -384,6 +401,7 @@ class Documents {
     }
     if (prepared.some((p) => p.doc.version !== p.version))
       throw new Error('A document changed while preparing this refactoring. Try again.');
+    assertPythonGeneration(session.id, edit.generation);
     try {
       for (const p of prepared) {
         p.doc.model.pushStackElement();
@@ -410,7 +428,7 @@ class Documents {
       return versions;
     };
     const request = () =>
-      desktop.call('lsp.request', {
+      callPython('lsp.request', {
         sessionId: session.id,
         method: 'textDocument/rename',
         params: {
@@ -432,6 +450,7 @@ class Documents {
       return list;
     };
     let versions = await sync(),
+      generation = pythonGeneration(session.id),
       edit = await request(),
       loaded = false;
     for (const change of changes(edit)) {
@@ -459,7 +478,8 @@ class Documents {
         throw new Error('A file changed while preparing this rename. Try again.');
       return { ...change, textDocument: { ...change.textDocument, version } };
     });
-    return { documentChanges: stamped };
+    assertPythonGeneration(session.id, generation);
+    return { documentChanges: stamped, generation };
   }
 }
 

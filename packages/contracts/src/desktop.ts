@@ -1,8 +1,12 @@
 import type { Method, Input, Results } from './rpc';
 import type { AppEvent } from './events';
 import type { Project } from './project';
+import type { UpdateRequest, UpdateState } from './updates';
 
 export interface Bridge {
+  update(input: UpdateRequest): Promise<UpdateState>;
+  onUpdate(listener: (state: UpdateState) => void): () => void;
+  onShowUpdates(listener: () => void): () => void;
   call<M extends Method>(method: M, input: Input<M>): Promise<Results[M]>;
   onEvent(listener: (event: AppEvent) => void): () => void;
   onFlush(listener: () => Promise<void>): () => void;

@@ -4,7 +4,7 @@ import { useApp } from '~/state/workspaceStore';
 export const closeDialog = () => useApp.setState({ modal: null });
 
 export type Modal =
-  | { kind: 'settings'; section?: 'appearance' | 'hosting' }
+  | { kind: 'settings'; section?: 'appearance' | 'hosting' | 'about' }
   | { kind: 'action'; action?: Action }
   | { kind: 'worktree' }
   | {

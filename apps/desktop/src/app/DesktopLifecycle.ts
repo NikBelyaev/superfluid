@@ -6,8 +6,12 @@ export class DesktopLifecycle {
   private serial = 0;
   private quitting = false;
   private closing = false;
+  private updateRequested = false;
   get isQuitting() {
     return this.quitting;
+  }
+  cancelUpdate() {
+    this.updateRequested = false;
   }
   constructor(
     private window: BrowserWindow,
@@ -52,32 +56,45 @@ export class DesktopLifecycle {
       this.window.webContents.send('workspace:flush', id);
     });
   }
-  async quit() {
-    if (this.quitting || this.closing) return;
+  async quit(install?: () => void) {
+    if (this.quitting || this.closing) return false;
     this.closing = true;
+    let handedOff = false;
     try {
       const running = await this.backend
         .call('bootstrap', {})
         .then((x) => x.runs.filter((r) => r.state === 'running').length)
         .catch(() => 0);
-      if (running && !process.env.SF_TEST) {
+      if (running && !this.updateRequested && !process.env.SF_TEST) {
         const answer = await dialog.showMessageBox(this.window, {
           type: 'question',
-          message: `Stop ${running} running process${running === 1 ? '' : 'es'} and quit?`,
-          buttons: ['Keep working', 'Stop and quit'],
+          message: `Stop ${running} running process${running === 1 ? '' : 'es'} and ${install ? 'restart to update' : 'quit'}?`,
+          buttons: ['Keep working', install ? 'Stop and update' : 'Stop and quit'],
           defaultId: 0,
           cancelId: 0,
         });
-        if (answer.response === 0) return;
+        if (answer.response === 0) return false;
       }
       this.window.setEnabled(false);
       await this.flushRenderer();
+      if (install) {
+        // Squirrel may still fetch its payload; keep the workspace alive until native quit begins.
+        this.updateRequested = true;
+        this.window.setEnabled(true);
+        this.closing = false;
+        handedOff = true;
+        install();
+        return true;
+      }
       await this.backend.call('shutdown', {});
       this.quitting = true;
       this.preview.close();
       this.backend?.kill();
       app.quit();
+      return true;
     } catch (error) {
+      this.updateRequested = false;
+      handedOff = false;
       this.window.setEnabled(true);
       await dialog.showMessageBox(this.window, {
         type: 'error',
@@ -85,8 +102,9 @@ export class DesktopLifecycle {
         detail: error instanceof Error ? error.message : String(error),
         buttons: ['Keep working'],
       });
+      return false;
     } finally {
-      this.closing = false;
+      if (!handedOff) this.closing = false;
     }
   }
   exit() {

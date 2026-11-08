@@ -1,16 +1,20 @@
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
-import { Palette, GitPullRequest, X } from 'lucide-react';
+import { Palette, GitPullRequest, Info, X } from 'lucide-react';
 import { SourceControlSettings } from './SourceControlSettings';
+import { AboutSettings } from './AboutSettings';
+import { useUpdates } from '~/state/updates';
 
 export function SettingsLayout({
   children,
-  initialSection = 'appearance',
+  section = 'appearance',
+  onSectionChange,
 }: {
   children: ReactNode;
-  initialSection?: 'appearance' | 'hosting';
+  section?: 'appearance' | 'hosting' | 'about';
+  onSectionChange: (section: 'appearance' | 'hosting' | 'about') => void;
 }) {
-  const [section, setSection] = useState(initialSection);
+  const updateAvailable = useUpdates((s) => Boolean(s.state?.availableVersion));
   return (
     <>
       <header className="flex h-(--workspace-topbar-height) shrink-0 items-center justify-between border-b border-border px-6">
@@ -24,15 +28,34 @@ export function SettingsLayout({
           className="w-52 shrink-0 border-r border-border bg-sidebar px-3 py-6 max-[900px]:w-44 max-[600px]:w-auto max-[600px]:border-r-0 max-[600px]:border-b max-[600px]:px-4 max-[600px]:py-2"
           aria-label="Settings"
         >
-          {(['appearance', 'hosting'] as const).map((item) => (
+          {(['appearance', 'hosting', 'about'] as const).map((item) => (
             <button
               key={item}
               className={`settings-nav-item ${section === item ? 'active' : ''}`}
               aria-current={section === item ? 'page' : undefined}
-              onClick={() => setSection(item)}
+              aria-description={
+                item === 'about' && updateAvailable ? 'An update is available.' : undefined
+              }
+              onClick={() => onSectionChange(item)}
             >
-              {item === 'appearance' ? <Palette size={17} /> : <GitPullRequest size={17} />}
-              {item === 'appearance' ? 'Appearance' : 'Source Control'}
+              {item === 'appearance' ? (
+                <Palette size={17} />
+              ) : item === 'hosting' ? (
+                <GitPullRequest size={17} />
+              ) : (
+                <Info size={17} />
+              )}
+              {item === 'appearance'
+                ? 'Appearance'
+                : item === 'hosting'
+                  ? 'Source Control'
+                  : 'About'}
+              {item === 'about' && updateAvailable && (
+                <span
+                  aria-hidden="true"
+                  className="ml-auto size-1.5 shrink-0 rounded-full bg-primary"
+                />
+              )}
             </button>
           ))}
         </nav>
@@ -41,7 +64,13 @@ export function SettingsLayout({
           id={section}
         >
           <div className="mx-auto max-w-[848px]">
-            {section === 'hosting' ? <SourceControlSettings /> : children}
+            {section === 'hosting' ? (
+              <SourceControlSettings />
+            ) : section === 'about' ? (
+              <AboutSettings />
+            ) : (
+              children
+            )}
           </div>
         </main>
       </div>
