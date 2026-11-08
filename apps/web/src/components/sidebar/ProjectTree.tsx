@@ -14,6 +14,7 @@ import {
 import type { FileEntry, Session } from '@superfluid/contracts';
 import { useApp, showSurface } from '~/state/workspaceStore';
 import { TREE_ROW_HEIGHT, treeWindow } from './treeWindow';
+import { activeFile } from '~/state/workspaceView';
 
 const cache = new Map<string, Record<string, FileEntry[]>>();
 
@@ -114,9 +115,9 @@ export default function ProjectTree({ session }: { session: Session }) {
   const selected =
     view.changes && view.surface?.kind === 'diff'
       ? (view.surface.path ?? status?.files[0]?.path)
-      : view.active;
+      : activeFile(view);
   return (
-    <aside className="sidebar">
+    <section className="project-tree">
       <div className="sidebar-title">
         <button
           className="text-button"
@@ -304,6 +305,6 @@ export default function ProjectTree({ session }: { session: Session }) {
           </div>
         )}
       </div>
-    </aside>
+    </section>
   );
 }

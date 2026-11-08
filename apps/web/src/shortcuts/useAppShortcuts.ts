@@ -2,6 +2,7 @@ import { runAction } from '~/commands/runProjectAction';
 import { useEffect } from 'react';
 import { useApp, currentSession } from '~/state/workspaceStore';
 import { keySignature } from '~/shortcuts/keySignature';
+import { activeFile } from '~/state/workspaceView';
 
 export function useAppShortcuts() {
   useEffect(() => {
@@ -39,8 +40,8 @@ export function useAppShortcuts() {
           const doc =
             focused?.session.id === s?.id && !focused?.model.isDisposed()
               ? focused
-              : s && v?.active
-                ? documents.items.get(documents.key(s.id, v.active))
+              : s && v && activeFile(v)
+                ? documents.items.get(documents.key(s.id, activeFile(v)!))
                 : null;
           if (doc) void documents.save(doc).catch(useApp.getState().fail);
         });
@@ -65,7 +66,14 @@ export function useAppShortcuts() {
           item = v.history[index];
         if (item) {
           a.setView({ historyIndex: index });
-          void a.openFile(item.path, item.line, item.column, false);
+          void a.openFile(
+            item.path,
+            item.line,
+            item.column,
+            false,
+            item.group,
+            item.tab ? { tabKey: item.tab } : undefined,
+          );
         }
         return;
       }

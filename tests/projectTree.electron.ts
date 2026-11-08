@@ -54,6 +54,9 @@ try {
     .getByRole('button', { name: /tree-fixture/ })
     .first()
     .click();
+  await page.locator('.workspace-shell').waitFor();
+  await page.keyboard.press('Meta+Shift+P');
+  await page.getByRole('button', { name: 'Open project files', exact: true }).click();
   const row = (path: string) => page.locator(`[data-path="${path}"]`);
   const tree = page.getByRole('tree', { name: 'Project files' });
   const scroll = async () => {

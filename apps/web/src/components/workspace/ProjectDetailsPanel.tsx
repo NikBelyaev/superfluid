@@ -1,4 +1,4 @@
-import { GitBranch, ChevronUp } from 'lucide-react';
+import { GitBranch, ChevronDown } from 'lucide-react';
 import type { Session } from '@superfluid/contracts';
 import { ScriptsSection } from '~/components/scripts/ScriptsSection';
 import { SourceControlSection } from '~/components/vcs/SourceControlSection';
@@ -24,7 +24,7 @@ export default function ProjectDetailsPanel({ session }: { session: Session }) {
           <strong>
             <RepositoryBranch sessionId={session.id} />
           </strong>
-          <ChevronUp size={16} />
+          <ChevronDown size={16} />
         </button>
       )}
       {!collapsed && (

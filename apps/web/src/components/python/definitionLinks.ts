@@ -8,6 +8,7 @@ import { onPythonReset, pythonGeneration } from '~/state/python';
 type Definition =
   | { uri: string; range: { start: PythonLocation['position'] } }
   | { targetUri: string; targetSelectionRange: { start: PythonLocation['position'] } };
+type DefinitionTarget = PythonLocation & { generation: number };
 
 type ContentHover = monaco.editor.IEditorContribution & {
   readonly isHoverVisible: boolean;
@@ -30,7 +31,7 @@ export function installDefinitionLinks(
   let pressed = '';
   let serial = 0;
   let controller: AbortController | undefined;
-  let pending: Promise<PythonLocation | undefined> = Promise.resolve(undefined);
+  let pending: Promise<DefinitionTarget | undefined> = Promise.resolve(undefined);
   const clear = () => {
     controller?.abort();
     controller = undefined;
@@ -110,7 +111,7 @@ export function installDefinitionLinks(
             },
           },
         ]);
-      return target;
+      return { ...target, generation: pythonGeneration(doc.session.id) };
     })().catch(() => undefined);
   };
   const keys = (event: KeyboardEvent) => {
@@ -166,15 +167,17 @@ export function installDefinitionLinks(
     const doc = model && documents.find(model);
     if (!doc) return;
     const version = doc.version;
-    const generation = pythonGeneration(doc.session.id);
     const position = { line: point.lineNumber - 1, character: point.column - 1 };
     event.preventDefault();
     event.stopImmediatePropagation();
     pressed = '';
+    // A committed click must outlive hover cancellation on keyup or mouseleave.
+    controller = undefined;
     void pending
       .then(
         (target) =>
-          target && openDefinition(doc.model.uri.toString(), version, position, target, generation),
+          target &&
+          openDefinition(doc.model.uri.toString(), version, position, target, target.generation),
       )
       .catch(useApp.getState().fail);
   };

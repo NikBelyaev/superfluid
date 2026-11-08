@@ -31,6 +31,9 @@ try {
     .getByRole('button', { name: new RegExp(basename(project)) })
     .first()
     .click();
+  await page.locator('.workspace-shell').waitFor();
+  await page.keyboard.press('Meta+Shift+P');
+  await page.getByRole('button', { name: 'Open project files', exact: true }).click();
   await page.locator('[data-path="main.py"]').click();
   const keyword = page.locator('.view-line').first().locator('span[class^="mtk"]').first();
   const choose = (name: string) =>

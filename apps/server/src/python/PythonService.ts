@@ -137,6 +137,7 @@ export class PythonService {
     input: ParsedInput<'python.hover'>,
     server: Awaited<ReturnType<LanguageServers['get']>>,
     signal?: AbortSignal,
+    symbols = new Map<string, Promise<Symbol[]>>(),
   ): Promise<PythonDefinition[]> {
     const file = await within(session.path, input.path);
     const result: Definition[] | Definition | null = await server.request(
@@ -147,7 +148,6 @@ export class PythonService {
       },
       signal,
     );
-    const symbols = new Map<string, Promise<Symbol[]>>();
     return Promise.all(
       (Array.isArray(result) ? result : result ? [result] : []).slice(0, 10).map(async (target) => {
         const uri = 'uri' in target ? target.uri : target.targetUri;
@@ -210,7 +210,8 @@ export class PythonService {
   source(session: Session, input: ParsedInput<'python.source'>) {
     return this.cancellable(session, input.requestId, async (signal) => {
       const server = await this.languages.get(session);
-      const definitions = await this.definitions(session, input, server, signal);
+      const symbols = new Map<string, Promise<Symbol[]>>();
+      const definitions = await this.definitions(session, input, server, signal, symbols);
       signal?.throwIfAborted();
       const allowed = definitions.flatMap((definition) => [
         definition.module,
@@ -232,10 +233,18 @@ export class PythonService {
         path === undefined
           ? await this.files.read({ ...session, path: dirname(file) }, basename(file))
           : await this.documents.read(session, { sessionId: session.id, path, diskOnly: false });
+      const outline: Symbol[] = await (
+        symbols.get(input.target.uri) ??
+        server.request(
+          'textDocument/documentSymbol',
+          { textDocument: { uri: input.target.uri } },
+          signal,
+        )
+      ).catch(() => []);
       server.assertCurrent();
       return {
         generation: server.generation,
-        value: { text: data.text, path: file, workspacePath: path },
+        value: { text: data.text, path: file, workspacePath: path, symbols: outline ?? [] },
       };
     });
   }

@@ -237,6 +237,7 @@ for (const kind of ['ty', 'pyright'] as const)
       });
       assert.match(external.text, /def decodebytes/);
       assert.equal(external.workspacePath, undefined);
+      assert.ok(external.symbols?.some((symbol) => symbol.name === 'decodebytes'));
       await assert.rejects(
         callPython('python.source', {
           ...input,

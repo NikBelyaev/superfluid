@@ -43,7 +43,11 @@ try {
     .getByRole('button', { name: new RegExp(basename(project)) })
     .first()
     .click();
+  await page.locator('.workspace-shell').waitFor();
+  await page.keyboard.press('Meta+Shift+P');
+  await page.getByRole('button', { name: 'Open project files', exact: true }).click();
   await page.locator('[data-path="main.py"]').click();
+  await expect(page.locator('.statusbar')).toContainText(/(?:ty|pyright) ready/);
   const hover = page.locator('.monaco-hover:visible');
   const showSymbol = async (line: number, column: number, surface = '.main-editor') => {
     await expect(page.locator(`${surface} .view-lines`)).toContainText('store.count');
@@ -145,6 +149,61 @@ try {
     await expect(page.locator('.symbol-definition-link')).toHaveCount(0);
   }
   await page.getByRole('tab', { name: 'main.py', exact: true }).hover();
+  await page.evaluate(({ x, y }) => {
+    const target = document.elementFromPoint(x, y)!;
+    for (const type of ['mousedown', 'mouseup', 'click'])
+      target.dispatchEvent(
+        new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          clientX: x,
+          clientY: y,
+          button: 0,
+          buttons: type === 'mousedown' ? 1 : 0,
+          detail: 1,
+          metaKey: true,
+        }),
+      );
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Meta', bubbles: true }));
+  }, point);
+  await expect(page.getByRole('tab', { name: 'models.py', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  const lineageCount = await page.locator('.lineage-row').count();
+  const chainCount = await page.locator('.chain-trigger > span').textContent();
+  const selfDefinition = async () => {
+    const before = await page.evaluate(
+      () => performance.getEntriesByName('superfluid:editor-bound').length,
+    );
+    await page.keyboard.press('F12');
+    await expect
+      .poll(() =>
+        page.evaluate(() => performance.getEntriesByName('superfluid:editor-bound').length),
+      )
+      .toBeGreaterThan(before);
+    await expect(page.locator('.lineage-row')).toHaveCount(lineageCount);
+    await expect(page.locator('.chain-trigger > span')).toHaveText(chainCount!);
+  };
+  await page
+    .locator('.main-editor')
+    .getByRole('textbox', { name: 'Editor content', exact: true })
+    .focus();
+  for (let i = 0; i < 3; i++) {
+    await page.keyboard.press('ArrowRight');
+    await selfDefinition();
+  }
+  await page.keyboard.press('Meta+ArrowUp');
+  await page.keyboard.press('Home');
+  for (let i = 0; i < 8; i++) await page.keyboard.press('ArrowRight');
+  await selfDefinition();
+  await page.getByRole('button', { name: 'Navigate back (Ctrl −)', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'main.py', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await page.getByRole('tab', { name: 'main.py', exact: true }).hover();
   await page.keyboard.down('Meta');
   await page.mouse.move(point.x, point.y);
   await expect(page.locator('.symbol-definition-link')).toHaveText('count');
@@ -170,11 +229,74 @@ try {
   await hover.locator('.monaco-tokenized-source').click({ modifiers: ['Meta'] });
   const dialog = page.getByRole('dialog');
   const selected = (name: string) => page.getByRole('tab', { name, exact: true });
+  const visit = async (name: string, target = page) => {
+    await target
+      .getByRole('button', { name: 'Navigation chain from main.py', exact: true })
+      .click();
+    await target
+      .getByRole('menuitem', { name: new RegExp(name.replaceAll('.', '\\.') + '\\s*:') })
+      .first()
+      .click();
+    await expect(target.getByRole('tab', { name, exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  };
+  const moveTab = async (name: string, group: 'main' | 'right') => {
+    const tab = selected(name);
+    await tab.hover();
+    const from = (await tab.boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(from.x + from.width / 2 + 8, from.y + from.height / 2, { steps: 2 });
+    await expect(page.locator('.tab-drag-preview')).toBeVisible();
+    const target = page.locator(`[data-group="${group}"]`);
+    const to = (await target.locator('.surface-panel').boundingBox())!;
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 });
+    await expect(target).toHaveAttribute('data-drop-target', 'true');
+    await page.mouse.up();
+    await expect(page.locator('.tab-drag-preview')).toHaveCount(0);
+  };
   const back = () =>
     page.getByRole('button', { name: 'Navigate back (Ctrl −)', exact: true }).click();
   await expect(selected('models.py')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('[data-tab-key^="chain:"]')).toHaveCount(1);
+  await expect(page.locator('.main-editor').getByRole('tab')).toHaveCount(1);
   await expect(dialog).toHaveCount(0);
   await expect(page.locator('.main-editor .view-lines')).toContainText('return');
+  await page.getByRole('button', { name: 'Navigation chain from main.py', exact: true }).click();
+  await expect(page.getByRole('menuitem').filter({ hasText: 'Store.count' })).toContainText(
+    'models.py:3',
+  );
+  await expect(
+    page.getByRole('menuitem', { name: 'Open current file separately', exact: true }),
+  ).toHaveCount(0);
+  const rootEntry = page.locator('.chain-menu-row').filter({ hasText: 'main.py' });
+  const openSeparately = rootEntry.getByRole('menuitem', {
+    name: 'Open main.py:5 in separate tab',
+    exact: true,
+  });
+  await expect(openSeparately).toHaveCSS('opacity', '0');
+  await rootEntry.hover();
+  await expect(openSeparately).toHaveCSS('opacity', '1');
+  await page.screenshot({ path: join(evidence, 'chain-symbols.png') });
+  await openSeparately.click();
+  await expect(page.locator('[data-tab-key="file:main.py"]').getByRole('tab')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(page.locator('[data-tab-key^="chain:"]').getByRole('tab')).toHaveAttribute(
+    'aria-label',
+    'models.py',
+  );
+  await expect(page.locator('.main-editor').getByRole('tab')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Close main.py', exact: true }).click();
+  await expect(page.locator('.main-editor').getByRole('tab')).toHaveCount(1);
+  await page.getByRole('button', { name: 'First file: main.py', exact: true }).click();
+  await expect(selected('main.py')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.chain-last-link')).toHaveText('models.py');
+  await page.locator('.chain-last-link').click();
+  await expect(selected('models.py')).toHaveAttribute('aria-selected', 'true');
   await expect(
     page.locator('.main-editor').getByRole('textbox', { name: 'Editor content', exact: true }),
   ).toBeFocused();
@@ -193,7 +315,7 @@ try {
   await back();
   await expect(selected('main.py')).toHaveAttribute('aria-selected', 'true');
 
-  await page.getByRole('button', { name: 'Open current file to the side' }).click();
+  await moveTab('main.py', 'right');
   await showSymbol(4, 8, '.right-group');
   await expect(hover).toContainText('Count the items');
   await page.keyboard.press('Escape');
@@ -209,17 +331,20 @@ try {
   await hover.locator('.monaco-tokenized-source').click({ modifiers: ['Meta'] });
   await expect(
     page
-      .getByRole('tablist', { name: 'Files', exact: true })
+      .getByRole('tablist', { name: 'Surfaces', exact: true })
       .getByRole('tab', { name: 'models.py', exact: true }),
   ).toHaveAttribute('aria-selected', 'true');
   await expect(dialog).toHaveCount(0);
   await expect(
-    page.locator('.main-editor').getByRole('textbox', { name: 'Editor content', exact: true }),
+    page.locator('.right-group').getByRole('textbox', { name: 'Editor content', exact: true }),
   ).toBeFocused();
-  await expect(page.locator('.right-group .view-lines')).toContainText('store.count');
-  await page.getByRole('button', { name: 'Hide secondary surface' }).click();
+  await expect(page.locator('.right-group .view-lines')).toContainText('return');
+  await page.getByRole('button', { name: 'Toggle right panel' }).click();
   await back();
   await expect(selected('main.py')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.right-group .view-lines')).toContainText('store.count');
+  await moveTab('main.py', 'main');
+  await page.getByRole('button', { name: 'Toggle right panel' }).click();
 
   await page.keyboard.press('Meta+,');
   await page
@@ -254,9 +379,19 @@ try {
       .locator('.main-editor')
       .getByRole('textbox', { name: 'Read-only editor content', exact: true }),
   ).toBeFocused();
+  await page.getByRole('button', { name: 'Navigation chain from main.py', exact: true }).click();
+  await expect(page.getByRole('menuitem').filter({ hasText: 'decodebytes' })).toContainText(
+    'base64.pyi:',
+  );
+  await page.screenshot({ path: join(evidence, 'chain-external-symbols.png') });
+  await page.keyboard.press('Escape');
+  await page
+    .locator('.main-editor')
+    .getByRole('textbox', { name: 'Read-only editor content', exact: true })
+    .focus();
   await page.keyboard.insertText('READONLY_PROBE');
   await page.keyboard.press('Meta+S');
-  await selected('main.py').click();
+  await visit('main.py');
   await expect(
     page.locator('.main-editor').getByRole('textbox', { name: 'Editor content', exact: true }),
   ).toBeFocused();
@@ -265,7 +400,7 @@ try {
   await expect(page.locator('.main-editor .view-lines')).toContainText(
     'local file remains editable',
   );
-  await selected('base64.pyi').click();
+  await visit('base64.pyi');
   await expect(
     page
       .locator('.main-editor')
@@ -275,7 +410,6 @@ try {
   await page.screenshot({ path: join(evidence, 'dependency-dark.png') });
   await page.keyboard.press('F2');
   await expect(dialog).toHaveCount(0);
-  await page.getByRole('button', { name: 'Close base64.pyi', exact: true }).click();
   await back();
   await expect(selected('main.py')).toHaveAttribute('aria-selected', 'true');
   await showSymbol(5, 10);
@@ -295,7 +429,7 @@ try {
     'true',
   );
   await expect(restored.locator('.main-editor .view-lines')).toContainText('decodebytes');
-  await restored.getByRole('tab', { name: 'models.py', exact: true }).click();
+  await visit('models.py', restored);
   await expect(restored.locator('.main-editor .view-lines')).toContainText(
     'unsaved definition edit',
   );

@@ -1,5 +1,7 @@
 import { monaco } from '~/state/editor/Documents';
-import { useApp, resolveLocationSymbol, type Location } from '~/state/workspaceStore';
+import { useApp, type Location } from '~/state/workspaceStore';
+import { surfaceKey, tabGroup } from '~/state/workspaceView';
+import { surfacePaths } from '~/state/fileChains';
 import type { Session } from '@superfluid/contracts';
 
 export async function navigate(
@@ -12,6 +14,9 @@ export async function navigate(
   const app = useApp.getState(),
     view = app.views[session.id];
   if (app.sessionId !== session.id) return;
+  const group = origin?.group ?? 'main';
+  const source = tabGroup(view, group).active;
+  if (origin && (source?.kind !== 'file' || source.path !== origin.path)) return;
   let path: string;
   if (uri.scheme === 'superfluid-file') {
     if (uri.authority !== session.id)
@@ -33,7 +38,7 @@ export async function navigate(
           },
         };
         const retained = new Set([
-          ...view.tabs,
+          ...[...view.tabs, ...view.rightTabs, ...view.bottomTabs].flatMap(surfacePaths),
           ...view.history.map((location) => location.path),
           path,
         ]);
@@ -49,17 +54,12 @@ export async function navigate(
         throw new Error('Open this definition from a Python symbol first.');
     }
   }
-  if (origin) {
-    const history = view.history.slice(0, view.historyIndex + 1);
-    if (
-      !history.length ||
-      history.at(-1)?.path !== origin.path ||
-      history.at(-1)?.line !== origin.line
-    ) {
-      history.push(origin);
-      void resolveLocationSymbol(session.id, origin);
-    }
-    app.setView({ history, historyIndex: history.length - 1 }, session.id);
-  }
-  await app.openFile(path, line, column, true);
+  await app.openFile(
+    path,
+    line,
+    column,
+    true,
+    group,
+    origin && source?.kind === 'file' ? { tabKey: surfaceKey(source), origin } : undefined,
+  );
 }

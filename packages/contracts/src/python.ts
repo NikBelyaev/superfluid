@@ -50,6 +50,13 @@ export interface PythonSource {
   text: string;
   path: string;
   workspacePath?: string;
+  symbols?: PythonDocumentSymbol[];
+}
+export interface PythonDocumentSymbol {
+  name: string;
+  kind: number;
+  range: { start: PythonLocation['position']; end: PythonLocation['position'] };
+  children?: PythonDocumentSymbol[];
 }
 
 export interface PythonResult<T> {

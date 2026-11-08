@@ -46,6 +46,7 @@ export async function openDefinition(...[uri, version, position, target, generat
       line: position.line + 1,
       column: position.character + 1,
       label: doc.path.split('/').at(-1)!,
+      group: documents.focused === doc ? documents.focusedGroup : 'main',
     },
   );
 }
