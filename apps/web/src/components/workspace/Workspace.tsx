@@ -9,10 +9,9 @@ import { WorktreeStrip } from './WorktreeStrip';
 import { ActivityRail } from './ActivityRail';
 import { EditorTabs } from './EditorTabs';
 import { Statusbar } from './Statusbar';
+import RightPanel from '~/components/surfaces/RightPanel';
 
 const Editor = lazy(() => import('~/components/editor/Editor'));
-
-const RightPanel = lazy(() => import('~/components/surfaces/RightPanel'));
 
 export default function Workspace() {
   const sessions = useApp((a) => a.sessions),
@@ -59,9 +58,7 @@ export default function Workspace() {
                 if (path) showSurface({ kind: 'file', path });
               }}
             >
-              <Suspense fallback={<div className="surface-empty">Loading surface…</div>}>
-                <RightPanel key={session.id} session={session} />
-              </Suspense>
+              <RightPanel key={session.id} session={session} />
             </div>
           </>
         )}

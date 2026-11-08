@@ -8,15 +8,15 @@ import {
   type SourceControlRepository,
 } from '@superfluid/contracts';
 import { Store } from '../persistence/Store';
-import { command } from '../process/ProcessRunner';
+import { command, commandTail } from '../process/ProcessRunner';
 import { git } from '../vcs/gitCommand';
 import { Gate } from '../utils/Gate';
 import { digest } from '../utils/digest';
-import { GitHubProvider } from './GitHubProvider';
-import { GitLabProvider } from './GitLabProvider';
+import { GitHubProvider } from './github/GitHubProvider';
+import { GitLabProvider } from './gitlab/GitLabProvider';
 import { SourceControlDiscovery } from './SourceControlDiscovery';
 import { relative } from 'node:path';
-import type { HostingTarget, RunHosting } from './HostingProvider';
+import type { HostingProvider, HostingTarget, RunHosting, RunHostingLog } from './HostingProvider';
 
 export function remoteRepository(remote: string) {
   const scp = remote.match(/^[\w.-]+@([^/:]+):(.+)$/);
@@ -43,46 +43,53 @@ export class HostingService {
     run?: RunHosting,
     private discovery = new SourceControlDiscovery(store.directory),
   ) {
+    const options = (target: HostingTarget, input?: string) => ({
+      cwd: target.cwd,
+      input,
+      timeout: 30000,
+      env: {
+        GH_PROMPT_DISABLED: '1',
+        GITLAB_HOST: target.host,
+        GLAB_CHECK_UPDATE: 'false',
+        GLAB_DEBUG_HTTP: 'false',
+        NO_COLOR: '1',
+        GITLAB_TOKEN: undefined,
+        GITLAB_ACCESS_TOKEN: undefined,
+        OAUTH_TOKEN: undefined,
+        GLAB_ENABLE_CI_AUTOLOGIN: 'false',
+      },
+    });
+    const invoke = <T>(file: string, target: HostingTarget, work: () => Promise<T>) =>
+      this.network.run(async () => {
+        try {
+          return await work();
+        } catch (error) {
+          if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
+            throw new Error(
+              `Install ${file}, then run ${file} auth login --hostname ${target.host}.`,
+            );
+          if (
+            error instanceof Error &&
+            /401|not logged in|not authenticated|authentication required/i.test(error.message)
+          )
+            throw new Error(
+              `Sign in to ${target.host}: ${file} auth login --hostname ${target.host}.`,
+            );
+          throw error;
+        }
+      });
     const execute: RunHosting =
       run ??
       ((file, args, target, input) =>
-        this.network.run(async () => {
-          try {
-            return await command(file, args, {
-              cwd: target.cwd,
-              input,
-              timeout: 30000,
-              env: {
-                GH_PROMPT_DISABLED: '1',
-                GITLAB_HOST: target.host,
-                GLAB_CHECK_UPDATE: 'false',
-                GLAB_DEBUG_HTTP: 'false',
-                NO_COLOR: '1',
-                GITLAB_TOKEN: undefined,
-                GITLAB_ACCESS_TOKEN: undefined,
-                OAUTH_TOKEN: undefined,
-                GLAB_ENABLE_CI_AUTOLOGIN: 'false',
-              },
-            });
-          } catch (error) {
-            if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
-              throw new Error(
-                `Install ${file}, then run ${file} auth login --hostname ${target.host}.`,
-              );
-            if (
-              error instanceof Error &&
-              /401|not logged in|not authenticated|authentication required/i.test(error.message)
-            )
-              throw new Error(
-                `Sign in to ${target.host}: ${file} auth login --hostname ${target.host}.`,
-              );
-            throw error;
-          }
-        }));
-    this.github = new GitHubProvider(execute);
-    this.gitlab = new GitLabProvider(execute);
+        invoke(file, target, () => command(file, args, options(target, input))));
+    const log: RunHostingLog = run
+      ? async (...args) => ({ text: await run(...args), truncated: false })
+      : (file, args, target) =>
+          invoke(file, target, () => commandTail(file, args, options(target), 256 * 1024));
+    this.github = new GitHubProvider(execute, log);
+    this.gitlab = new GitLabProvider(execute, log);
   }
-  provider(target: Pick<HostingBinding, 'provider'>) {
+  provider(target: Pick<HostingBinding, 'provider'>): HostingProvider {
     return target.provider === 'gitlab' ? this.gitlab : this.github;
   }
   private settings(session: Session) {
@@ -179,6 +186,7 @@ export class HostingService {
       );
       target = {
         ...target,
+        sourceProjectId: repository.id,
         targetProject: destination,
         upstreamProject: repository.upstreamProject,
         defaultBranch: repository.defaultBranch,

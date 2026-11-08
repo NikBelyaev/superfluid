@@ -1,12 +1,25 @@
 import type { editor } from 'monaco-editor/editor/editor.api';
-import type { Input, PullRequestRef } from '@superfluid/contracts';
+import { z } from 'zod';
+import { pullRequestRefSchema, type Input } from '@superfluid/contracts';
 
-export type Surface =
-  | { kind: 'terminal'; id: string }
-  | { kind: 'diff'; path?: string; mode?: 'unstaged' | 'staged' | 'branch' }
-  | { kind: 'pr'; number?: number; ref?: PullRequestRef; repositoryId?: string }
-  | { kind: 'browser'; url: string }
-  | { kind: 'file'; path: string };
+export const surfaceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('terminal'), id: z.string() }),
+  z.object({
+    kind: z.literal('diff'),
+    path: z.string().optional(),
+    mode: z.enum(['unstaged', 'staged', 'branch']).optional(),
+  }),
+  z.object({
+    kind: z.literal('pr'),
+    number: z.number().int().positive().optional(),
+    ref: pullRequestRefSchema.optional(),
+    repositoryId: z.string().optional(),
+    revealChecks: z.string().optional(),
+  }),
+  z.object({ kind: z.literal('browser'), url: z.string() }),
+  z.object({ kind: z.literal('file'), path: z.string() }),
+]);
+export type Surface = z.infer<typeof surfaceSchema>;
 
 export interface Location {
   path: string;

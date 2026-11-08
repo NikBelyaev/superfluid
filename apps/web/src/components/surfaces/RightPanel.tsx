@@ -14,14 +14,9 @@ import type { Session } from '@superfluid/contracts';
 import { useApp, surfaceKey, type Surface } from '~/state/workspaceStore';
 import { navigateTabs, useActiveTab } from '~/hooks/useTabs';
 import { SurfaceLauncher } from './SurfaceLauncher';
+import { PullRequestSurface } from '~/components/pullRequest/PullRequestPanel';
 
 const Diff = lazy(() => import('~/components/diffs/DiffPanel').then((m) => ({ default: m.Diff })));
-
-const PullRequestSurface = lazy(() =>
-  import('~/components/pullRequest/PullRequestPanel').then((m) => ({
-    default: m.PullRequestSurface,
-  })),
-);
 
 const Browser = lazy(() =>
   import('~/components/preview/BrowserPanel').then((m) => ({ default: m.Browser })),
@@ -157,6 +152,7 @@ export default function RightPanel({ session }: { session: Session }) {
               number={active.number}
               request={active.ref}
               repositoryId={active.repositoryId}
+              revealChecks={active.revealChecks}
             />
           ) : active?.kind === 'browser' ? (
             <Browser url={active.url} />

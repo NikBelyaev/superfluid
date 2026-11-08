@@ -1,4 +1,4 @@
-import type { Action, PullRequest } from '@superfluid/contracts';
+import type { Action } from '@superfluid/contracts';
 import { useApp } from '~/state/workspaceStore';
 
 export const closeDialog = () => useApp.setState({ modal: null });
@@ -13,7 +13,6 @@ export type Modal =
       sessionId?: string;
       repositoryId?: string;
     }
-  | { kind: 'pr-edit'; sessionId: string; repositoryId?: string; request: PullRequest }
   | { kind: 'git-review'; id: string }
   | { kind: 'terminal-name'; id: string; name: string }
   | { kind: 'clone' }
