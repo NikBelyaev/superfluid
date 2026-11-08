@@ -1,109 +1,61 @@
 // Adapted from T3 Code PullRequestDetailLayout, DetailCrumbs and SummaryTab (MIT).
 import type { ReactNode } from 'react';
-import {
-  ArrowLeft,
-  ChevronDown,
-  CircleCheck,
-  CircleDot,
-  ExternalLink,
-  FileDiff,
-  GitMerge,
-  GitPullRequest,
-  GitPullRequestClosed,
-  GitPullRequestDraft,
-  Pencil,
-  RefreshCw,
-} from 'lucide-react';
+import { ArrowLeft, ChevronDown, FileDiff } from 'lucide-react';
 import type { PullRequest } from '@superfluid/contracts';
-import { desktop } from '~/rpc/desktop';
-import { useApp } from '~/state/workspaceStore';
 import { navigateTabs } from '~/hooks/useTabs';
+import { PullRequestToolbar } from './PullRequestToolbar';
+import { PullRequestInlineEdit } from './PullRequestInlineEdit';
+import { Skeleton } from '~/components/ui/Skeleton';
 
 export function PullRequestDetailHeader({
   request,
+  sessionId,
+  repositoryId,
+  revision,
   onBack,
   onRefresh,
-  onEdit,
+  onDraftChange,
+  onTitleSave,
+  onBaseSave,
+  loading = false,
 }: {
   request: PullRequest;
+  sessionId: string;
+  repositoryId?: string;
+  revision: number;
   onBack: () => void;
   onRefresh: () => void;
-  onEdit: () => void;
+  onDraftChange: (draft: boolean) => Promise<void>;
+  onTitleSave: (value: string, version: string) => Promise<void>;
+  onBaseSave: (value: string, version: string) => Promise<void>;
+  loading?: boolean;
 }) {
-  const provider = request.ref.provider === 'gitlab' ? 'GitLab' : 'GitHub';
-  const term = request.ref.provider === 'gitlab' ? 'MR' : 'PR';
-  const state = request.draft && request.state === 'open' ? 'draft' : request.state;
-  const StateIcon =
-    state === 'merged'
-      ? GitMerge
-      : state === 'closed'
-        ? GitPullRequestClosed
-        : state === 'draft'
-          ? GitPullRequestDraft
-          : GitPullRequest;
   return (
-    <header className="pr-detail-header">
-      <div className="pr-detail-toolbar">
-        <button
-          className="icon-button"
-          title="Repository requests"
-          aria-label="Repository requests"
-          onClick={onBack}
-        >
-          <ArrowLeft size={14} />
-        </button>
-        <span className="pr-detail-repository" title={`${request.ref.host}/${request.ref.project}`}>
-          {request.ref.project}
-        </span>
-        <button
-          className={`pr-detail-reference ${state}`}
-          title={`Open on ${provider}`}
-          onClick={() => void desktop.external(request.url).catch(useApp.getState().fail)}
-        >
-          <StateIcon size={14} aria-hidden />
-          {request.ref.provider === 'gitlab' ? '!' : '#'}
-          {request.number}
-        </button>
-        <div className="spacer" />
-        <span className={`pr-detail-state ${state}`}>
-          <StateIcon size={13} aria-hidden />
-          {state}
-        </span>
-        <button
-          className="icon-button"
-          title={`Edit ${term}`}
-          aria-label={`Edit ${term}`}
-          onClick={onEdit}
-        >
-          <Pencil size={14} />
-        </button>
-        <button
-          className="icon-button"
-          title="Refresh request"
-          aria-label="Refresh request"
-          onClick={onRefresh}
-        >
-          <RefreshCw size={14} />
-        </button>
-        <button
-          className="icon-button"
-          title={`Open on ${provider}`}
-          aria-label={`Open on ${provider}`}
-          onClick={() => void desktop.external(request.url).catch(useApp.getState().fail)}
-        >
-          <ExternalLink size={14} />
-        </button>
-      </div>
-      <div className="pr-detail-header-body">
-        <h2>{request.title}</h2>
-        <div className="pr-detail-meta">
-          <span className="pr-actor">
+    <header className="pr-detail-header min-w-0 flex-none pt-2">
+      <PullRequestToolbar
+        request={request}
+        sessionId={sessionId}
+        repositoryId={repositoryId}
+        revision={revision}
+        onBack={onBack}
+        onRefresh={onRefresh}
+        onDraftChange={onDraftChange}
+      />
+      <div className="pr-detail-header-body min-w-0 px-4 pt-1 pb-4">
+        <PullRequestInlineEdit
+          value={request.title}
+          version={request.updatedAt}
+          label="Title"
+          onSave={onTitleSave}
+        />
+        <div className="pr-detail-meta mt-2 flex min-h-5 flex-wrap items-center gap-2 text-xs leading-5 text-muted-foreground">
+          <span className="pr-actor inline-flex items-center gap-1.5">
             <span className="avatar" aria-hidden>
               {request.author?.login[0] ?? '?'}
             </span>
             {request.author?.login ?? 'Unknown author'}
           </span>
-          <span className="pr-meta-divider" aria-hidden />
+          <span className="pr-meta-divider h-3 w-px bg-border" aria-hidden />
           <span>
             updated{' '}
             <time dateTime={request.updatedAt} title={new Date(request.updatedAt).toLocaleString()}>
@@ -111,13 +63,29 @@ export function PullRequestDetailHeader({
             </time>
           </span>
         </div>
-        <div className="pr-detail-branches">
-          <span className="pr-detail-branch-pair">
-            <code title={request.baseRefName}>{request.baseRefName}</code>
+        <div className="pr-detail-branches mt-4 flex min-w-0 flex-wrap items-center gap-2 text-xs leading-5 text-muted-foreground">
+          <div className="pr-detail-branch-pair flex min-w-0 flex-1 items-center gap-1.5">
+            <PullRequestInlineEdit
+              value={request.baseRefName}
+              version={request.updatedAt}
+              label="Target branch"
+              variant="branch"
+              onSave={onBaseSave}
+            />
             <ArrowLeft size={14} aria-label="receives changes from" />
-            <code title={request.headRefName}>{request.headRefName}</code>
-          </span>
-          <span className="pr-detail-diff-stat">
+            <code
+              className="min-w-0 truncate [font:inherit] [font-family:var(--font-mono)]"
+              title={request.headRefName}
+            >
+              {request.headRefName}
+            </code>
+          </div>
+          <span className="pr-detail-diff-stat ml-auto inline-flex items-center justify-end gap-2 tabular-nums [&>span]:inline-flex [&>span]:items-center [&>span]:gap-1.5 [&>span]:whitespace-nowrap">
+            {loading && (
+              <span role="status" aria-label="Loading request statistics">
+                <Skeleton className="h-3 w-32" />
+              </span>
+            )}
             {request.changedFiles !== null && (
               <span>
                 <FileDiff size={14} aria-hidden />
@@ -151,7 +119,7 @@ export function PullRequestDetailTabBar<Tab extends string>({
   children?: ReactNode;
 }) {
   return (
-    <nav className="pr-nav" aria-label={`${label} tabs`}>
+    <nav className="pr-nav flex-wrap gap-2" aria-label={`${label} tabs`}>
       <div
         className="pr-tabs"
         role="tablist"
@@ -165,7 +133,7 @@ export function PullRequestDetailTabBar<Tab extends string>({
             aria-selected={value === tab.value}
             tabIndex={value === tab.value ? 0 : -1}
             id={`pr-tab-${tab.value}`}
-            aria-controls="pr-panel"
+            aria-controls={`pr-panel-${tab.value}`}
             className={value === tab.value ? 'active' : ''}
             onClick={() => onValueChange(tab.value)}
           >
@@ -188,34 +156,15 @@ export function PullRequestSection({
   children: ReactNode;
 }) {
   return (
-    <details className="pr-section" open={defaultOpen}>
-      <summary>
-        <ChevronDown size={14} aria-hidden />
+    <details
+      className="pr-section group/section border-0 border-b border-solid border-border/60"
+      open={defaultOpen}
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 px-4 py-3 text-xs leading-5 font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+        <ChevronDown size={14} className="-rotate-90 group-open/section:rotate-0" aria-hidden />
         <span>{title}</span>
       </summary>
-      <div className="pr-section-body">{children}</div>
+      <div className="pr-section-body px-4 pb-4 text-xs leading-5">{children}</div>
     </details>
-  );
-}
-
-export function PullRequestChecks({ checks }: { checks: PullRequest['statusCheckRollup'] }) {
-  return (
-    <PullRequestSection title="Checks" defaultOpen={false}>
-      {checks.length === 0 ? (
-        <p className="muted">No checks reported.</p>
-      ) : (
-        checks.map((check, index) => (
-          <div className="check-row" key={index}>
-            {check.state === 'SUCCESS' ? (
-              <CircleCheck size={14} className="positive" aria-hidden />
-            ) : (
-              <CircleDot size={14} aria-hidden />
-            )}
-            <span>{check.name}</span>
-            <small>{check.state.toLowerCase().replaceAll('_', ' ')}</small>
-          </div>
-        ))
-      )}
-    </PullRequestSection>
   );
 }

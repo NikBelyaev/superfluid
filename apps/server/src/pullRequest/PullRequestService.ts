@@ -1,7 +1,8 @@
 import type { ParsedInput, Session, PullRequestRef } from '@superfluid/contracts';
 import { HostingService } from '../hosting/HostingService';
-import { safeRef } from '../vcs/gitCommand';
+import { git, safeRef } from '../vcs/gitCommand';
 import { Gate } from '../utils/Gate';
+import { formatJobLog } from './jobLog';
 
 export class PullRequestService {
   private writers = new Map<string, Gate>();
@@ -44,13 +45,80 @@ export class PullRequestService {
       throw new Error('The server returned an unexpected request URL.');
     return result;
   }
+  async mergeState(session: Session, input: ParsedInput<'pr.mergeState'>) {
+    const { target, provider } = await this.selected(session, input.ref);
+    return provider.mergeState(target, input.ref.number);
+  }
+  async checks(session: Session, input: ParsedInput<'pr.checks'>) {
+    const { target, provider } = await this.selected(session, input.ref);
+    return provider.checks(target, input.ref.number);
+  }
+  async merge(session: Session, input: ParsedInput<'pr.merge'>) {
+    const key = JSON.stringify(input.ref);
+    const gate = this.writers.get(key) ?? new Gate(1);
+    this.writers.set(key, gate);
+    return gate.run(async () => {
+      const { target, provider } = await this.selected(session, input.ref);
+      const current = await provider.mergeState(target, input.ref.number);
+      if (current.headSha !== input.expectedHeadSha)
+        throw new Error(
+          'The request head changed. Refresh and review the new commits before merging.',
+        );
+      if (current.state !== 'open') throw new Error(`This request is already ${current.state}.`);
+      if (input.action === 'cancel-auto') {
+        if (!current.canManage || !current.autoMerge)
+          throw new Error('Auto-merge cannot be canceled for this request.');
+      } else {
+        if (!current.methods.includes(input.method))
+          throw new Error(
+            'This merge method is not allowed by the repository. Refresh and choose an available method.',
+          );
+        if (!(input.action === 'merge' ? current.canMerge : current.canAutoMerge))
+          throw new Error(current.reason ?? 'Merging is not available for this request.');
+      }
+      await this.hosting.assertCurrent(session, target);
+      try {
+        await provider.merge(target, input.ref.number, input);
+        return await provider.mergeState(target, input.ref.number);
+      } catch (error) {
+        throw new Error(
+          `The action may have reached the server. Refresh this request before retrying. ${error instanceof Error ? error.message : String(error)}`,
+        );
+      } finally {
+        this.changed(session.id, input.ref);
+      }
+    });
+  }
   async patch(session: Session, input: ParsedInput<'pr.patch'>) {
     const { target, provider } = await this.selected(session, input.ref);
-    return provider.patch(target, input.ref.number);
+    if (input.commit) {
+      const sha = (
+        await git(target.cwd, ['rev-parse', '--verify', '--quiet', `${input.commit}^{commit}`], {
+          accept: [1],
+        })
+      ).trim();
+      if (sha)
+        return git(target.cwd, [
+          'show',
+          '--format=',
+          '--no-ext-diff',
+          '--no-textconv',
+          '--find-renames',
+          '--diff-merges=first-parent',
+          sha,
+          '--',
+        ]);
+    }
+    return provider.patch(target, input.ref.number, input.commit);
   }
   async comments(session: Session, input: ParsedInput<'pr.comments'>) {
     const { target, provider } = await this.selected(session, input.ref);
     return provider.comments(target, input.ref.number, input.page);
+  }
+  async jobLog(session: Session, input: ParsedInput<'pr.jobLog'>) {
+    const { target, provider } = await this.selected(session, input.ref);
+    const log = await provider.jobLog(target, input.ref.number, input.jobId);
+    return formatJobLog(log.text, log.truncated);
   }
   async timeline(session: Session, input: ParsedInput<'pr.timeline'>) {
     const { target, provider } = await this.selected(session, input.ref);

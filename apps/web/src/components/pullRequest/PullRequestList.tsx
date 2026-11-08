@@ -11,7 +11,12 @@ export function PullRequestList({
   session: Session;
   repositoryId?: string;
 }) {
+  const repositories = useApp((app) => app.repositories[session.id]);
+  const repository = repositories?.find((r) => (repositoryId ? r.id === repositoryId : !r.path));
+  const named =
+    !!repository?.branch && !['Detached HEAD', 'Git unavailable'].includes(repository.branch);
   const [scope, setScope] = useState<'branch' | 'repository'>('branch');
+  const effectiveScope = named ? scope : 'repository';
   const [state, setState] = useState<'open' | 'closed' | 'merged' | 'all'>('open');
   const [page, setPage] = useState(1);
   const [token, setToken] = useState(0);
@@ -24,6 +29,7 @@ export function PullRequestList({
     setResult(null);
     setContext(null);
     setError('');
+    setNeedsRemote(false);
     void desktop
       .call('pr.remotes', { sessionId: session.id, repositoryId })
       .then(async (remotes) => {
@@ -32,7 +38,13 @@ export function PullRequestList({
         if (!remotes.selected) return;
         const [context, result] = await Promise.all([
           desktop.call('pr.context', { sessionId: session.id, repositoryId }),
-          desktop.call('pr.list', { sessionId: session.id, repositoryId, scope, state, page }),
+          desktop.call('pr.list', {
+            sessionId: session.id,
+            repositoryId,
+            scope: effectiveScope,
+            state,
+            page,
+          }),
         ]);
         if (!cancelled) {
           setContext(context);
@@ -45,7 +57,7 @@ export function PullRequestList({
     return () => {
       cancelled = true;
     };
-  }, [session.id, repositoryId, scope, state, page, token]);
+  }, [session.id, repositoryId, effectiveScope, repository?.branch, state, page, token]);
   const term = context
     ? context.provider === 'gitlab'
       ? 'Merge requests'
@@ -60,6 +72,24 @@ export function PullRequestList({
         </p>
         <RepositoryRemotePicker key={token} session={session} repositoryId={repositoryId} />
         <div className="pr-list-tools">
+          {repositories && repositories.length > 1 && (
+            <label>
+              <span className="sr-only">Request repository</span>
+              <select
+                aria-label="Request repository"
+                value={repository?.id || ''}
+                onChange={(event) =>
+                  showSurface({ kind: 'pr', repositoryId: event.target.value }, session.id)
+                }
+              >
+                {repositories.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.path || 'Root'}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <button className="button" onClick={() => setToken((value) => value + 1)}>
             Refresh
           </button>
@@ -68,13 +98,15 @@ export function PullRequestList({
           </label>
           <select
             id="request-scope"
-            value={scope}
+            value={effectiveScope}
             onChange={(e) => {
               setScope(e.target.value === 'branch' ? 'branch' : 'repository');
               setPage(1);
             }}
           >
-            <option value="branch">Current branch</option>
+            <option value="branch" disabled={!named}>
+              Current branch
+            </option>
             <option value="repository">Repository</option>
           </select>
           <label className="sr-only" htmlFor="request-state">

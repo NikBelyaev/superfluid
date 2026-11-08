@@ -11,6 +11,7 @@ import type {
 } from '@superfluid/contracts';
 import {
   emptyView,
+  surfaceSchema,
   surfaceKey,
   type ViewState,
   type Surface,
@@ -118,10 +119,16 @@ export const useApp = create<State>((set, get) => ({
       const runIds = new Set(get().runs.map((r) => r.id));
       for (const s of sessions) {
         const view = views[s.id];
-        view.rightTabs = (view.rightTabs ?? []).filter(
-          (surface) => surface.kind !== 'terminal' || runIds.has(surface.id),
+        view.rightTabs = (Array.isArray(view.rightTabs) ? view.rightTabs : []).filter(
+          (surface) =>
+            surfaceSchema.safeParse(surface).success &&
+            (surface.kind !== 'terminal' || runIds.has(surface.id)),
         );
-        if (view.surface?.kind === 'terminal' && !runIds.has(view.surface.id))
+        if (
+          view.surface !== null &&
+          (!surfaceSchema.safeParse(view.surface).success ||
+            (view.surface.kind === 'terminal' && !runIds.has(view.surface.id)))
+        )
           view.surface = view.rightTabs.at(-1) ?? null;
       }
       const selected = sessions.find((s) => s.available)?.id ?? sessions[0]?.id ?? null;
@@ -255,7 +262,7 @@ export const useApp = create<State>((set, get) => ({
     const statuses = { ...get().repositoryGit[id], ...values };
     const repositories = (get().repositories[id] || []).map((r) => ({
       ...r,
-      branch: statuses[r.id]?.branch || r.branch,
+      branch: values[r.id]?.branch || r.branch,
     }));
     const root = repositories.find((r) => !r.path);
     const rootStatus = root && values[root.id];

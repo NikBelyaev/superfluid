@@ -7,6 +7,9 @@ import { PullRequestService } from '../pullRequest/PullRequestService';
 import { repository, session, temp } from '../../../../tests/fixtures';
 import { gitlabRequest } from '../../../../tests/hostingFixtures';
 import { git } from '../vcs/gitCommand';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { pullRequestRequests } from '@superfluid/contracts';
 import type { HostingBinding } from '@superfluid/contracts';
 
 test('an authenticated self-hosted remote needs no repository binding and defaults to its fork parent', async () => {
@@ -31,7 +34,7 @@ test('an authenticated self-hosted remote needs no repository binding and defaul
     async (_file, args) => {
       calls.push(args);
       return args[2].endsWith('/people/fluid/editor')
-        ? '{"default_branch":"main","forked_from_project":{"path_with_namespace":"platform/editor"}}'
+        ? '{"id":11,"default_branch":"main","forked_from_project":{"path_with_namespace":"platform/editor"}}'
         : '{"default_branch":"develop"}';
     },
     discovery,
@@ -43,6 +46,7 @@ test('an authenticated self-hosted remote needs no repository binding and defaul
     assert.equal(context.sourceProject, 'people/fluid/editor');
     assert.equal(context.targetProject, 'platform/editor');
     assert.equal(context.defaultBranch, 'develop');
+    assert.equal((await hosting.resolve(s)).sourceProjectId, 11);
     const overridden = await hosting.context(s, 'people/fluid/editor');
     assert.equal(overridden.defaultBranch, 'main');
     assert.notEqual(context.revision, overridden.revision);
@@ -160,7 +164,7 @@ test('hosting binds writes to their server and rejects stale worktree and reques
   let writes = 0;
   const current = structuredClone(gitlabRequest);
   const service = new HostingService(store, async (_file, args) => {
-    if (args[1] === 'update' || args[0] === 'api') {
+    if (args[1] === 'update' || (args[0] === 'api' && args.includes('PUT'))) {
       writes++;
       current.description = '';
       return '';
@@ -216,5 +220,153 @@ test('hosting binds writes to their server and rejects stale worktree and reques
     }
   } finally {
     if (store.db.isOpen) store.close();
+  }
+});
+
+test('request commit diffs use the exact local commit and reject non-SHA inputs', async () => {
+  const root = await repository(),
+    store = new Store(await temp()),
+    s = session(root);
+  await git(root, ['remote', 'add', 'origin', 'https://github.com/team/editor.git']);
+  await writeFile(join(root, 'main.py'), 'print("commit diff fixture")\n');
+  await git(root, ['commit', '-am', 'One commit']);
+  const sha = (await git(root, ['rev-parse', 'HEAD'])).trim();
+  const service = new PullRequestService(
+    new HostingService(store, async (_file, args) => {
+      if (args[0] === 'repo') return '{"defaultBranchRef":{"name":"main"},"parent":null}';
+      throw new Error('Local commit diffs must not download a remote patch.');
+    }),
+  );
+  try {
+    const ref = {
+      provider: 'github' as const,
+      host: 'github.com',
+      project: 'team/editor',
+      number: 1,
+    };
+    const patch = await service.patch(s, { sessionId: s.id, ref, commit: sha });
+    assert.match(patch, /\+print\("commit diff fixture"\)/);
+    assert.equal(
+      patch,
+      await git(root, [
+        'show',
+        '--format=',
+        '--no-ext-diff',
+        '--no-textconv',
+        '--find-renames',
+        sha,
+        '--',
+      ]),
+    );
+    assert.equal(
+      pullRequestRequests['pr.patch'].safeParse({
+        sessionId: s.id,
+        ref,
+        commit: '--output=/tmp/unsafe',
+      }).success,
+      false,
+    );
+  } finally {
+    store.close();
+  }
+});
+
+test('request merges recheck the head, host rules and method and serialize concurrent writes', async () => {
+  const root = await repository(),
+    store = new Store(await temp()),
+    s = session(root);
+  await git(root, ['remote', 'add', 'origin', 'git@gitlab.example.test:people/fluid/editor.git']);
+  store.put('projects', {
+    id: s.projectId,
+    path: root,
+    name: 'Fixture',
+    lastOpened: 1,
+    hosting: {
+      provider: 'gitlab',
+      host: 'gitlab.example.test',
+      remote: 'origin',
+      sourceProject: 'people/fluid/editor',
+      targetProject: 'platform/editor',
+    },
+  });
+  const current = {
+    ...gitlabRequest,
+    detailed_merge_status: 'mergeable',
+    user: { can_merge: true },
+    merge_when_pipeline_succeeds: false,
+  };
+  let writes = 0;
+  const events: string[] = [];
+  const requests = new PullRequestService(
+    new HostingService(store, async (_file, args) => {
+      if (args[0] === 'repo')
+        return JSON.stringify({
+          default_branch: 'develop',
+          merge_method: 'merge',
+          squash_option: 'default_off',
+        });
+      if (args[1] === 'merge') {
+        writes++;
+        assert.ok(args.includes(current.sha));
+        if (args.includes('--auto-merge=true')) current.merge_when_pipeline_succeeds = true;
+        else current.state = 'merged';
+        return '';
+      }
+      if (args[0] === 'api') {
+        writes++;
+        current.merge_when_pipeline_succeeds = false;
+        return '{}';
+      }
+      return JSON.stringify(current);
+    }),
+    () => events.push('changed'),
+  );
+  const ref = {
+    provider: 'gitlab' as const,
+    host: 'gitlab.example.test',
+    project: 'platform/editor',
+    number: 42,
+  };
+  const input = {
+    sessionId: s.id,
+    ref,
+    action: 'merge' as const,
+    method: 'squash' as const,
+    expectedHeadSha: current.sha,
+  };
+  try {
+    await assert.rejects(
+      requests.merge(s, { ...input, expectedHeadSha: 'b'.repeat(40) }),
+      /head changed/i,
+    );
+    await assert.rejects(requests.merge(s, { ...input, method: 'rebase' }), /method/i);
+    current.detailed_merge_status = 'ci_must_pass';
+    await assert.rejects(requests.merge(s, input), /checks/i);
+    assert.equal(writes, 0);
+    assert.equal((await requests.merge(s, { ...input, action: 'auto' })).autoMerge, true);
+    assert.equal(
+      (
+        await requests.merge(s, {
+          sessionId: s.id,
+          ref,
+          action: 'cancel-auto',
+          expectedHeadSha: current.sha,
+        })
+      ).autoMerge,
+      false,
+    );
+    current.detailed_merge_status = 'mergeable';
+    current.user.can_merge = false;
+    await assert.rejects(requests.merge(s, input), /permission/i);
+    current.user.can_merge = true;
+    const results = await Promise.allSettled([requests.merge(s, input), requests.merge(s, input)]);
+    assert.deepEqual(
+      results.map((result) => result.status),
+      ['fulfilled', 'rejected'],
+    );
+    assert.equal(writes, 3);
+    assert.equal(events.length, 3);
+  } finally {
+    store.close();
   }
 });

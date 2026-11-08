@@ -1,11 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { FileDiff, Virtualizer } from '@pierre/diffs/react';
 import type { parsePatchFiles } from '@pierre/diffs';
 import DiffWorker from '~/components/diffs/diff.worker?worker';
 import { diffOptions } from './diffOptions';
 import { resolveAppearance, useAppearance, useSystemDark } from '~/state/appearance';
 
-export function Patch({ patch, split = false }: { patch: string; split?: boolean }) {
+export function Patch({
+  patch,
+  split = false,
+  fallback,
+}: {
+  patch: string;
+  split?: boolean;
+  fallback?: ReactNode;
+}) {
   const { scheme } = resolveAppearance(useAppearance(), useSystemDark());
   const [files, setFiles] = useState<ReturnType<typeof parsePatchFiles>[number]['files']>([]),
     [error, setError] = useState(''),
@@ -27,7 +35,7 @@ export function Patch({ patch, split = false }: { patch: string; split?: boolean
     return () => worker.terminate();
   }, [patch]);
   if (error) return <div className="surface-empty error-text">{error}</div>;
-  if (loading) return <div className="surface-empty">Preparing diff…</div>;
+  if (loading) return fallback ?? <div className="surface-empty">Preparing diff…</div>;
   return (
     <Virtualizer className="diff-scroll">
       <div className="diff-files">

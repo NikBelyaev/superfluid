@@ -6,9 +6,14 @@ import type {
   PullRequestChanges,
   PullRequestComment,
   PullRequestActivity,
+  PullRequestMergeState,
+  PullRequestMergeAction,
+  PullRequestChecks,
+  PullRequestJobLog,
 } from '@superfluid/contracts';
 
 export interface HostingTarget extends HostingContext {
+  sourceProjectId?: number;
   cwd: string;
   remoteUrl: string;
 }
@@ -31,14 +36,19 @@ export type RunHosting = (
   target: HostingTarget,
   input?: string,
 ) => Promise<string>;
+export type RunHostingLog = (...args: Parameters<RunHosting>) => Promise<PullRequestJobLog>;
 export interface HostingProvider {
   repository(
     target: HostingTarget,
-  ): Promise<{ defaultBranch: string; upstreamProject: string | null }>;
+  ): Promise<{ id?: number; defaultBranch: string; upstreamProject: string | null }>;
   defaultBranch(target: HostingTarget): Promise<string>;
   list(target: HostingTarget, query: PullRequestQuery): Promise<Page<PullRequestSummary>>;
   read(target: HostingTarget, number: number): Promise<PullRequest>;
-  patch(target: HostingTarget, number: number): Promise<string>;
+  checks(target: HostingTarget, number: number): Promise<PullRequestChecks>;
+  mergeState(target: HostingTarget, number: number): Promise<PullRequestMergeState>;
+  merge(target: HostingTarget, number: number, action: PullRequestMergeAction): Promise<void>;
+  patch(target: HostingTarget, number: number, commit?: string): Promise<string>;
+  jobLog(target: HostingTarget, number: number, jobId: number): Promise<PullRequestJobLog>;
   comments(target: HostingTarget, number: number, page: number): Promise<Page<PullRequestComment>>;
   timeline(target: HostingTarget, number: number, page: number): Promise<Page<PullRequestActivity>>;
   create(
