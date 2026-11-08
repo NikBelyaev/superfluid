@@ -196,6 +196,9 @@ try {
     .getByRole('button', { name: /fluid-lab/ })
     .first()
     .click({ timeout: 30000 });
+  await page.locator('.workspace-shell').waitFor();
+  await page.keyboard.press('Meta+Shift+P');
+  await page.getByRole('button', { name: 'Open project files', exact: true }).click();
   await page.locator('.tree-row').filter({ hasText: 'bom.py' }).waitFor();
   await page.screenshot({ path: 'test-results/editor-empty.png' });
   const gitMenu = page.getByRole('button', { name: 'Individual Git actions', exact: true });
@@ -255,6 +258,8 @@ try {
   await page.getByLabel('Start from').fill('main');
   await page.getByRole('button', { name: 'Create worktree', exact: true }).click();
   await page.locator('.worktree-chip.active').filter({ hasText: 'feature/parallel' }).waitFor();
+  await page.keyboard.press('Meta+Shift+P');
+  await page.getByRole('button', { name: 'Open project files', exact: true }).click();
   await page.locator('.tree-row').filter({ hasText: 'main.py' }).click();
   await expect(page.locator('.main-editor .view-lines')).toContainText('store = Store()');
   await page.locator('.editor-host').click();
@@ -288,9 +293,9 @@ try {
   for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
   for (let i = 0; i < 7; i++) await page.keyboard.press('ArrowRight');
   await page.keyboard.press('F12');
-  await page.locator('.editor-tab.active').filter({ hasText: 'models.py' }).waitFor();
+  await page.getByRole('tab', { name: 'models.py', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Navigate back (Ctrl −)', exact: true }).click();
-  await page.locator('.editor-tab.active').filter({ hasText: 'main.py' }).waitFor();
+  await page.getByRole('tab', { name: 'main.py', exact: true }).waitFor();
   await page.keyboard.press('F2');
   await page.getByLabel('New symbol name').fill('Inventory');
   await page.getByRole('button', { name: 'Preview changes', exact: true }).click();
@@ -299,7 +304,11 @@ try {
     document.querySelector('.view-lines')?.textContent?.includes('Inventory'),
   );
   await page.keyboard.press('Meta+S');
-  await page.getByRole('tab', { name: /models.py/ }).click();
+  await page.getByRole('button', { name: 'Navigation chain from main.py', exact: true }).click();
+  await page
+    .getByRole('menuitem', { name: /models\.py\s*:/ })
+    .first()
+    .click();
   await page.locator('.breadcrumb').getByText('models.py', { exact: true }).waitFor();
   await page.waitForFunction(() =>
     document.querySelector('.view-lines')?.textContent?.includes('Inventory'),
@@ -310,7 +319,11 @@ try {
     await page.waitForTimeout(25);
   }
   assert.match(await readFile(join(project, 'models.py'), 'utf8'), /class Inventory/);
-  await page.getByRole('tab', { name: /main.py/ }).click();
+  await page.getByRole('button', { name: 'Navigation chain from main.py', exact: true }).click();
+  await page
+    .getByRole('menuitem', { name: /main\.py\s*:/ })
+    .first()
+    .click();
   await page.getByRole('button', { name: 'New terminal', exact: true }).click();
   await page.getByRole('textbox', { name: 'Terminal input' }).focus();
   await page.keyboard.insertText(
@@ -722,13 +735,14 @@ try {
       .getBoundingClientRect();
     return tab.left >= list.left && tab.right <= list.right;
   });
-  await page.getByRole('button', { name: 'Collapse actions', exact: true }).waitFor();
   await page
     .getByRole('tablist', { name: 'Merge request', exact: true })
     .getByRole('tab', { name: 'Summary', exact: true })
     .click();
   await page.getByText('Ready for review.', { exact: true }).waitFor();
   await page.screenshot({ path: 'test-results/gitlab-summary-1280.png' });
+  await page.getByRole('button', { name: 'Toggle right panel', exact: true }).click();
+  await page.getByRole('button', { name: 'Collapse actions', exact: true }).waitFor();
   const geometry = await page.evaluate(() => {
     const island = document.querySelector('.island')!.getBoundingClientRect();
     const editor = document.querySelector('.main-editor')!.getBoundingClientRect();
@@ -748,12 +762,13 @@ try {
   );
   assert.ok(geometry.collapseBottom < geometry.viewportHeight);
   const hideSurface = await page
-    .getByRole('button', { name: 'Hide secondary surface', exact: true })
+    .getByRole('button', { name: 'Toggle right panel', exact: true })
     .boundingBox();
   assert.ok(hideSurface && hideSurface.x + hideSurface.width <= geometry.viewportWidth);
   await page.screenshot({ path: 'test-results/workspace-1280.png' });
   await page.getByRole('button', { name: 'Collapse actions', exact: true }).click();
   await page.getByRole('button', { name: 'Expand actions', exact: true }).click();
+  await page.getByRole('button', { name: 'Toggle right panel', exact: true }).click();
   preview = createServer((_request, response) => {
     response.setHeader('Content-Type', 'text/html');
     response.end(

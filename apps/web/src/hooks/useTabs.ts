@@ -12,7 +12,19 @@ export function useActiveTab(key: string) {
     reveal();
     const observer = new ResizeObserver(reveal);
     observer.observe(element);
-    return () => observer.disconnect();
+    const wheel = (event: WheelEvent) => {
+      if (event.ctrlKey || element.scrollWidth <= element.clientWidth) return;
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (!delta) return;
+      event.preventDefault();
+      element.scrollLeft +=
+        delta * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientWidth : 1);
+    };
+    element.addEventListener('wheel', wheel, { passive: false });
+    return () => {
+      observer.disconnect();
+      element.removeEventListener('wheel', wheel);
+    };
   }, [key]);
   return list;
 }

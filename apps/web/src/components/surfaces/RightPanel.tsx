@@ -1,147 +1,67 @@
-import { lazy, Suspense, useState } from 'react';
-import {
-  Columns2,
-  FileCode2,
-  GitCompareArrows,
-  GitPullRequest,
-  Globe,
-  Maximize2,
-  Plus,
-  TerminalSquare,
-  X,
-} from 'lucide-react';
+import { lazy, Suspense } from 'react';
+import { useDroppable } from '@dnd-kit/core';
 import type { Session } from '@superfluid/contracts';
-import { useApp, surfaceKey, type Surface } from '~/state/workspaceStore';
-import { navigateTabs, useActiveTab } from '~/hooks/useTabs';
+import { useApp, surfaceKey } from '~/state/workspaceStore';
+import { tabGroup, type TabGroup } from '~/state/workspaceView';
+import { EditorTabs } from '~/components/workspace/EditorTabs';
+import { dropFile } from '~/components/workspace/tabDrag';
 import { SurfaceLauncher } from './SurfaceLauncher';
 
 const Diff = lazy(() => import('~/components/diffs/DiffPanel').then((m) => ({ default: m.Diff })));
-
 const PullRequestSurface = lazy(() =>
   import('~/components/pullRequest/PullRequestPanel').then((m) => ({
     default: m.PullRequestSurface,
   })),
 );
-
 const Browser = lazy(() =>
   import('~/components/preview/BrowserPanel').then((m) => ({ default: m.Browser })),
 );
-
 const Terminal = lazy(() => import('~/components/terminal/Terminal'));
-
 const Editor = lazy(() => import('~/components/editor/Editor'));
+const ProjectTree = lazy(() => import('~/components/sidebar/ProjectTree'));
 
-const icons = {
-  terminal: TerminalSquare,
-  diff: GitCompareArrows,
-  pr: GitPullRequest,
-  browser: Globe,
-  file: FileCode2,
-};
-
-export default function RightPanel({ session }: { session: Session }) {
-  const view = useApp((a) => a.views[session.id]),
-    runs = useApp((a) => a.runs),
-    [expanded, setExpanded] = useState(false);
-  const active = view.surface,
-    tabs = view.rightTabs ?? [];
-  const tabStrip = useActiveTab(active ? surfaceKey(active) : '');
-  const title = (s: Surface) =>
-    s.kind === 'terminal'
-      ? (runs.find((r) => r.id === s.id)?.name ?? 'Terminal')
-      : s.kind === 'file'
-        ? s.path.split('/').at(-1)
-        : s.kind === 'pr'
-          ? s.ref
-            ? `${s.ref.provider === 'gitlab' ? '!' : '#'}${s.ref.number}`
-            : s.number
-              ? '#' + s.number
-              : 'Requests'
-          : s.kind === 'diff'
-            ? 'Diff'
-            : 'Preview';
-  const close = (surface: Surface) => {
-    const next = tabs.filter((s) => surfaceKey(s) !== surfaceKey(surface));
-    useApp.getState().setView({
-      rightTabs: next,
-      surface: next.at(-1) ?? null,
-      ...(next.length === 0 ? { changes: false } : {}),
-    });
-  };
+export default function RightPanel({
+  session,
+  group = 'right',
+}: {
+  session: Session;
+  group?: TabGroup;
+}) {
+  const view = useApp((a) => a.views[session.id]);
+  const { active } = tabGroup(view, group);
+  const target = useDroppable({
+    id: `panel:${group}`,
+    data: { sessionId: session.id, group, area: 'panel' },
+  });
   return (
     <section
-      className={`right-surfaces ${expanded ? 'expanded' : ''}`}
-      aria-label="Secondary surfaces"
+      ref={target.setNodeRef}
+      className="right-surfaces"
+      data-group={group}
+      data-drop-target={target.isOver || undefined}
+      aria-label={
+        group === 'main'
+          ? 'Main surface'
+          : group === 'bottom'
+            ? 'Bottom surfaces'
+            : 'Secondary surfaces'
+      }
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.some((type) => type === 'application/superfluid-file'))
+          event.preventDefault();
+      }}
+      onDrop={(event) => dropFile(event, session.id, group)}
     >
-      <div className="surface-header">
-        <div
-          ref={tabStrip}
-          className="surface-tabs"
-          role="tablist"
-          aria-label="Surfaces"
-          onKeyDown={navigateTabs}
-        >
-          {tabs.map((s) => {
-            const Icon = icons[s.kind];
-            return (
-              <div
-                className={`surface-tab ${active && surfaceKey(active) === surfaceKey(s) ? 'active' : ''}`}
-                key={surfaceKey(s)}
-              >
-                <button
-                  role="tab"
-                  aria-selected={!!active && surfaceKey(active) === surfaceKey(s)}
-                  tabIndex={active && surfaceKey(active) === surfaceKey(s) ? 0 : -1}
-                  aria-controls="secondary-surface-panel"
-                  title={title(s)}
-                  onClick={() => useApp.getState().setView({ surface: s })}
-                >
-                  <Icon size={13} />
-                  <span>{title(s)}</span>
-                </button>
-                <button
-                  className="tab-close"
-                  aria-label={`Close ${title(s)}`}
-                  onClick={() => close(s)}
-                >
-                  <X size={11} />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-        <div className="tab-tools">
-          <button
-            className="icon-button"
-            title="Open a surface"
-            onClick={() => useApp.setState({ modal: { kind: 'launcher' } })}
-          >
-            <Plus size={15} />
-          </button>
-          <button
-            className="icon-button"
-            title="Expand surface"
-            onClick={() => setExpanded(!expanded)}
-          >
-            <Maximize2 size={13} />
-          </button>
-          <button
-            className="icon-button"
-            title="Hide secondary surface"
-            onClick={() => useApp.getState().setView({ surface: null })}
-          >
-            <Columns2 size={13} />
-          </button>
-        </div>
-      </div>
+      <EditorTabs session={session} group={group} />
       <div
         className="surface-panel"
-        id="secondary-surface-panel"
+        id={group === 'main' ? 'primary-editor-panel' : group + '-surface-panel'}
         role="tabpanel"
-        aria-label={active ? title(active) : 'Open a surface'}
       >
         <Suspense fallback={<div className="surface-empty">Opening surface…</div>}>
-          {active?.kind === 'terminal' ? (
+          {active?.kind === 'files' ? (
+            <ProjectTree key={session.id} session={session} />
+          ) : active?.kind === 'terminal' ? (
             <Terminal id={active.id} />
           ) : active?.kind === 'diff' ? (
             <Diff
@@ -161,9 +81,14 @@ export default function RightPanel({ session }: { session: Session }) {
           ) : active?.kind === 'browser' ? (
             <Browser url={active.url} />
           ) : active?.kind === 'file' ? (
-            <Editor session={session} path={active.path} primary={false} />
+            <Editor
+              session={session}
+              path={active.path}
+              group={group}
+              tabKey={surfaceKey(active)}
+            />
           ) : (
-            <SurfaceLauncher session={session} />
+            <SurfaceLauncher session={session} group={group} />
           )}
         </Suspense>
       </div>

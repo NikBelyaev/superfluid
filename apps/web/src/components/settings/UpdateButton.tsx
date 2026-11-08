@@ -15,7 +15,7 @@ export function UpdateButton({ compact = false }: { compact?: boolean }) {
           : 'Update available';
   return (
     <button
-      className={compact ? 'rail-button' : 'welcome-nav-item'}
+      className={compact ? 'icon-button' : 'welcome-nav-item'}
       title={label}
       aria-label={label}
       onClick={() => useApp.setState({ modal: { kind: 'settings', section: 'about' } })}

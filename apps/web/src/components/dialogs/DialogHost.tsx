@@ -106,7 +106,17 @@ export default function DialogHost() {
             <RenameSymbolDialog source={modal.source} edit={modal.edit} />
           ) : (
             <Suspense fallback={<p>Loading…</p>}>
-              <Launcher session={currentSession()!} />
+              <Launcher
+                session={
+                  useApp
+                    .getState()
+                    .sessions.find(
+                      (session) =>
+                        session.id === (modal.kind === 'launcher' ? modal.sessionId : undefined),
+                    ) ?? currentSession()!
+                }
+                group={modal.kind === 'launcher' ? modal.group : undefined}
+              />
             </Suspense>
           )}
         </Dialog.Popup>

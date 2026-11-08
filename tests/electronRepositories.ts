@@ -270,6 +270,8 @@ try {
       window.superfluid.call('terminal.run', { sessionId, command: 'cat', name: 'Source process' }),
     source.id,
   );
+  await page.keyboard.press('Meta+Shift+P');
+  await page.getByRole('button', { name: 'Open project files', exact: true }).click();
   await page.locator('.tree-row[data-path="apps"]').click();
   await page.locator('.tree-row[data-path="apps/core"]').click();
   await page.locator('.tree-row[data-path="apps/core/main.py"]').click();

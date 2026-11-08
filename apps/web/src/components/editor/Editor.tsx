@@ -1,6 +1,6 @@
 import { desktop } from '~/rpc/desktop';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { AlertCircle, Braces, Save, Download, RefreshCw } from 'lucide-react';
+import { AlertCircle, Braces, Save } from 'lucide-react';
 import {
   documents,
   documentPath,
@@ -17,19 +17,29 @@ import '~/components/python/languageProviders';
 import { navigate } from '~/components/python/navigation';
 import { installDefinitionHover } from '~/components/python/definitionPreview';
 import { installDefinitionLinks } from '~/components/python/definitionLinks';
+import {
+  editorViewKey,
+  setTabGroup,
+  surfaceKey,
+  tabGroup,
+  type TabGroup,
+} from '~/state/workspaceView';
 
 export default function Editor({
   session,
   path,
-  primary = true,
+  tabKey,
+  group = 'main',
 }: {
   session: Session;
   path: string | null;
-  primary?: boolean;
+  tabKey: string;
+  group?: TabGroup;
 }) {
   const host = useRef<HTMLDivElement>(null),
     editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null),
-    bound = useRef<Doc | null>(null);
+    bound = useRef<Doc | null>(null),
+    boundTab = useRef<string | null>(null);
   const capture = useRef<() => void>(() => {});
   const [doc, setDoc] = useState<Doc | null>(null),
     [loading, setLoading] = useState(false),
@@ -70,15 +80,52 @@ export default function Editor({
       if (!saved) return;
       const view = useApp.getState().views[d.session.id];
       if (!view) return;
-      const key = (primary ? 'main:' : 'side:') + d.path;
+      const key = editorViewKey(group, d.path);
       const persisted = {
         ...saved,
         cursorState: saved.cursorState.slice(0, 16),
         contributionsState: {},
       };
-      if (JSON.stringify(view.editorViews?.[key]) === JSON.stringify(persisted)) return;
+      const current = tabGroup(view, group);
+      const tab = current.tabs.find((tab) => surfaceKey(tab) === boundTab.current);
+      const position = saved.cursorState[0]?.position;
+      let next = view;
+      if (
+        tab?.kind === 'file' &&
+        tab.path === d.path &&
+        tab.chain &&
+        position &&
+        !(d.reveal && (d.reveal.group ?? 'main') === group)
+      ) {
+        const entry = tab.chain.entries[tab.chain.index]!;
+        if (entry.line !== position.lineNumber || entry.column !== position.column) {
+          const updated = {
+            ...tab,
+            chain: {
+              ...tab.chain,
+              entries: tab.chain.entries.map((item, index) =>
+                index === tab.chain!.index
+                  ? { ...item, line: position.lineNumber, column: position.column }
+                  : item,
+              ),
+            },
+          };
+          next = setTabGroup(
+            view,
+            group,
+            current.tabs.map((item) => (item === tab ? updated : item)),
+            current.active && surfaceKey(current.active) === surfaceKey(tab)
+              ? updated
+              : current.active,
+          );
+          next.rightPanelOpen = view.rightPanelOpen;
+        }
+      }
+      if (next === view && JSON.stringify(view.editorViews?.[key]) === JSON.stringify(persisted))
+        return;
       useApp.getState().setView(
         {
+          ...next,
           editorViews: Object.fromEntries([
             ...Object.entries(view.editorViews ?? {})
               .filter(([path]) => path !== key)
@@ -161,6 +208,7 @@ export default function Editor({
               line: p.lineNumber,
               column: p.column,
               label: d.path.split('/').at(-1)!,
+              group,
             },
           );
         } catch (e) {
@@ -171,6 +219,7 @@ export default function Editor({
     });
     const focus = instance.onDidFocusEditorText(() => {
       documents.focused = bound.current;
+      documents.focusedGroup = group;
     });
     return () => {
       remember();
@@ -194,13 +243,16 @@ export default function Editor({
     if (!path) {
       editor.current?.setModel(null);
       bound.current = null;
+      boundTab.current = null;
       setDoc(null);
       return;
     }
     setError('');
     const bind = (d: Doc) => {
       if (cancelled || !editor.current) return;
+      const ownerChanged = boundTab.current !== tabKey;
       bound.current = d;
+      boundTab.current = tabKey;
       setDoc(d);
       const changed = editor.current.getModel() !== d.model;
       if (changed) editor.current.setModel(d.model);
@@ -209,13 +261,14 @@ export default function Editor({
         domReadOnly: !!d.readOnly,
         ariaLabel: d.readOnly ? 'Read-only editor content' : 'Editor content',
       });
-      const saved =
-        useApp.getState().views[session.id]?.editorViews?.[(primary ? 'main:' : 'side:') + path];
+      const saved = useApp.getState().views[session.id]?.editorViews?.[editorViewKey(group, path)];
       if (saved) editor.current.restoreViewState(saved);
-      if (d.reveal) {
+      let revealed = false;
+      if (d.reveal && (d.reveal.group ?? 'main') === group) {
         editor.current.setPosition({ lineNumber: d.reveal.line, column: d.reveal.column });
         editor.current.revealLineInCenterIfOutsideViewport(d.reveal.line);
         d.reveal = undefined;
+        revealed = true;
       }
       // Finish the new view before React allows the next paint.
       if (changed) {
@@ -233,8 +286,11 @@ export default function Editor({
         }
         editor.current.render();
       }
-      editor.current.focus();
-      documents.focused = d;
+      if (changed || revealed || ownerChanged) {
+        editor.current.focus();
+        documents.focused = d;
+        documents.focusedGroup = group;
+      }
       setLoading(false);
       performance.mark('superfluid:editor-bound');
     };
@@ -260,17 +316,14 @@ export default function Editor({
     return () => {
       cancelled = true;
     };
-  }, [session.id, path, primary ? revision : 0]);
+  }, [session.id, path, revision, tabKey]);
   return (
     <div
       className="editor-pane"
-      {...(primary
-        ? {
-            role: 'tabpanel',
-            id: 'primary-editor-panel',
-            'aria-label': path ? documentPath(path) : 'Editor',
-          }
-        : {})}
+      onPointerDownCapture={() => {
+        documents.focused = bound.current;
+        documents.focusedGroup = group;
+      }}
     >
       <div className="breadcrumb">
         <Braces size={13} />
@@ -282,34 +335,6 @@ export default function Editor({
           <span className="definition-readonly">
             {doc.path.endsWith('.pyi') ? 'Type stub · Read only' : 'Read only'}
           </span>
-        )}
-        {doc && !doc.readOnly && (
-          <button
-            className="icon-button"
-            title="Reload disk version…"
-            onClick={() => {
-              if (!doc.dirty || confirm('Discard these edits and reload the disk version?'))
-                void documents.reload(doc).catch(useApp.getState().fail);
-            }}
-          >
-            <RefreshCw size={13} />
-          </button>
-        )}
-        {doc && (
-          <button
-            className="icon-button"
-            title="Export buffer…"
-            onClick={() =>
-              void desktop
-                .exportText(
-                  doc.model.getValue(undefined, true),
-                  documentPath(doc.path).split('/').at(-1)!,
-                )
-                .catch(useApp.getState().fail)
-            }
-          >
-            <Download size={14} />
-          </button>
         )}
         {doc?.dirty && (
           <>
@@ -328,7 +353,7 @@ export default function Editor({
         <div className="recovery-banner">
           <AlertCircle size={14} />
           {doc.diskText === undefined
-            ? 'Recovered unsaved changes. The disk version is unavailable; export this buffer to keep it.'
+            ? 'Recovered unsaved changes. The disk version is unavailable.'
             : 'Recovered unsaved changes. Save to write them to disk.'}
           <button
             onClick={() => {

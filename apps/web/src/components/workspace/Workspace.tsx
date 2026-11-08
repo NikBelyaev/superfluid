@@ -1,16 +1,13 @@
 import { lazy, Suspense } from 'react';
-import { useApp, showSurface } from '~/state/workspaceStore';
-import ProjectTree from '~/components/sidebar/ProjectTree';
+import { useApp } from '~/state/workspaceStore';
 import ProjectDetailsPanel from '~/components/workspace/ProjectDetailsPanel';
 import { useDiagnostics } from '~/components/python/useDiagnostics';
 import { PanelResizeHandle as Resize } from '~/components/ui/PanelResizeHandle';
 import { Titlebar } from './Titlebar';
-import { WorktreeStrip } from './WorktreeStrip';
-import { ActivityRail } from './ActivityRail';
-import { EditorTabs } from './EditorTabs';
 import { Statusbar } from './Statusbar';
-
-const Editor = lazy(() => import('~/components/editor/Editor'));
+import { WorkspaceControls } from './WorkspaceControls';
+import { TabDragProvider } from './TabDragProvider';
+import { rightPanelVisible } from '~/state/workspaceView';
 
 const RightPanel = lazy(() => import('~/components/surfaces/RightPanel'));
 
@@ -18,7 +15,6 @@ export default function Workspace() {
   const sessions = useApp((a) => a.sessions),
     sessionId = useApp((a) => a.sessionId),
     views = useApp((a) => a.views),
-    sidebar = useApp((a) => a.showSidebar),
     island = useApp((a) => a.island);
   const session = sessions.find((s) => s.id === sessionId);
   useDiagnostics();
@@ -31,41 +27,35 @@ export default function Workspace() {
   const view = views[session.id];
   return (
     <div className="workspace-shell">
-      <Titlebar />
-      <WorktreeStrip session={session} />
-      <div className="workspace-body">
-        <ActivityRail session={session} />
-        {sidebar && (
-          <>
-            <ProjectTree key={session.id} session={session} />
-            <Resize variable="--sidebar-width" />
-          </>
-        )}
-        <main className="main-editor">
-          <EditorTabs session={session} />
-          <Suspense fallback={<div className="surface-empty">Loading editor…</div>}>
-            <Editor session={session} path={view.active} />
-          </Suspense>
-          {island && <ProjectDetailsPanel session={session} />}
-        </main>
-        {view.surface && (
-          <>
-            <Resize variable="--right-width" reverse />
-            <div
-              className="right-group"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                const path = e.dataTransfer.getData('application/superfluid-file');
-                if (path) showSurface({ kind: 'file', path });
-              }}
-            >
-              <Suspense fallback={<div className="surface-empty">Loading surface…</div>}>
-                <RightPanel key={session.id} session={session} />
-              </Suspense>
-            </div>
-          </>
-        )}
-      </div>
+      <Titlebar session={session} />
+      <TabDragProvider key={session.id} sessionId={session.id}>
+        <div className="workspace-body">
+          <main className="main-editor">
+            <Suspense fallback={<div className="surface-empty">Loading editor…</div>}>
+              <RightPanel key={session.id} session={session} group="main" />
+            </Suspense>
+            {view.bottomSurface && (
+              <div className="bottom-group">
+                <Suspense fallback={<div className="surface-empty">Loading terminal…</div>}>
+                  <RightPanel key={session.id} session={session} group="bottom" />
+                </Suspense>
+              </div>
+            )}
+            {island && <ProjectDetailsPanel session={session} />}
+          </main>
+          {rightPanelVisible(view) && (
+            <>
+              <Resize variable="--right-width" reverse />
+              <div className="right-group">
+                <Suspense fallback={<div className="surface-empty">Loading surface…</div>}>
+                  <RightPanel key={session.id} session={session} />
+                </Suspense>
+              </div>
+            </>
+          )}
+          <WorkspaceControls session={session} />
+        </div>
+      </TabDragProvider>
       <Statusbar session={session} />
     </div>
   );

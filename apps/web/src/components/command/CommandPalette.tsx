@@ -64,8 +64,8 @@ export default function CommandPalette() {
       run: () => useApp.setState({ modal: { kind: 'interpreter' } }),
     },
     {
-      name: 'Toggle project sidebar',
-      run: () => useApp.setState((s) => ({ showSidebar: !s.showSidebar })),
+      name: 'Open project files',
+      run: () => session && showSurface({ kind: 'files' }, session.id),
     },
     { name: 'Toggle action island', run: () => useApp.setState((s) => ({ island: !s.island })) },
   ].filter((c) => c.name.toLowerCase().includes(query.toLowerCase()));

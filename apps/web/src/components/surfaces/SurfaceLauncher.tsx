@@ -1,39 +1,53 @@
-import { FileCode2, GitCompareArrows, GitPullRequest, Globe, TerminalSquare } from 'lucide-react';
+import { Files, GitCompareArrows, GitPullRequest, Globe, TerminalSquare } from 'lucide-react';
 import type { Session } from '@superfluid/contracts';
 import { useApp, showSurface } from '~/state/workspaceStore';
 import { runAction } from '~/commands/runProjectAction';
+import type { TabGroup } from '~/state/workspaceView';
 
-export function SurfaceLauncher({ session }: { session: Session }) {
+export const surfaceActions = (session: Session, group: TabGroup) => [
+  {
+    icon: Globe,
+    label: 'Browser',
+    shortcut: 'B',
+    run: () => showSurface({ kind: 'browser', url: 'http://localhost:8000' }, session.id, group),
+  },
+  {
+    icon: TerminalSquare,
+    label: 'Terminal',
+    shortcut: 'T',
+    run: () => void runAction(session, undefined, group),
+  },
+  {
+    icon: Files,
+    label: 'Files',
+    shortcut: 'F',
+    run: () => showSurface({ kind: 'files' }, session.id, group),
+  },
+  {
+    icon: GitCompareArrows,
+    label: 'Diff',
+    shortcut: 'D',
+    run: () => showSurface({ kind: 'diff' }, session.id, group),
+  },
+  {
+    icon: GitPullRequest,
+    label: 'Pull / merge requests',
+    shortcut: 'P',
+    run: () => showSurface({ kind: 'pr' }, session.id, group),
+  },
+];
+
+export function SurfaceLauncher({
+  session,
+  group = 'right',
+}: {
+  session: Session;
+  group?: TabGroup;
+}) {
   return (
     <div className="surface-launcher">
       <h3>Open a surface</h3>
-      {[
-        {
-          icon: Globe,
-          label: 'Browser',
-          run: () => showSurface({ kind: 'browser', url: 'http://localhost:8000' }),
-        },
-        { icon: TerminalSquare, label: 'Terminal', run: () => void runAction(session) },
-        {
-          icon: FileCode2,
-          label: 'Files',
-          run: () => {
-            const view = useApp.getState().views[session.id];
-            if (view.active) showSurface({ kind: 'file', path: view.active });
-            else useApp.setState({ palette: 'files' });
-          },
-        },
-        {
-          icon: GitCompareArrows,
-          label: 'Diff',
-          run: () => showSurface({ kind: 'diff' }),
-        },
-        {
-          icon: GitPullRequest,
-          label: 'Pull / merge requests',
-          run: () => showSurface({ kind: 'pr' }, session.id),
-        },
-      ].map(({ icon: Icon, label, run }) => (
+      {surfaceActions(session, group).map(({ icon: Icon, label, run }) => (
         <button
           className="launcher-row"
           key={label}

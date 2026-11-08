@@ -1,4 +1,4 @@
-import { ChevronDown, Play, Plus, Settings2 } from 'lucide-react';
+import { ChevronUp, Play, Plus, Settings2 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import type { Session } from '@superfluid/contracts';
 import { useApp } from '~/state/workspaceStore';
@@ -27,7 +27,7 @@ export function ScriptsSection({
             <Plus size={16} />
           </button>
           <button className="icon-button" title="Collapse actions" onClick={onCollapse}>
-            <ChevronDown size={16} />
+            <ChevronUp size={16} />
           </button>
         </div>
       </div>

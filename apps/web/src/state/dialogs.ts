@@ -1,5 +1,6 @@
 import type { Action, PullRequest } from '@superfluid/contracts';
 import { useApp } from '~/state/workspaceStore';
+import type { TabGroup } from './workspaceView';
 
 export const closeDialog = () => useApp.setState({ modal: null });
 
@@ -20,6 +21,6 @@ export type Modal =
   | { kind: 'new-file'; directory: boolean; parent: string }
   | { kind: 'rename'; path: string }
   | { kind: 'interpreter' }
-  | { kind: 'launcher' }
+  | { kind: 'launcher'; group?: TabGroup; sessionId?: string }
   | { kind: 'rename-symbol'; edit?: any; source?: { path: string; line: number; column: number } }
   | null;

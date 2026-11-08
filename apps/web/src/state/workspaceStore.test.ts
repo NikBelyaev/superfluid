@@ -1,5 +1,15 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mock, test } from 'node:test';
+import { desktop } from '../rpc/desktop';
+import {
+  emptyView,
+  surfaceKey,
+  moveTab,
+  restoreView,
+  tabGroup,
+  tabsToClose,
+} from './workspaceView';
+import { flushLayouts, showSurface, useApp } from './workspaceStore';
 
 test('closing hundreds of worktree layouts does not flood the IPC queue', async () => {
   const original = (globalThis as any).window;
@@ -25,15 +35,7 @@ test('closing hundreds of worktree layouts does not flood the IPC queue', async 
         Array.from({ length: 200 }, (_, i) => [
           String(i),
           {
-            tabs: [],
-            active: null,
-            expanded: [],
-            changes: false,
-            surface: null,
-            rightTabs: [],
-            history: [],
-            historyIndex: -1,
-            editorViews: {},
+            ...emptyView(),
           },
         ]),
       ),
@@ -44,5 +46,178 @@ test('closing hundreds of worktree layouts does not flood the IPC queue', async 
   } finally {
     useApp.setState({ views: before });
     (globalThis as any).window = original;
+  }
+});
+
+test('tabs reorder and move between groups without losing duplicates, selection or editor state', () => {
+  const file = { kind: 'file', path: 'main.py' } as const;
+  const files = { kind: 'files' } as const;
+  const diff = { kind: 'diff' } as const;
+  let view = restoreView({
+    layoutVersion: 1,
+    tabs: [file, files, diff],
+    active: files,
+    editorViews: { 'main:main.py': { cursorState: [], viewState: null, contributionsState: {} } },
+  });
+  view = moveTab(view, 'main', 'main', 'diff:', 'file:main.py');
+  assert.deepEqual(view.tabs, [diff, file, files]);
+  assert.deepEqual(view.active, files);
+  const moved = moveTab(view, 'main', 'right', 'file:main.py');
+  assert.deepEqual(moved.tabs, [diff, files]);
+  assert.deepEqual(moved.rightTabs, [file]);
+  assert.deepEqual(moved.surface, file);
+  assert.deepEqual(moved.editorViews['side:main.py'], view.editorViews['main:main.py']);
+  const duplicate = moveTab(
+    { ...moved, tabs: [file, ...moved.tabs] },
+    'main',
+    'right',
+    'file:main.py',
+  );
+  assert.deepEqual(duplicate.rightTabs, [file]);
+  const returned = moveTab(moved, 'right', 'main', 'file:main.py', 'files');
+  assert.deepEqual(returned.tabs, [diff, file, files]);
+  assert.equal(returned.surface, null);
+  assert.equal(returned.rightPanelOpen, false);
+  const bottomFile = moveTab(returned, 'main', 'bottom', 'file:main.py');
+  assert.deepEqual(bottomFile.editorViews['bottom:main.py'], returned.editorViews['main:main.py']);
+  const bottom = moveTab(returned, 'main', 'bottom', 'files');
+  assert.deepEqual(tabGroup(bottom, 'bottom'), { tabs: [files], active: files });
+  assert.equal(moveTab(bottom, 'main', 'right', 'missing'), bottom);
+  assert.deepEqual(restoreView(JSON.parse(JSON.stringify(bottom))), bottom);
+});
+
+test('tab close scopes use the clicked tab and preserve the ordering of remaining tabs', () => {
+  const tabs = ['a.py', 'b.py', 'c.py'].map((path) => ({ kind: 'file' as const, path }));
+  for (const [scope, expected] of [
+    ['this', ['file:b.py']],
+    ['others', ['file:a.py', 'file:c.py']],
+    ['left', ['file:a.py']],
+    ['right', ['file:c.py']],
+    ['all', ['file:a.py', 'file:b.py', 'file:c.py']],
+  ] as const)
+    assert.deepEqual(tabsToClose(tabs, 'file:b.py', scope), expected);
+  assert.deepEqual(tabsToClose(tabs, 'file:a.py', 'left'), []);
+  assert.deepEqual(tabsToClose(tabs, 'file:c.py', 'right'), []);
+  assert.deepEqual(tabsToClose(tabs, 'missing', 'all'), []);
+  assert.deepEqual(tabs.map(surfaceKey), ['file:a.py', 'file:b.py', 'file:c.py']);
+});
+
+test('a hidden right panel restores its selected tab without opening itself', () => {
+  const files = { kind: 'files' } as const,
+    diff = { kind: 'diff' } as const;
+  const view = restoreView({
+    ...emptyView(),
+    surface: files,
+    rightTabs: [files, diff],
+    rightPanelOpen: false,
+  });
+  assert.equal(view.rightPanelOpen, false);
+  assert.deepEqual(view.surface, files);
+  assert.deepEqual(restoreView(JSON.parse(JSON.stringify(view))), view);
+});
+
+test('surfaces stay in their worktree and Files is a single tree tab alongside terminals', async () => {
+  const initial = useApp.getState();
+  const call = mock.method(desktop, 'call', async () => ({}));
+  const diff = { kind: 'diff' } as const;
+  try {
+    useApp.setState({
+      sessionId: 'active',
+      views: {
+        active: emptyView(),
+        inactive: { ...emptyView(), surface: diff, rightTabs: [diff] },
+      },
+    });
+    showSurface({ kind: 'terminal', id: 'shell' }, 'inactive');
+    showSurface({ kind: 'terminal', id: 'shell' }, 'inactive');
+    assert.deepEqual(useApp.getState().views.active, emptyView());
+    assert.deepEqual(useApp.getState().views.inactive, {
+      ...emptyView(),
+      surface: diff,
+      rightTabs: [diff],
+      bottomSurface: { kind: 'terminal', id: 'shell' },
+      bottomTabs: [{ kind: 'terminal', id: 'shell' }],
+    });
+    showSurface({ kind: 'file', path: 'main.py' }, 'inactive');
+    assert.deepEqual(useApp.getState().views.inactive.bottomSurface, {
+      kind: 'terminal',
+      id: 'shell',
+    });
+    assert.deepEqual(useApp.getState().views.inactive.surface, { kind: 'file', path: 'main.py' });
+    useApp.getState().setView({ changes: true }, 'inactive');
+    showSurface({ kind: 'files' }, 'inactive');
+    showSurface({ kind: 'files' }, 'inactive');
+    const view = useApp.getState().views.inactive;
+    assert.equal(surfaceKey({ kind: 'files' }), 'files');
+    assert.deepEqual(view.surface, { kind: 'files' });
+    assert.equal(view.changes, false);
+    assert.equal(view.rightTabs.filter((surface) => surface.kind === 'files').length, 1);
+    showSurface({ kind: 'diff' }, 'inactive', 'main');
+    assert.equal(useApp.getState().views.inactive.changes, false);
+    assert.deepEqual(useApp.getState().views.inactive.surface, { kind: 'files' });
+  } finally {
+    await flushLayouts();
+    call.mock.restore();
+    useApp.setState(initial, true);
+  }
+});
+
+test('reopening layouts moves legacy terminals below the editor and drops stale processes', async () => {
+  const initial = useApp.getState();
+  const project = { id: 'project', name: 'Fixture', path: '/fixture', lastOpened: 0 };
+  const session = {
+    id: 'session',
+    projectId: project.id,
+    path: project.path,
+    branch: 'main',
+    head: '',
+    gitDir: '',
+    python: '',
+    available: true,
+    state: {
+      ...emptyView(),
+      layoutVersion: undefined,
+      tabs: ['main.py'],
+      active: 'main.py',
+      surface: { kind: 'terminal', id: 'shell' },
+      rightTabs: [
+        { kind: 'diff' },
+        { kind: 'terminal', id: 'shell' },
+        { kind: 'terminal', id: 'old' },
+      ],
+      terminalTabs: ['old', 'shell'],
+    },
+  };
+  const call = mock.method(desktop, 'call', async () => [session]);
+  try {
+    useApp.setState({
+      views: {},
+      switchSession: () => {},
+      runs: [
+        {
+          id: 'shell',
+          sessionId: session.id,
+          name: 'Terminal',
+          command: 'sh',
+          state: 'running',
+          startedAt: 0,
+        },
+      ],
+    });
+    await useApp.getState().openProject(project);
+    const view = useApp.getState().views[session.id];
+    assert.deepEqual(view.tabs, [{ kind: 'file', path: 'main.py' }]);
+    assert.deepEqual(view.active, { kind: 'file', path: 'main.py' });
+    assert.deepEqual(view.bottomSurface, { kind: 'terminal', id: 'shell' });
+    assert.deepEqual(view.bottomTabs, [{ kind: 'terminal', id: 'shell' }]);
+    assert.deepEqual(view.rightTabs, [{ kind: 'diff' }]);
+    assert.equal(view.surface, null);
+    useApp.setState({ views: {}, runs: [] });
+    await useApp.getState().openProject(project);
+    assert.equal(useApp.getState().views[session.id].bottomSurface, null);
+    assert.deepEqual(useApp.getState().views[session.id].bottomTabs, []);
+  } finally {
+    call.mock.restore();
+    useApp.setState(initial, true);
   }
 });

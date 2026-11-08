@@ -1,9 +1,10 @@
 import { callPython, syncPythonDocument, forgetPythonDocument } from '~/rpc/python';
 import { monaco } from '~/components/editor/monaco';
 import { desktop } from '~/rpc/desktop';
-import type { Session, DocumentData } from '@superfluid/contracts';
+import type { Session, DocumentData, PythonDocumentSymbol } from '@superfluid/contracts';
 import { Recovery } from '~/state/editor/Recovery';
 import { assertPythonGeneration, pythonGeneration } from '~/state/python';
+import type { TabGroup } from '~/state/workspaceView';
 
 export interface Doc {
   key: string;
@@ -15,13 +16,14 @@ export interface Doc {
   dirty: boolean;
   recovered: boolean;
   diskText?: string;
-  reveal?: { line: number; column: number };
+  reveal?: { line: number; column: number; group?: TabGroup };
   lspTimer?: ReturnType<typeof setTimeout>;
   lastUsed: number;
   saving?: Promise<void>;
   reloading?: boolean;
   closed?: boolean;
   readOnly?: boolean;
+  symbols?: PythonDocumentSymbol[];
 }
 
 const listeners = new Set<() => void>();
@@ -59,7 +61,12 @@ export const documentPath = (path: string) =>
 class Documents {
   items = new Map<string, Doc>();
   focused: Doc | null = null;
+  focusedGroup: TabGroup = 'main';
   private viewReaders = new Set<() => void>();
+  private outlines = new WeakMap<
+    Doc,
+    { version: number; generation: number; pending: Promise<PythonDocumentSymbol[]> }
+  >();
   registerViewReader(read: () => void) {
     this.viewReaders.add(read);
     return () => {
@@ -86,12 +93,15 @@ class Documents {
   find(model: monaco.editor.ITextModel) {
     return [...this.items.values()].find((d) => d.model === model);
   }
-  private async readDefinition(session: Session, path: string): Promise<DocumentData> {
+  private async readDefinition(
+    session: Session,
+    path: string,
+  ): Promise<DocumentData & { symbols?: PythonDocumentSymbol[] }> {
     const { useApp } = await import('~/state/workspaceStore');
     const source = useApp.getState().views[session.id]?.definitionSources?.[path];
     if (!source) throw new Error('Open this definition from a Python symbol first.');
     const data = await callPython('python.source', { ...source, sessionId: session.id });
-    return { path, text: data.text, hash: '', version: 0 };
+    return { path, text: data.text, hash: '', version: 0, symbols: data.symbols };
   }
   async open(session: Session, path: string) {
     const key = this.key(session.id, path),
@@ -107,7 +117,7 @@ class Documents {
     if (this.items.size >= 80 || total >= 128 * 1024 * 1024)
       throw new Error('Editor memory limit reached. Save or close a document first.');
     const readOnly = path.startsWith('file://');
-    const data = readOnly
+    const data: DocumentData & Pick<Doc, 'symbols'> = readOnly
       ? await this.readDefinition(session, path)
       : await desktop.call('files.read', { sessionId: session.id, path });
     const raced = this.items.get(key);
@@ -125,6 +135,7 @@ class Documents {
       diskText: data.diskText,
       lastUsed: Date.now(),
       readOnly,
+      symbols: data.symbols,
     };
     this.items.set(key, doc);
     if (readOnly) {
@@ -157,6 +168,29 @@ class Documents {
   }
   async sync(doc: Doc) {
     return syncPythonDocument(doc);
+  }
+  async outline(doc: Doc): Promise<PythonDocumentSymbol[]> {
+    if (doc.readOnly) return doc.symbols ?? [];
+    if (doc.model.getLanguageId() !== 'python') return [];
+    const version = doc.version;
+    await this.sync(doc);
+    const generation = pythonGeneration(doc.session.id);
+    const previous = this.outlines.get(doc);
+    if (previous?.version === version && previous.generation === generation)
+      return previous.pending;
+    const pending: Promise<PythonDocumentSymbol[]> = callPython('lsp.request', {
+      sessionId: doc.session.id,
+      method: 'textDocument/documentSymbol',
+      params: { textDocument: { uri: this.diskUri(doc) } },
+    }).then((symbols) => symbols ?? []);
+    const entry = { version, generation, pending };
+    this.outlines.set(doc, entry);
+    try {
+      return await pending;
+    } catch (error) {
+      if (this.outlines.get(doc) === entry) this.outlines.delete(doc);
+      throw error;
+    }
   }
   async syncSession(sessionId: string, generation: number) {
     for (const doc of this.items.values()) {

@@ -1,79 +1,194 @@
 import { useSyncExternalStore } from 'react';
-import { Columns2, FileCode2, X } from 'lucide-react';
-import { useApp, showSurface } from '~/state/workspaceStore';
+import { Columns2, X } from 'lucide-react';
+import { useDroppable } from '@dnd-kit/core';
+import { horizontalListSortingStrategy, SortableContext } from '@dnd-kit/sortable';
+import { useApp, showSurface, closeTabs, surfaceKey } from '~/state/workspaceStore';
+import { tabGroup, tabsToClose, type Surface, type TabGroup } from '~/state/workspaceView';
 import { subscribe, getRevision, documents, documentPath } from '~/state/editor/Documents';
 import { navigateTabs, useActiveTab } from '~/hooks/useTabs';
+import { tabDragId } from './tabDrag';
+import { WorkspaceTab, surfaceIcons } from './WorkspaceTab';
+import { NewSurfaceMenu } from '~/components/surfaces/NewSurfaceMenu';
+import { ChainTabMenu } from './ChainTabMenu';
+import { surfacePaths } from '~/state/fileChains';
 import type { Session } from '@superfluid/contracts';
 
-export function EditorTabs({ session }: { session: Session }) {
-  const view = useApp((a) => a.views[session.id]);
-  const tabStrip = useActiveTab(session.id + ':' + view.active);
+export function EditorTabs({ session, group = 'main' }: { session: Session; group?: TabGroup }) {
+  const view = useApp((a) => a.views[session.id]),
+    runs = useApp((a) => a.runs),
+    island = useApp((a) => a.island);
+  const { tabs, active } = tabGroup(view, group);
+  const tabStrip = useActiveTab(
+    session.id + ':' + group + ':' + (active ? surfaceKey(active) : ''),
+  );
+  const strip = useDroppable({
+    id: `strip:${group}`,
+    data: { sessionId: session.id, group, area: 'strip' },
+  });
   useSyncExternalStore(subscribe, getRevision);
+  const title = (tab: Surface) =>
+    tab.kind === 'file'
+      ? documentPath(tab.path).split('/').at(-1)!
+      : tab.kind === 'files'
+        ? 'Files'
+        : tab.kind === 'terminal'
+          ? (runs.find((run) => run.id === tab.id)?.name ?? 'Terminal')
+          : tab.kind === 'diff'
+            ? 'Diff'
+            : tab.kind === 'browser'
+              ? 'Preview'
+              : tab.ref
+                ? `${tab.ref.provider === 'gitlab' ? '!' : '#'}${tab.ref.number}`
+                : tab.number
+                  ? '#' + tab.number
+                  : 'Requests';
   return (
-    <div className="editor-header">
-      <div
-        ref={tabStrip}
-        className="editor-tabs"
-        role="tablist"
-        aria-label="Files"
-        onKeyDown={navigateTabs}
-      >
-        {view.tabs.map((path) => {
-          const d = documents.items.get(documents.key(session.id, path));
-          return (
-            <div key={path} className={`editor-tab ${view.active === path ? 'active' : ''}`}>
-              <button
-                role="tab"
-                aria-selected={view.active === path}
-                tabIndex={view.active === path ? 0 : -1}
-                aria-controls="primary-editor-panel"
-                title={documentPath(path)}
-                onClick={() => void useApp.getState().openFile(path)}
-                draggable
-                onDragStart={(e) => e.dataTransfer.setData('application/superfluid-file', path)}
-              >
-                <FileCode2 size={13} className={path.endsWith('.py') ? 'python-icon' : ''} />
-                <span>{documentPath(path).split('/').at(-1)}</span>
-                {d?.dirty && <i className="dirty-dot" />}
-              </button>
-              <button
-                className="tab-close"
-                aria-label={`Close ${documentPath(path).split('/').at(-1)}`}
-                onClick={async () => {
-                  try {
-                    await documents.close(session.id, path);
-                    const current = useApp.getState().views[session.id];
-                    const tabs = current.tabs.filter((p) => p !== path);
-                    useApp.getState().setView(
-                      {
-                        tabs,
-                        active: current.active === path ? (tabs.at(-1) ?? null) : current.active,
-                      },
-                      session.id,
-                    );
-                  } catch (e) {
-                    useApp.getState().fail(e);
-                  }
-                }}
-              >
-                <X size={12} />
-              </button>
-            </div>
-          );
-        })}
-      </div>
-      <div className="tab-tools">
-        <button
-          className="icon-button"
-          title="Open current file to the side"
-          disabled={!view.active}
-          onClick={() => {
-            if (view.active) showSurface({ kind: 'file', path: view.active });
-          }}
+    <SortableContext
+      items={tabs.map((tab) => tabDragId(group, surfaceKey(tab)))}
+      strategy={horizontalListSortingStrategy}
+    >
+      <div ref={strip.setNodeRef} className={group === 'main' ? 'editor-header' : 'surface-header'}>
+        <div
+          ref={tabStrip}
+          className={group === 'main' ? 'editor-tabs' : 'surface-tabs'}
+          role="tablist"
+          aria-label={group === 'main' ? 'Files' : group === 'bottom' ? 'Terminals' : 'Surfaces'}
+          onKeyDown={navigateTabs}
         >
-          <Columns2 size={14} />
-        </button>
+          {tabs.map((tab, index) => {
+            const key = surfaceKey(tab),
+              selected = !!active && surfaceKey(active) === key,
+              Icon = surfaceIcons[tab.kind];
+            const dirty = surfacePaths(tab).some(
+              (path) => documents.items.get(documents.key(session.id, path))?.dirty,
+            );
+            const chain = tab.kind === 'file' ? tab.chain : undefined;
+            const first = chain?.entries[0],
+              last = chain?.entries.at(-1);
+            const root = first ? documentPath(first.path).split('/').at(-1) : null;
+            const lastTitle = last ? documentPath(last.path).split('/').at(-1)! : title(tab);
+            return (
+              <WorkspaceTab
+                key={key}
+                sessionId={session.id}
+                group={group}
+                tab={tab}
+                label={root ? `${root} › ${lastTitle}` : title(tab)}
+                selected={selected}
+                index={index}
+                count={tabs.length}
+                close={(scope) =>
+                  void closeTabs(
+                    session.id,
+                    group,
+                    tabsToClose(
+                      tabGroup(useApp.getState().views[session.id], group).tabs,
+                      key,
+                      scope,
+                    ),
+                  )
+                }
+              >
+                {first && (
+                  <>
+                    <button
+                      className="chain-root-link"
+                      aria-label={`First file: ${root}`}
+                      aria-current={selected && chain?.index === 0 ? 'location' : undefined}
+                      tabIndex={selected ? 0 : -1}
+                      title={`${documentPath(first.path)}:${first.line}`}
+                      onClick={() =>
+                        void useApp
+                          .getState()
+                          .openFile(first.path, first.line, first.column, true, group, {
+                            tabKey: key,
+                          })
+                      }
+                    >
+                      <Icon size={13} />
+                      <span className="chain-root">{root}</span>
+                    </button>
+                    <span className="chain-divider" aria-hidden="true">
+                      ›
+                    </span>
+                  </>
+                )}
+                <button
+                  className={last ? 'chain-last-link' : undefined}
+                  role="tab"
+                  aria-selected={selected}
+                  aria-current={
+                    selected && chain && chain.index === chain.entries.length - 1
+                      ? 'location'
+                      : undefined
+                  }
+                  tabIndex={selected ? 0 : -1}
+                  aria-controls={
+                    group === 'main' ? 'primary-editor-panel' : group + '-surface-panel'
+                  }
+                  title={
+                    last
+                      ? `${documentPath(last.path)}:${last.line}`
+                      : tab.kind === 'file'
+                        ? documentPath(tab.path)
+                        : title(tab)
+                  }
+                  aria-label={title(tab)}
+                  aria-description={root ? `Navigation chain from ${root}` : undefined}
+                  onClick={() =>
+                    last
+                      ? void useApp
+                          .getState()
+                          .openFile(last.path, last.line, last.column, true, group, { tabKey: key })
+                      : tab.kind === 'file'
+                        ? void useApp
+                            .getState()
+                            .openFile(tab.path, undefined, undefined, true, group, { tabKey: key })
+                        : showSurface(tab, session.id, group)
+                  }
+                >
+                  {!first && (
+                    <Icon
+                      size={13}
+                      className={
+                        tab.kind === 'file' && tab.path.endsWith('.py') ? 'python-icon' : ''
+                      }
+                    />
+                  )}
+                  <span>{lastTitle}</span>
+                  {dirty && <i className="dirty-dot" />}
+                </button>
+                {tab.kind === 'file' && tab.chain && (
+                  <ChainTabMenu sessionId={session.id} group={group} tab={tab} />
+                )}
+                <button
+                  className="tab-close"
+                  aria-label={root ? `Close navigation chain from ${root}` : `Close ${title(tab)}`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => void closeTabs(session.id, group, [key])}
+                >
+                  <X size={12} />
+                </button>
+              </WorkspaceTab>
+            );
+          })}
+        </div>
+        <NewSurfaceMenu session={session} group={group} />
+        <div className="spacer" />
+        {group === 'main' && (
+          <div className="tab-tools">
+            <button
+              className="icon-button"
+              title="Toggle island"
+              aria-label="Toggle island"
+              aria-pressed={island}
+              onClick={() => useApp.setState({ island: !island })}
+            >
+              <Columns2 size={14} />
+            </button>
+          </div>
+        )}
       </div>
-    </div>
+    </SortableContext>
   );
 }

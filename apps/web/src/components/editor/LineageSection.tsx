@@ -1,34 +1,9 @@
-import {
-  ArrowLeft,
-  ArrowRight,
-  Box,
-  Braces,
-  FileCode2,
-  KeyRound,
-  Package,
-  SquareFunction,
-  Tag,
-  Variable,
-  X,
-  type LucideIcon,
-} from 'lucide-react';
+import { ArrowLeft, ArrowRight, X } from 'lucide-react';
 import { useLayoutEffect, useRef } from 'react';
 import type { Session } from '@superfluid/contracts';
 import { useApp } from '~/state/workspaceStore';
 import { removeLineageEntry } from './lineage';
-
-// LSP SymbolKind values.
-const symbolIcons: Partial<Record<number, LucideIcon>> = {
-  2: Package,
-  3: Package,
-  5: Box,
-  6: Braces,
-  7: Tag,
-  9: Braces,
-  12: SquareFunction,
-  13: Variable,
-  14: KeyRound,
-};
+import { locationIcon } from './locationIcon';
 
 export function LineageSection({ session }: { session: Session }) {
   const view = useApp((a) => a.views[session.id]);
@@ -40,7 +15,16 @@ export function LineageSection({ session }: { session: Session }) {
     const target = view.history[index];
     if (!target) return;
     useApp.getState().setView({ historyIndex: index }, session.id);
-    void useApp.getState().openFile(target.path, target.line, target.column, false);
+    void useApp
+      .getState()
+      .openFile(
+        target.path,
+        target.line,
+        target.column,
+        false,
+        target.group,
+        target.tab ? { tabKey: target.tab } : undefined,
+      );
   };
   const remove = (index: number) => {
     const app = useApp.getState(),
@@ -49,7 +33,14 @@ export function LineageSection({ session }: { session: Session }) {
     app.setView(next, session.id);
     const target = next.history[next.historyIndex];
     if (index === current.historyIndex && target && app.sessionId === session.id)
-      void app.openFile(target.path, target.line, target.column, false);
+      void app.openFile(
+        target.path,
+        target.line,
+        target.column,
+        false,
+        target.group,
+        target.tab ? { tabKey: target.tab } : undefined,
+      );
   };
   return (
     <div className="island-section lineage">
@@ -77,7 +68,7 @@ export function LineageSection({ session }: { session: Session }) {
       {view.history.length ? (
         <div className="lineage-list">
           {view.history.map((item, index) => {
-            const Icon = symbolIcons[item.symbolKind ?? 0] ?? (item.symbol ? Braces : FileCode2);
+            const Icon = locationIcon(item);
             return (
               <div className="lineage-row" key={`${item.path}:${item.line}:${index}`}>
                 <button

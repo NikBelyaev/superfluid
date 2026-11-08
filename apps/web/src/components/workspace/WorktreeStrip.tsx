@@ -5,8 +5,7 @@ import type { Session } from '@superfluid/contracts';
 export function WorktreeStrip({ session }: { session: Session }) {
   const sessions = useApp((a) => a.sessions);
   return (
-    <div className="worktree-strip">
-      <span className="strip-label">Worktrees</span>
+    <nav className="worktree-strip" aria-label="Worktrees">
       {sessions.map((s) => (
         <button
           key={s.id}
@@ -29,8 +28,6 @@ export function WorktreeStrip({ session }: { session: Session }) {
       >
         <Plus size={14} />
       </button>
-      <div className="spacer" />
-      <span className="strip-hint">⌃ ⇥ switch</span>
-    </div>
+    </nav>
   );
 }

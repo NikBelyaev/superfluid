@@ -1,7 +1,7 @@
 import type { Input, Operation } from '@superfluid/contracts';
 import { desktop } from '~/rpc/desktop';
 import { useApp, showSurface } from '~/state/workspaceStore';
-import { emptyView } from '~/state/workspaceView';
+import { emptyView, mapViewFiles } from '~/state/workspaceView';
 import type { Session } from '@superfluid/contracts';
 import {
   canUseRepositoryBase,
@@ -157,21 +157,8 @@ export async function runGitBatch(
             if (!doc.dirty && error instanceof Error && error.message.includes('ENOENT')) {
               documents.removePaths(sessionId, doc.path);
               const view = useApp.getState().views[sessionId];
-              const tabs = view.tabs.filter((path) => path !== doc.path);
-              const rightTabs = view.rightTabs.filter(
-                (surface) => surface.kind !== 'file' || surface.path !== doc.path,
-              );
-              const surface =
-                view.surface?.kind === 'file' && view.surface.path === doc.path
-                  ? (rightTabs.at(-1) ?? null)
-                  : view.surface;
               useApp.getState().setView(
-                {
-                  tabs,
-                  rightTabs,
-                  surface,
-                  active: view.active === doc.path ? (tabs.at(-1) ?? null) : view.active,
-                },
+                mapViewFiles(view, (path) => (path === doc.path ? null : path)),
                 sessionId,
               );
             } else useApp.getState().fail(error);

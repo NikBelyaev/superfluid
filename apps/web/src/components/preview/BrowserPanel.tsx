@@ -2,12 +2,15 @@ import { desktop } from '~/rpc/desktop';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, ExternalLink, Globe } from 'lucide-react';
 import { useApp } from '~/state/workspaceStore';
+import { useDndContext } from '@dnd-kit/core';
 
 export function Browser({ url }: { url: string }) {
+  const { active: dragging } = useDndContext();
   const host = useRef<HTMLDivElement>(null),
-    overlay = useApp((a) => !!a.modal || !!a.palette),
+    overlayOpen = useApp((a) => !!a.modal || !!a.palette || !!a.surfaceMenu),
     [address, setAddress] = useState(url),
     [error, setError] = useState('');
+  const overlay = overlayOpen || !!dragging;
   useEffect(() => {
     let cancelled = false;
     const update = () => {

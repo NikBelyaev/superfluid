@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useApp, currentSession } from '~/state/workspaceStore';
 import { Form } from '~/components/dialogs/DialogForm';
 import { closeDialog as close } from '~/state/dialogs';
+import { mapViewFiles } from '~/state/workspaceView';
 
 export function FileDialog({
   directory,
@@ -28,21 +29,17 @@ export function FileDialog({
           const a = useApp.getState(),
             v = a.views[s.id],
             mapped = (p: string) => (matches(p) ? name + p.slice(path.length) : p);
-          const surface = (p: any) => (p?.kind === 'file' ? { ...p, path: mapped(p.path) } : p);
           a.setView(
             {
-              tabs: v.tabs.map(mapped),
-              active: v.active ? mapped(v.active) : null,
+              ...mapViewFiles(v, mapped),
               expanded: v.expanded.map(mapped),
               editorViews: Object.fromEntries(
                 Object.entries(v.editorViews ?? {}).map(([key, value]) => [
-                  key.slice(0, 5) + mapped(key.slice(5)),
+                  key.slice(0, key.indexOf(':') + 1) + mapped(key.slice(key.indexOf(':') + 1)),
                   value,
                 ]),
               ),
               history: v.history.map((x) => ({ ...x, path: mapped(x.path) })),
-              surface: surface(v.surface),
-              rightTabs: v.rightTabs.map(surface),
             },
             s.id,
           );
@@ -71,20 +68,15 @@ export function FileDialog({
                 await desktop.trash(s.id, path);
                 documents.removePaths(s.id, path);
                 const a = useApp.getState(),
-                  v = a.views[s.id],
-                  rightTabs = v.rightTabs.filter((x) => x.kind !== 'file' || !matches(x.path));
+                  v = a.views[s.id];
                 a.setView(
                   {
-                    tabs: v.tabs.filter((x) => !matches(x)),
-                    active: v.active && matches(v.active) ? null : v.active,
-                    rightTabs,
+                    ...mapViewFiles(v, (path) => (matches(path) ? null : path)),
                     editorViews: Object.fromEntries(
-                      Object.entries(v.editorViews ?? {}).filter(([key]) => !matches(key.slice(5))),
+                      Object.entries(v.editorViews ?? {}).filter(
+                        ([key]) => !matches(key.slice(key.indexOf(':') + 1)),
+                      ),
                     ),
-                    surface:
-                      v.surface?.kind === 'file' && matches(v.surface.path)
-                        ? (rightTabs.at(-1) ?? null)
-                        : v.surface,
                   },
                   s.id,
                 );
