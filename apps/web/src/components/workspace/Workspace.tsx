@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
 import { useApp } from '~/state/workspaceStore';
 import ProjectDetailsPanel from '~/components/workspace/ProjectDetailsPanel';
 import { useDiagnostics } from '~/components/python/useDiagnostics';
@@ -8,8 +8,7 @@ import { Statusbar } from './Statusbar';
 import { WorkspaceControls } from './WorkspaceControls';
 import { TabDragProvider } from './TabDragProvider';
 import { rightPanelVisible } from '~/state/workspaceView';
-
-const RightPanel = lazy(() => import('~/components/surfaces/RightPanel'));
+import RightPanel from '~/components/surfaces/RightPanel';
 
 export default function Workspace() {
   const sessions = useApp((a) => a.sessions),

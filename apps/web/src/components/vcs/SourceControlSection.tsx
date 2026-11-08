@@ -25,6 +25,7 @@ import {
 import { RepositoryMenu } from './RepositoryMenu';
 import { DiffStat } from './DiffStat';
 import { GitProviderIcon } from './GitProviderIcon';
+import { IslandRequests } from '~/components/pullRequest/IslandRequests';
 
 const uncertain = [
   'committing',
@@ -159,6 +160,7 @@ export function SourceControlSection({ session }: { session: Session }) {
           <span>{repositories ? 'Initialize Git' : 'Finding repositories…'}</span>
         </button>
       )}
+      <IslandRequests session={session} />
       <div className="split-action" ref={actionAnchor}>
         <button
           className={`island-row repository-operation ${batch?.phase || ''}`}

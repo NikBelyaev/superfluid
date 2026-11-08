@@ -43,7 +43,7 @@ export function PullRequestComposer({
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
-        className="pr-composer-trigger"
+        className="pr-composer-trigger absolute right-4 bottom-3 z-2 flex size-9 items-center justify-center rounded-lg border border-solid border-border bg-card shadow-[var(--shadow-popover)] hover:bg-accent"
         aria-label={`Comment on ${term}`}
         title={`Comment on ${term}`}
       >
@@ -54,11 +54,16 @@ export function PullRequestComposer({
           side="top"
           align="end"
           sideOffset={8}
-          className="pr-composer-positioner"
+          className="pr-composer-positioner z-90"
         >
-          <Popover.Popup className="pr-composer" initialFocus={textarea}>
-            <div className="pr-composer-heading">
-              <Popover.Title>Comment on {term}</Popover.Title>
+          <Popover.Popup
+            className="pr-composer w-[min(420px,calc(100vw-32px))] max-h-[var(--available-height)] overflow-auto rounded-xl border border-solid border-border bg-popover p-4 shadow-[var(--shadow-popover)] outline-none"
+            initialFocus={textarea}
+          >
+            <div className="pr-composer-heading mb-3 flex items-center justify-between gap-2">
+              <Popover.Title className="m-0 text-xs leading-5 font-medium">
+                Comment on {term}
+              </Popover.Title>
               <Popover.Close className="icon-button" aria-label="Close composer">
                 <X size={14} />
               </Popover.Close>
@@ -70,6 +75,7 @@ export function PullRequestComposer({
               }}
             >
               <textarea
+                className="block min-h-24 w-full resize-y rounded-[var(--control-radius)] border border-solid border-input bg-background px-3 py-2 text-xs leading-5"
                 ref={textarea}
                 disabled={busy}
                 value={body}
@@ -97,9 +103,12 @@ export function PullRequestComposer({
                   {error}
                 </p>
               )}
-              <div className="pr-composer-actions">
+              <div className="pr-composer-actions mt-2 flex flex-wrap items-center justify-between gap-2 text-[length:var(--text-2xs)]">
                 <span className="muted">⌘ / Ctrl + Enter to post</span>
-                <button className="button" disabled={busy || !body.trim()}>
+                <button
+                  className="button h-7 px-2 text-xs leading-5"
+                  disabled={busy || !body.trim()}
+                >
                   <Send size={14} />
                   {busy ? 'Posting…' : 'Comment'}
                 </button>

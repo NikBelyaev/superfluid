@@ -36,6 +36,15 @@ export class ProcessError extends Error {
   }
 }
 
+export async function commandTail(
+  file: string,
+  args: string[],
+  options: Parameters<typeof command>[2],
+  limit: number,
+) {
+  return captureCommand(file, args, options, limit);
+}
+
 export async function command(
   file: string,
   args: string[],
@@ -48,6 +57,15 @@ export async function command(
     env?: NodeJS.ProcessEnv;
   },
 ): Promise<string> {
+  return (await captureCommand(file, args, options)).text;
+}
+
+async function captureCommand(
+  file: string,
+  args: string[],
+  options: Parameters<typeof command>[2],
+  tailBytes?: number,
+): Promise<{ text: string; truncated: boolean }> {
   if (stopping) throw new Error('Superfluid is closing. No new processes can start.');
   return new Promise((resolve, reject) => {
     const child = spawn(file, args, {
@@ -71,6 +89,8 @@ export async function command(
       err = '',
       bytes = 0,
       failed: Error | undefined;
+    let tail = Buffer.alloc(0),
+      truncated = false;
     const kill = () => signal(child, 'SIGTERM');
     const timer = setTimeout(() => {
       failed = new Error(`${file} timed out. Check the process or connection and retry.`);
@@ -83,6 +103,11 @@ export async function command(
     }, options.timeout ?? 15000);
     let escalation: ReturnType<typeof setTimeout> | undefined;
     const collect = (data: Buffer, stderr: boolean) => {
+      if (!stderr && tailBytes !== undefined) {
+        truncated ||= tail.length + data.length > tailBytes;
+        tail = Buffer.concat([tail, data]).subarray(-tailBytes);
+        return;
+      }
       bytes += data.length;
       if (bytes > (options.limit ?? 4 * 1024 * 1024)) {
         if (!failed) {
@@ -104,13 +129,18 @@ export async function command(
     });
     child.on('close', (code) => {
       out += stdoutDecoder.end();
+      if (tailBytes !== undefined) {
+        let start = 0;
+        while (start < tail.length && (tail[start] & 0xc0) === 0x80) start++;
+        out = tail.subarray(start).toString('utf8');
+      }
       err += stderrDecoder.end();
       clearTimeout(timer);
       if (escalation) clearTimeout(escalation);
       if (failed) reject(failed);
       else if (code !== 0 && !options.accept?.includes(code ?? -1))
         reject(new ProcessError(err.trim() || `${file} exited with code ${code}`, code, out));
-      else resolve(out);
+      else resolve({ text: out, truncated });
     });
     child.stdin.on('error', () => {});
     child.stdin.end(options.input);

@@ -339,7 +339,7 @@ export const useApp = create<State>((set, get) => ({
     const statuses = { ...get().repositoryGit[id], ...values };
     const repositories = (get().repositories[id] || []).map((r) => ({
       ...r,
-      branch: statuses[r.id]?.branch || r.branch,
+      branch: values[r.id]?.branch || r.branch,
     }));
     const root = repositories.find((r) => !r.path);
     const rootStatus = root && values[root.id];

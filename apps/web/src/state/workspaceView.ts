@@ -1,20 +1,29 @@
 import type { editor } from 'monaco-editor/editor/editor.api';
-import type { Input, PullRequestRef } from '@superfluid/contracts';
-import {
-  fileTabKey,
-  surfacePaths,
-  mapSurfaceFiles,
-  restoreFileSurface,
-  type FileSurface,
-} from './fileChains';
+import { z } from 'zod';
+import { pullRequestRefSchema, type Input } from '@superfluid/contracts';
+import { fileTabKey, surfacePaths, mapSurfaceFiles, restoreFileSurface } from './fileChains';
 
-export type Surface =
-  | { kind: 'files' }
-  | { kind: 'terminal'; id: string }
-  | { kind: 'diff'; path?: string; mode?: 'unstaged' | 'staged' | 'branch' }
-  | { kind: 'pr'; number?: number; ref?: PullRequestRef; repositoryId?: string }
-  | { kind: 'browser'; url: string }
-  | FileSurface;
+export const surfaceSchema = z
+  .discriminatedUnion('kind', [
+    z.object({ kind: z.literal('files') }),
+    z.object({ kind: z.literal('terminal'), id: z.string() }),
+    z.object({
+      kind: z.literal('diff'),
+      path: z.string().optional(),
+      mode: z.enum(['unstaged', 'staged', 'branch']).optional(),
+    }),
+    z.object({
+      kind: z.literal('pr'),
+      number: z.number().int().positive().optional(),
+      ref: pullRequestRefSchema.optional(),
+      repositoryId: z.string().optional(),
+      revealChecks: z.string().optional(),
+    }),
+    z.object({ kind: z.literal('browser'), url: z.string() }),
+    z.object({ kind: z.literal('file'), path: z.string(), chain: z.unknown().optional() }),
+  ])
+  .transform((surface) => (surface.kind === 'file' ? restoreFileSurface(surface) : surface));
+export type Surface = z.infer<typeof surfaceSchema>;
 
 export interface Location {
   path: string;
@@ -174,21 +183,8 @@ export function restoreView(source: object, runIds = new Set<string>()): ViewSta
   const saved = source as Record<string, unknown>;
   const surface = (value: unknown): Surface | null => {
     if (typeof value === 'string') return { kind: 'file', path: value };
-    if (!value || typeof value !== 'object' || !('kind' in value)) return null;
-    if (!['files', 'file', 'terminal', 'diff', 'pr', 'browser'].includes(String(value.kind)))
-      return null;
-    if (value.kind === 'file' && (!('path' in value) || typeof value.path !== 'string'))
-      return null;
-    if (value.kind === 'file' && 'path' in value && typeof value.path === 'string')
-      return restoreFileSurface({
-        path: value.path,
-        chain: 'chain' in value ? value.chain : undefined,
-      });
-    if (value.kind === 'terminal' && (!('id' in value) || typeof value.id !== 'string'))
-      return null;
-    if (value.kind === 'browser' && (!('url' in value) || typeof value.url !== 'string'))
-      return null;
-    return value as Surface;
+    const parsed = surfaceSchema.safeParse(value);
+    return parsed.success ? parsed.data : null;
   };
   const list = (value: unknown) =>
     Array.isArray(value)
@@ -215,6 +211,7 @@ export function restoreView(source: object, runIds = new Set<string>()): ViewSta
       ? saved.repositoryIds.filter((id) => typeof id === 'string')
       : undefined,
   } as ViewState;
+  if (saved.surface != null && !view.surface) view.surface = view.rightTabs.at(-1) ?? null;
   if (saved.layoutVersion !== 1) {
     const old = Array.isArray(saved.terminalTabs)
       ? saved.terminalTabs
