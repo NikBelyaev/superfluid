@@ -125,7 +125,7 @@ export async function runGitBatch(
     try {
       const result = await desktop.call('git.act', entry.request);
       if (
-        result.phase === 'completed' &&
+        (result.phase === 'completed' || !!result.evidence.autoStash) &&
         ['create-branch', 'checkout', 'stash', 'stash-apply'].includes(action)
       ) {
         const { documents } = await import('~/state/editor/Documents');

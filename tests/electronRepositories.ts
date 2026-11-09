@@ -246,7 +246,7 @@ try {
     (await git(join(project, 'apps/core'), ['rev-parse', 'HEAD'])).trim(),
   );
 
-  await page.locator('.repository-operation:disabled').waitFor();
+  await page.locator('.repository-operation[aria-disabled="true"]').waitFor();
   await page.getByRole('button', { name: 'Individual Git actions', exact: true }).click();
   for (const name of ['Commit', 'Push', 'Create PR']) {
     await page.getByRole('menuitem', { name, exact: true }).waitFor();

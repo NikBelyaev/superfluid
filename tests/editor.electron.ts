@@ -163,14 +163,12 @@ try {
     });
   }, rootSession.id);
   await page.getByRole('button', { name: 'Project repositories', exact: true }).click();
+  const branchMenu = page.getByRole('dialog', { name: 'Branches and repositories', exact: true });
   await page.getByRole('combobox', { name: 'Switch branch', exact: true }).fill('autosave-check');
   await page.getByRole('option', { name: 'autosave-check', exact: true }).click();
   await page.getByRole('button', { name: 'Switch · 1', exact: true }).click();
-  await page
-    .getByRole('alert')
-    .filter({ hasText: 'Commit or discard local changes before switching branches.' })
-    .waitFor();
-  assert.equal((await git(project, ['branch', '--show-current'])).trim(), 'main');
+  await expect(branchMenu).toBeHidden();
+  assert.equal((await git(project, ['branch', '--show-current'])).trim(), 'autosave-check');
   assert.match(await readFile(join(project, 'README.md'), 'utf8'), /Recovered from a closed tab/);
   assert.deepEqual(
     await page.evaluate(
@@ -179,7 +177,12 @@ try {
     ),
     [],
   );
-  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Project repositories', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Switch branch', exact: true }).fill('main');
+  await page.getByRole('option', { name: 'main', exact: true }).click();
+  await page.getByRole('button', { name: 'Switch · 1', exact: true }).click();
+  await expect(branchMenu).toBeHidden();
+  assert.equal((await git(project, ['branch', '--show-current'])).trim(), 'main');
   await page.locator('.tree-row').filter({ hasText: 'main.py' }).click();
   await page.getByRole('tab', { name: 'main.py', exact: true }).focus();
   await page.keyboard.press('ArrowLeft');

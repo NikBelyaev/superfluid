@@ -273,10 +273,14 @@ export class GitService {
   act(s: Session, input: Input<'git.act'>): Promise<Operation> {
     const existing = this.running.get(input.operationId);
     if (existing) return existing;
-    const gate = this.writers.get(s.gitDir) ?? new Gate(1);
-    this.writers.set(s.gitDir, gate);
-    const run = gate
-      .run(() => this.perform(s, input))
+    // Worktrees have separate Git directories but share refs and stashes.
+    const run = git(s.path, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+      .then((directory) => {
+        const key = directory.trim();
+        const gate = this.writers.get(key) ?? new Gate(1);
+        this.writers.set(key, gate);
+        return gate.run(() => this.perform(s, input));
+      })
       .finally(() => {
         this.running.delete(input.operationId);
         this.statuses.delete(s.gitDir || s.id);
@@ -304,7 +308,7 @@ export class GitService {
     const intent = digest(JSON.stringify({ ...input, operationId: undefined }));
     if (op?.evidence.intent && op.evidence.intent !== intent)
       throw new Error('This operation ID already belongs to another request.');
-    if (op?.phase === 'completed') return op;
+    if (op?.phase === 'completed' || op?.evidence.rolledBack) return op;
     if (op?.phase === 'reviewed')
       throw new Error('This attempt was reviewed. Start a new operation.');
     if (op && unresolvedPhases.includes(op.phase))
@@ -382,25 +386,120 @@ export class GitService {
       if (input.action === 'create-branch' || input.action === 'checkout') {
         safeRef(input.branch!);
         await git(s.path, ['check-ref-format', '--branch', input.branch!]);
-        if ((await git(s.path, ['status', '--porcelain', '--untracked-files=normal'])).trim())
-          throw new Error('Commit or discard local changes before switching branches.');
+        if (await git(s.path, ['ls-files', '--unmerged', '-z']))
+          throw new Error('Resolve merge conflicts before switching branches.');
         if (input.action === 'create-branch') safeRef(input.base || 'HEAD');
         const baseBranch =
           input.action === 'create-branch'
             ? await resolveBranch(s.path, input.base || 'HEAD')
             : undefined;
+        const originalBranch = (
+          await git(s.path, ['symbolic-ref', '--quiet', '--short', 'HEAD'], { accept: [1] })
+        ).trim();
+        const initial = (await git(s.path, ['rev-parse', 'HEAD'])).trim();
         Object.assign(operation.evidence, {
           branch: input.branch,
           baseBranch,
-          initial: (await git(s.path, ['rev-parse', 'HEAD'])).trim(),
+          originalBranch,
+          initial,
         });
+        let stash = '';
+        const files = parseStatus(
+          await git(s.path, ['status', '--porcelain=v2', '--untracked-files=all', '-z']),
+        ).files.filter((file) => file.index !== '?' || !file.path.endsWith('/'));
+        if (files.length) {
+          operation.evidence.stashAction = input.action;
+          const before = (
+            await git(s.path, ['rev-parse', '--verify', '--quiet', 'refs/stash'], { accept: [1] })
+          ).trim();
+          update('stashing');
+          await git(s.path, [
+            'stash',
+            'push',
+            '--include-untracked',
+            '--message',
+            `superfluid:${operation.id}`,
+          ]);
+          stash = (await git(s.path, ['rev-parse', '--verify', 'refs/stash'])).trim();
+          if (stash === before)
+            throw new Error('Git did not save local changes. Inspect the stash list.');
+          operation.evidence.autoStash = stash;
+        }
         update('switching');
-        await git(
-          s.path,
-          input.action === 'create-branch'
-            ? ['switch', '-c', input.branch!, input.base || 'HEAD']
-            : ['switch', '--', input.branch!],
-        );
+        let switched = false;
+        try {
+          await git(
+            s.path,
+            input.action === 'create-branch'
+              ? ['switch', '-c', input.branch!, input.base || 'HEAD']
+              : ['switch', '--', input.branch!],
+          );
+          switched = true;
+        } finally {
+          if (stash) {
+            const targetHead = (await git(s.path, ['rev-parse', 'HEAD'])).trim();
+            const targetBranch = (
+              await git(s.path, ['symbolic-ref', '--quiet', '--short', 'HEAD'], { accept: [1] })
+            ).trim();
+            update('applying-stash');
+            try {
+              await git(s.path, ['stash', 'apply', '--index', stash]);
+            } catch {
+              if (
+                (targetBranch !== input.branch && targetBranch !== originalBranch) ||
+                (await git(s.path, ['rev-parse', 'HEAD'])).trim() !== targetHead ||
+                (
+                  await git(s.path, ['symbolic-ref', '--quiet', '--short', 'HEAD'], { accept: [1] })
+                ).trim() !== targetBranch ||
+                (originalBranch &&
+                  (await git(s.path, ['rev-parse', `refs/heads/${originalBranch}`])).trim() !==
+                    initial)
+              )
+                throw new Error('Git changed during checkout. Automatic rollback stopped.');
+              update('switching');
+              await git(s.path, ['reset', '--hard', targetHead]);
+              const untrackedTree = (
+                await git(s.path, ['rev-parse', '--verify', '--quiet', `${stash}^3`], {
+                  accept: [1],
+                })
+              ).trim();
+              const untracked = untrackedTree
+                ? (await git(s.path, ['ls-tree', '-rz', '--name-only', untrackedTree]))
+                    .split('\0')
+                    .filter(Boolean)
+                : [];
+              // Remove only untracked files backed up by this stash, never other loose files.
+              if (untracked.length)
+                await git(s.path, ['--literal-pathspecs', 'clean', '-fx', '--', ...untracked]);
+              await git(
+                s.path,
+                originalBranch ? ['switch', '--', originalBranch] : ['switch', '--detach', initial],
+              );
+              if ((await git(s.path, ['rev-parse', 'HEAD'])).trim() !== initial)
+                throw new Error('The original branch changed during rollback.');
+              await git(s.path, ['stash', 'apply', '--index', stash]);
+              operation.evidence.rolledBack = true;
+              operation.evidence.changesRestored = true;
+              if (
+                input.action === 'create-branch' &&
+                switched &&
+                (await git(s.path, ['rev-parse', `refs/heads/${input.branch}`])).trim() ===
+                  targetHead
+              )
+                await git(s.path, ['branch', '-D', '--', input.branch!]);
+            }
+            operation.evidence.changesRestored = true;
+            // Drop only this operation's stash; other worktrees share the stash list.
+            const entry = (await git(s.path, ['stash', 'list', '--format=%H %gd']))
+              .split('\n')
+              .find((line) => line.startsWith(`${stash} `));
+            if (entry) await git(s.path, ['stash', 'drop', entry.split(' ')[1]]);
+            if (operation.evidence.rolledBack)
+              throw new Error(
+                `Your changes conflict with this branch. Returned to ${originalBranch ? `“${originalBranch}”` : 'the original commit'} and restored your changes.`,
+              );
+          }
+        }
         if ((await git(s.path, ['branch', '--show-current'])).trim() !== input.branch)
           throw new Error('The branch changed during checkout. Inspect the repository.');
         if (baseBranch)
@@ -615,18 +714,22 @@ export class GitService {
       return operation;
     } catch (error: any) {
       operation.error = error.message || 'Git operation failed.';
-      operation.phase = [
-        'committing',
-        'pushing',
-        'creating-pr',
-        'switching',
-        'stashing',
-        'applying-stash',
-      ].includes(operation.phase)
-        ? 'uncertain'
-        : operation.phase === 'needs-review'
-          ? 'needs-review'
-          : 'failed';
+      if (operation.evidence.autoStash && !operation.evidence.changesRestored)
+        operation.error += ` Local changes are saved in stash ${operation.evidence.autoStash}. Inspect the current branch and resolve conflicts before restoring with git stash apply --index ${operation.evidence.autoStash}.`;
+      operation.phase = operation.evidence.rolledBack
+        ? 'failed'
+        : [
+              'committing',
+              'pushing',
+              'creating-pr',
+              'switching',
+              'stashing',
+              'applying-stash',
+            ].includes(operation.phase)
+          ? 'uncertain'
+          : operation.phase === 'needs-review'
+            ? 'needs-review'
+            : 'failed';
       this.store.put('operations', operation);
       this.notify(operation);
       return operation;
@@ -638,7 +741,7 @@ export class GitService {
     let log = await git(s.path, ['log', '-8', '--oneline', '--decorate', '--all']).catch(
       (e: Error) => e.message,
     );
-    if (operation.evidence.stashAction)
+    if (operation.evidence.stashAction || operation.evidence.autoStash)
       log += '\nStashes:\n' + (await git(s.path, ['stash', 'list', '--format=%H %gs', '-8']));
     const branch = String(operation.evidence.branch ?? '');
     const target = String(operation.evidence.remote ?? '');

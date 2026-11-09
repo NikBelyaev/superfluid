@@ -23,6 +23,7 @@ import {
   selectedRepositories,
 } from '~/state/repositories';
 import { RepositoryMenu } from './RepositoryMenu';
+import { Tooltip } from '~/components/ui/Tooltip';
 import { DiffStat } from './DiffStat';
 import { GitProviderIcon } from './GitProviderIcon';
 import { IslandRequests } from '~/components/pullRequest/IslandRequests';
@@ -135,12 +136,40 @@ export function SourceControlSection({ session }: { session: Session }) {
               ? 'No changes'
               : `${action} completed`
             : `${action} · Retry`;
-  const title = batch?.entries
-    .map(
-      (e) =>
-        `${repositories?.find((r) => r.id === e.request.repositoryId)?.path || 'Root'}: ${e.error || e.result?.phase || 'pending'}`,
-    )
-    .join('\n');
+  const disabled = running || (!review && !failures.length && !!problems[primaryAction]);
+  const feedback = !running && (!!failures.length || review || problems[primaryAction]) && (
+    <div
+      className="repository-operation-feedback"
+      data-tone={failures.length || (review && review.error) ? 'error' : 'warning'}
+    >
+      <strong>
+        <CircleAlert size={16} aria-hidden />
+        {review
+          ? 'Review Git result'
+          : failures.length
+            ? `${action} failed`
+            : 'Git action unavailable'}
+      </strong>
+      {failures.length ? (
+        failures.map((entry) => (
+          <p key={entry.request.operationId}>
+            {batch!.entries.length > 1 && (
+              <b>
+                {repositories?.find((r) => r.id === entry.request.repositoryId)?.path || 'Root'}
+                :{' '}
+              </b>
+            )}
+            {entry.error}
+          </p>
+        ))
+      ) : (
+        <p>
+          {(review && (review.error || 'Inspect the previous Git result before continuing.')) ||
+            problems[primaryAction]}
+        </p>
+      )}
+    </div>
+  );
   return (
     <div className="island-section">
       {repositories?.length ? (
@@ -162,44 +191,49 @@ export function SourceControlSection({ session }: { session: Session }) {
       )}
       <IslandRequests session={session} />
       <div className="split-action" ref={actionAnchor}>
-        <button
-          className={`island-row repository-operation ${batch?.phase || ''}`}
-          title={title || problems[primaryAction] || undefined}
-          aria-live="polite"
-          aria-busy={running}
-          disabled={running || (!review && !failures.length && !!problems[primaryAction])}
-          onClick={() => {
-            if (review) useApp.setState({ modal: { kind: 'git-review', id: review.id } });
-            else if (failures.length) {
-              const reviewed = failures.some(
-                (e) => operations.find((o) => o.id === e.request.operationId)?.phase === 'reviewed',
-              );
-              if (reviewed) openRepositoryMenu(session.id, batch!.action);
-              else
-                void runGitBatch(
-                  session.id,
-                  batch!.action,
-                  failures.map((e) => e.request),
-                ).catch(useApp.getState().fail);
-            } else openRepositoryMenu(session.id, primaryAction);
-          }}
-        >
-          {running ? (
-            <LoaderCircle size={14} className="repository-spinner" />
-          ) : review || failures.length ? (
-            <CircleAlert size={14} />
-          ) : batch?.phase === 'completed' ? (
-            <Check size={14} />
-          ) : (
-            <GitProviderIcon provider={provider} />
-          )}
-          <span className="repository-operation-label">{label}</span>
-          {batch && !worktree && (
-            <span className="repository-operation-count">
-              {running ? batch.done : batch.entries.length - failures.length}/{batch.entries.length}
-            </span>
-          )}
-        </button>
+        <Tooltip variant="card" side="left" content={feedback}>
+          <button
+            className={`island-row repository-operation ${batch?.phase || ''}`}
+            aria-live="polite"
+            aria-busy={running}
+            aria-disabled={disabled}
+            onClick={() => {
+              if (disabled) return;
+              if (review) useApp.setState({ modal: { kind: 'git-review', id: review.id } });
+              else if (failures.length) {
+                const reopen = failures.some(
+                  (e) =>
+                    operations.find((o) => o.id === e.request.operationId)?.phase === 'reviewed' ||
+                    e.result?.evidence.rolledBack,
+                );
+                if (reopen) openRepositoryMenu(session.id, batch!.action);
+                else
+                  void runGitBatch(
+                    session.id,
+                    batch!.action,
+                    failures.map((e) => e.request),
+                  ).catch(useApp.getState().fail);
+              } else openRepositoryMenu(session.id, primaryAction);
+            }}
+          >
+            {running ? (
+              <LoaderCircle size={14} className="repository-spinner" />
+            ) : review || failures.length ? (
+              <CircleAlert size={14} />
+            ) : batch?.phase === 'completed' ? (
+              <Check size={14} />
+            ) : (
+              <GitProviderIcon provider={provider} />
+            )}
+            <span className="repository-operation-label">{label}</span>
+            {batch && !worktree && (
+              <span className="repository-operation-count">
+                {running ? batch.done : batch.entries.length - failures.length}/
+                {batch.entries.length}
+              </span>
+            )}
+          </button>
+        </Tooltip>
         <Menu.Root>
           <Menu.Trigger
             className="split-menu-trigger"
@@ -224,37 +258,37 @@ export function SourceControlSection({ session }: { session: Session }) {
             >
               <Menu.Popup className="small-menu repository-actions-menu">
                 {(['commit', 'push', 'pr'] as const).map((action) => (
-                  <Menu.Item
-                    key={action}
-                    disabled={!!problems[action]}
-                    title={problems[action] || undefined}
-                    onClick={() => openRepositoryMenu(session.id, action)}
-                  >
-                    {action === 'commit' ? (
-                      <GitCommitHorizontal size={16} aria-hidden />
-                    ) : action === 'push' ? (
-                      <CloudUpload size={16} aria-hidden />
-                    ) : (
-                      <GitProviderIcon provider={provider} size={16} />
-                    )}
-                    {action === 'pr' ? 'Create PR' : action === 'commit' ? 'Commit' : 'Push'}
-                  </Menu.Item>
+                  <Tooltip key={action} variant="card" side="left" content={problems[action]}>
+                    <Menu.Item
+                      disabled={!!problems[action]}
+                      onClick={() => openRepositoryMenu(session.id, action)}
+                    >
+                      {action === 'commit' ? (
+                        <GitCommitHorizontal size={16} aria-hidden />
+                      ) : action === 'push' ? (
+                        <CloudUpload size={16} aria-hidden />
+                      ) : (
+                        <GitProviderIcon provider={provider} size={16} />
+                      )}
+                      {action === 'pr' ? 'Create PR' : action === 'commit' ? 'Commit' : 'Push'}
+                    </Menu.Item>
+                  </Tooltip>
                 ))}
                 <Menu.Separator className="repository-actions-separator" />
                 {(['stash', 'stash-apply'] as const).map((action) => (
-                  <Menu.Item
-                    key={action}
-                    disabled={!!problems[action]}
-                    title={problems[action] || undefined}
-                    onClick={() => openRepositoryMenu(session.id, action)}
-                  >
-                    {action === 'stash' ? (
-                      <Archive size={16} aria-hidden />
-                    ) : (
-                      <ArchiveRestore size={16} aria-hidden />
-                    )}
-                    {action === 'stash' ? 'Stash' : 'Apply stash'}
-                  </Menu.Item>
+                  <Tooltip key={action} variant="card" side="left" content={problems[action]}>
+                    <Menu.Item
+                      disabled={!!problems[action]}
+                      onClick={() => openRepositoryMenu(session.id, action)}
+                    >
+                      {action === 'stash' ? (
+                        <Archive size={16} aria-hidden />
+                      ) : (
+                        <ArchiveRestore size={16} aria-hidden />
+                      )}
+                      {action === 'stash' ? 'Stash' : 'Apply stash'}
+                    </Menu.Item>
+                  </Tooltip>
                 ))}
               </Menu.Popup>
             </Menu.Positioner>
