@@ -139,6 +139,9 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
       }
     },
     hotkeys: {
+      // Native scrolling can unmount a virtual row after the tree focuses it.
+      focusFirstItem: { hotkey: 'Home', preventDefault: true },
+      focusLastItem: { hotkey: 'End', preventDefault: true },
       customActivate: {
         hotkey: 'Enter',
         preventDefault: true,

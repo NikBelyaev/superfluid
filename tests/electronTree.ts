@@ -200,6 +200,10 @@ try {
   await renameInput.press('Enter');
   await expect(entry('src/copy.py')).toHaveCount(0);
   await entry('src/renamed.py').waitFor();
+  await expect(page.getByRole('tree', { name: 'Project files' })).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
   await entry('src/renamed.py').focus();
   await page.keyboard.press('F2');
   await expect(renameInput).toHaveValue('renamed.py');
@@ -223,6 +227,10 @@ try {
   await folderInput.fill('generated.v2');
   await folderInput.press('Enter');
   await entry('src/generated.v2').waitFor();
+  await expect(page.getByRole('tree', { name: 'Project files' })).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
   await entry('src/generated.v2').focus();
   await page.keyboard.press('F2');
   await expect(folderInput).toBeFocused();
@@ -236,6 +244,10 @@ try {
   await folderInput.fill('generated');
   await folderInput.press('Enter');
   await entry('src/generated').waitFor();
+  await expect(page.getByRole('tree', { name: 'Project files' })).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
   for (const [name, end] of [
     ['.env', 4],
     ['README', 6],
@@ -313,6 +325,12 @@ try {
   await expect(entry('main.py')).toBeFocused();
   await page.keyboard.press('ArrowUp');
   await expect(entry('src/models/model_159.py')).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(entry('empty')).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(entry('main.py')).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await expect(entry('src/models/model_159.py')).toBeFocused();
   assert.ok((await page.locator('.tree-row').count()) < 80);
   await page.screenshot({ path: 'test-results/project-tree-sticky.png' });
   await page.keyboard.press('ArrowLeft');
@@ -342,6 +360,7 @@ try {
   await expect(entry('src/models/added.py')).toBeVisible();
   await entry('src/models/added.py').focus();
   await page.keyboard.press('End');
+  await expect(entry('main.py')).toBeFocused();
   await page.keyboard.press('ArrowUp');
   await expect(entry('src/models/model_159.py')).toBeFocused();
   await page
