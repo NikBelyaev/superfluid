@@ -44,6 +44,7 @@ let app = await electron.launch({ executablePath, args, env });
 console.log('Tree fixture:', project, 'Electron PID:', app.process().pid);
 await mkdir('test-results', { recursive: true });
 const errors: string[] = [];
+let failed = false;
 
 try {
   let page = await app.firstWindow();
@@ -346,9 +347,16 @@ try {
   await page.locator('.editor-host').click();
   await page.keyboard.press('Meta+A');
   await page.keyboard.insertText('# unsaved in source worktree\n');
+  await writeFile(join(project, 'src/models/model_000.py'), '# external edit\n');
+  await expect(page.locator('.toast')).toContainText('changed on disk');
   await entry('src/models/model_000.py').dragTo(entry('src'));
   await expect(page.locator('.toast')).toContainText(/Save|unsaved/);
-  assert.equal(await readFile(join(project, 'src/models/model_000.py'), 'utf8'), 'value = 1\n');
+  assert.equal(
+    await readFile(join(project, 'src/models/model_000.py'), 'utf8'),
+    '# external edit\n',
+  );
+  await writeFile(join(project, 'src/models/model_000.py'), 'value = 1\n');
+  await page.getByRole('button', { name: 'Dismiss message', exact: true }).click();
   await page.getByRole('button', { name: 'Project', exact: true }).click();
   await expect(page.getByRole('tree', { name: 'Changed files' })).toBeVisible();
   await entry('main.py').click();
@@ -367,6 +375,7 @@ try {
     .locator('.worktree-chip')
     .filter({ hasText: /^feature\/tree$/ })
     .click();
+  await expect(page.locator('.worktree-chip.active')).toHaveText('feature/tree');
   await page.keyboard.press('Meta+Shift+P');
   await page.getByRole('button', { name: 'Open project files', exact: true }).click();
   await expect(entry('src')).toHaveAttribute('aria-expanded', 'false');
@@ -374,6 +383,10 @@ try {
   const emptyTree = page.getByRole('tree', { name: 'Changed files' });
   await expect(emptyTree).toHaveAttribute('aria-busy', 'false');
   await expect(emptyTree).toContainText('No local changes.');
+  assert.equal(
+    await readFile(join(project, 'src/models/model_000.py'), 'utf8'),
+    '# unsaved in source worktree\n',
+  );
   await emptyTree.focus();
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Home');
@@ -398,10 +411,12 @@ try {
     'Project tree Electron flow passed: keyboard, virtualization, selection, changes, watcher, worktrees, reopen.',
   );
 } catch (error) {
+  failed = true;
   console.error('Renderer errors:', errors);
   throw error;
 } finally {
   const page = await app.firstWindow().catch(() => undefined);
   await page?.screenshot({ path: 'test-results/project-tree-final.png' }).catch(() => {});
-  await app.close();
+  if (failed) await app.evaluate(({ app }) => app.exit(1)).catch(() => {});
+  else await app.close();
 }

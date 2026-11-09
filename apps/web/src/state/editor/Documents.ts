@@ -18,6 +18,7 @@ export interface Doc {
   diskText?: string;
   reveal?: { line: number; column: number; group?: TabGroup };
   lspTimer?: ReturnType<typeof setTimeout>;
+  saveTimer?: ReturnType<typeof setTimeout>;
   lastUsed: number;
   saving?: Promise<void>;
   reloading?: boolean;
@@ -151,12 +152,14 @@ class Documents {
         desktop.call('draft.put', { sessionId: session.id, path, text, hash, version }),
     };
     if (data.recovered) this.recovery.restore(source);
+    if (doc.dirty) this.scheduleSave(doc);
     model.onDidChangeContent(() => {
       if (doc.reloading) return;
       doc.version++;
       const wasDirty = doc.dirty;
       doc.dirty = true;
       this.recovery.changed(source);
+      this.scheduleSave(doc);
       clearTimeout(doc.lspTimer);
       if (model.getLanguageId() === 'python')
         doc.lspTimer = setTimeout(() => void this.sync(doc).catch(() => {}), 200);
@@ -206,11 +209,46 @@ class Documents {
   }
   async save(doc: Doc): Promise<void> {
     if (doc.readOnly) return;
+    clearTimeout(doc.saveTimer);
     if (doc.saving) return doc.saving;
-    doc.saving = this.saveCurrent(doc).finally(() => {
+    doc.saving = (async () => {
+      do {
+        await this.saveCurrent(doc);
+      } while (doc.dirty);
+    })().finally(() => {
       doc.saving = undefined;
     });
     return doc.saving;
+  }
+  private scheduleSave(doc: Doc) {
+    clearTimeout(doc.saveTimer);
+    doc.saveTimer = setTimeout(() => {
+      void this.save(doc).catch((error) => {
+        void import('~/state/workspaceStore').then(({ useApp }) => useApp.getState().fail(error));
+      });
+    }, 500);
+  }
+  async saveAll() {
+    await this.recovery.flushAll();
+    const pending = () =>
+      [...this.items.values()].filter((doc) => !doc.readOnly && (doc.dirty || doc.saving));
+    for (let docs = pending(); docs.length; docs = pending())
+      for (const doc of docs) await this.save(doc);
+  }
+  async saveSession(sessionId: string, paths: string[]) {
+    const { useApp } = await import('~/state/workspaceStore');
+    const session = useApp.getState().sessions.find((s) => s.id === sessionId);
+    if (!session) throw new Error('Worktree session not found.');
+    const matches = (path: string) =>
+      paths.some((root) => !root || path === root || path.startsWith(root + '/'));
+    const drafts = await desktop.call('draft.list', { sessionId });
+    for (const path of drafts) if (matches(path)) await this.save(await this.open(session, path));
+    const pending = () =>
+      [...this.items.values()].filter(
+        (doc) => doc.session.id === sessionId && matches(doc.path) && (doc.dirty || doc.saving),
+      );
+    for (let docs = pending(); docs.length; docs = pending())
+      for (const doc of docs) await this.save(doc);
   }
   private async saveCurrent(doc: Doc) {
     await this.recovery.flush(doc.key);
@@ -230,6 +268,7 @@ class Documents {
       version,
     });
     if (doc.version === version) {
+      clearTimeout(doc.saveTimer);
       doc.dirty = false;
       doc.recovered = false;
       this.recovery.forget(doc.key);
@@ -238,6 +277,8 @@ class Documents {
   }
   async reload(doc: Doc) {
     if (doc.readOnly) throw new Error('External definitions are read only.');
+    clearTimeout(doc.saveTimer);
+    await doc.saving;
     await this.recovery.flush(doc.key);
     const version = doc.version;
     const disk = await desktop.call('files.read', {
@@ -282,8 +323,8 @@ class Documents {
   async close(sessionId: string, path: string) {
     const doc = this.items.get(this.key(sessionId, path));
     if (!doc) return;
-    if (doc.dirty) {
-      await this.recovery.flush(doc.key);
+    if (doc.dirty || doc.saving) {
+      await this.save(doc);
       doc.closed = true;
     } else {
       doc.closed = true;
@@ -323,6 +364,7 @@ class Documents {
       if (d.session.id !== sessionId || (d.path !== path && !d.path.startsWith(path + '/')))
         continue;
       clearTimeout(d.lspTimer);
+      clearTimeout(d.saveTimer);
       d.model.dispose();
       this.items.delete(key);
       this.recovery.forget(key);
@@ -344,21 +386,24 @@ class Documents {
         d.model.isAttachedToEditor()
       )
         continue;
-      if (d.dirty && !this.recovery.durable(key, d.version)) {
+      if (d.dirty) {
         try {
-          await this.recovery.flush(key);
-        } catch {
+          await this.save(d);
+        } catch (error) {
+          void import('~/state/workspaceStore').then(({ useApp }) => useApp.getState().fail(error));
           continue;
         }
       }
       if (
         this.items.get(key) !== d ||
+        d.saving ||
         (this.activeSessions.includes(d.session.id) && !d.closed) ||
         d.model.isAttachedToEditor() ||
         (d.dirty && !this.recovery.durable(key, d.version))
       )
         continue;
       clearTimeout(d.lspTimer);
+      clearTimeout(d.saveTimer);
       d.model.dispose();
       this.items.delete(key);
       this.recovery.forget(key);

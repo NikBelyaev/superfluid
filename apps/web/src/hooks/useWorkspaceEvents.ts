@@ -22,13 +22,30 @@ export function useWorkspaceEvents() {
         void useApp.getState().refreshGit(e.sessionId);
     });
   }, []);
+  useEffect(() => {
+    const save = () => {
+      if (!useApp.getState().sessions.length) return;
+      void import('~/state/editor/Documents')
+        .then(({ documents }) => documents.saveAll())
+        .catch(useApp.getState().fail);
+    };
+    const hide = () => {
+      if (document.hidden) save();
+    };
+    window.addEventListener('blur', save);
+    document.addEventListener('visibilitychange', hide);
+    return () => {
+      window.removeEventListener('blur', save);
+      document.removeEventListener('visibilitychange', hide);
+    };
+  }, []);
   useEffect(
     () =>
       desktop.onFlush(async () => {
         const { documents } = await import('~/state/editor/Documents');
         documents.captureViews();
         await Promise.all([
-          documents.recovery.flushAll(),
+          documents.saveAll(),
           import('~/state/workspaceStore').then((s) => s.flushLayouts()),
         ]);
       }),

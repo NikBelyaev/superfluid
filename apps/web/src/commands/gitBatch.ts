@@ -97,24 +97,11 @@ export async function runGitBatch(
     throw new Error('Wait for the running Git action.');
   if (!requests.length) throw new Error('Choose at least one repository.');
   const repositories = app.repositories[sessionId] || [];
-  if (
-    action !== 'push' &&
-    action !== 'pr' &&
-    (action !== 'publish' ||
-      requests.some((r) => r.allChanges || r.paths?.length || r.message?.trim()))
-  ) {
-    const { documents } = await import('~/state/editor/Documents');
-    const dirty = [...documents.items.values()].filter(
-      (d) =>
-        d.session.id === sessionId &&
-        d.dirty &&
-        requests.some((request) => {
-          const repository = repositories.find((r) => r.id === request.repositoryId);
-          return !repository?.path || d.path.startsWith(repository.path + '/');
-        }),
-    );
-    if (dirty.length) throw new Error(`Save ${dirty.length} unsaved files before this Git action.`);
-  }
+  const { documents } = await import('~/state/editor/Documents');
+  await documents.saveSession(
+    sessionId,
+    requests.map((request) => repositories.find((r) => r.id === request.repositoryId)?.path ?? ''),
+  );
   if (
     useApp.getState().repositoryWorktrees[sessionId] ||
     useApp.getState().gitBatches[sessionId]?.phase === 'running'
@@ -226,6 +213,8 @@ export async function createRepositoryWorktree(
     const paths = (useApp.getState().repositories[session.id] || [])
       .filter((r) => repositoryIds.includes(r.id))
       .map((r) => r.path);
+    const { documents } = await import('~/state/editor/Documents');
+    await documents.saveSession(session.id, paths);
     const created = await desktop.call('git.worktree', {
       sessionId: session.id,
       repositoryIds,
@@ -251,7 +240,7 @@ export async function createRepositoryWorktree(
       useApp.getState().sessionId === session.id &&
       useApp.getState().projectId === session.projectId
     )
-      useApp.getState().switchSession(created.id);
+      await useApp.getState().switchSession(created.id);
     return created;
   } catch (error) {
     useApp.getState().fail(error);

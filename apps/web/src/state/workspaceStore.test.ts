@@ -73,7 +73,7 @@ test('opening projects restores supported surfaces from incompatible saved layou
   const { useApp } = await import('~/state/workspaceStore');
   const before = useApp.getState();
   try {
-    useApp.setState({ views: {}, runs: [], switchSession: () => {} });
+    useApp.setState({ views: {}, runs: [], switchSession: async () => {} });
     await useApp.getState().openProject({
       id: 'project',
       name: 'Fixture',
@@ -95,6 +95,56 @@ test('opening projects restores supported surfaces from incompatible saved layou
     useApp.setState(before, true);
     if (original) Object.defineProperty(globalThis, 'window', original);
     else Reflect.deleteProperty(globalThis, 'window');
+  }
+});
+
+test('a slow project open cannot replace a newer project selection', async () => {
+  const initial = useApp.getState();
+  let release!: (sessions: Session[]) => void;
+  const slow = new Promise<Session[]>((resolve) => {
+    release = resolve;
+  });
+  const call = mock.method(
+    desktop,
+    'call',
+    async (method: string, input: { projectId: string }) => {
+      assert.equal(method, 'session.list');
+      return input.projectId === 'slow'
+        ? slow
+        : [{ ...session('/fast'), id: 'fast-session', projectId: 'fast' }];
+    },
+  );
+  let opening: Promise<void> | undefined;
+  try {
+    useApp.setState({
+      projectId: null,
+      sessionId: null,
+      sessions: [],
+      views: {},
+      switchSession: async () => {},
+    });
+    opening = useApp.getState().openProject({
+      id: 'slow',
+      name: 'Slow',
+      path: '/slow',
+      lastOpened: 0,
+    });
+    await useApp.getState().openProject({
+      id: 'fast',
+      name: 'Fast',
+      path: '/fast',
+      lastOpened: 0,
+    });
+    release([{ ...session('/slow'), id: 'slow-session', projectId: 'slow' }]);
+    await opening;
+    assert.equal(useApp.getState().projectId, 'fast');
+    assert.equal(useApp.getState().sessionId, 'fast-session');
+    assert.equal(useApp.getState().busy, null);
+  } finally {
+    release([]);
+    await opening;
+    call.mock.restore();
+    useApp.setState(initial, true);
   }
 });
 
@@ -328,7 +378,7 @@ test('reopening layouts moves legacy terminals below the editor and drops stale 
   try {
     useApp.setState({
       views: {},
-      switchSession: () => {},
+      switchSession: async () => {},
       runs: [
         {
           id: 'shell',
@@ -348,7 +398,7 @@ test('reopening layouts moves legacy terminals below the editor and drops stale 
     assert.deepEqual(view.bottomTabs, [{ kind: 'terminal', id: 'shell' }]);
     assert.deepEqual(view.rightTabs, [{ kind: 'diff' }]);
     assert.equal(view.surface, null);
-    useApp.setState({ views: {}, runs: [] });
+    useApp.setState({ views: {}, runs: [], projectId: null });
     await useApp.getState().openProject(project);
     assert.equal(useApp.getState().views[session.id].bottomSurface, null);
     assert.deepEqual(useApp.getState().views[session.id].bottomTabs, []);

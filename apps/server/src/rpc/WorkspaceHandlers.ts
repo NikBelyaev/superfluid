@@ -75,6 +75,7 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     'search.cancel': (input) =>
       workspace.codeSearch.cancel(session(input.sessionId), input.requestId),
     'search.preview': (input) => workspace.codeSearch.preview(session(input.sessionId), input),
+    'draft.list': (input) => store.drafts(session(input.sessionId).id).map((draft) => draft.path),
     'draft.put': (input) => documents.putDraft(session(input.sessionId), input),
     'draft.drop': (input) => {
       store.dropDraft(session(input.sessionId).id, input.path, input.version);

@@ -12,7 +12,7 @@ export function Titlebar({ session }: { session: Session }) {
   return (
     <header className="titlebar">
       <div className="traffic-space" />
-      <button className="project-title" onClick={() => useApp.setState({ projectId: null })}>
+      <button className="project-title" onClick={() => void useApp.getState().closeProject()}>
         <span className="project-avatar">{project?.name.slice(0, 2).toUpperCase()}</span>
         {project?.name}
         <ChevronDown size={12} />
