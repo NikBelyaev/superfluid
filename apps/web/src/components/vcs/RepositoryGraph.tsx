@@ -144,6 +144,7 @@ export function RepositoryGraph({
       }}
     >
       <fieldset disabled={running} className="repository-graph-fields">
+        <legend className="text-caption m-0 mb-1 p-0">Select branch</legend>
         <div className="repository-graph" data-selected={action || undefined}>
           <div className="repository-graph-top">
             <RepositoryBranchPicker

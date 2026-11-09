@@ -69,11 +69,20 @@ try {
   await chips.click();
   await repositories.getByLabel('Find repository').fill('framework');
   assert.equal(await repositories.getByRole('checkbox').count(), 1);
+  assert.equal(await repositories.getByRole('separator').count(), 0);
   await repositories.getByRole('checkbox', { name: 'Select apps/framework', exact: true }).click();
   await repositories.getByLabel('Find repository').fill('web-backend');
   await repositories
     .getByRole('checkbox', { name: 'Select apps/web-backend', exact: true })
     .click();
+  await repositories.getByLabel('Find repository').fill('');
+  assert.deepEqual(
+    await repositories
+      .getByRole('checkbox')
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute('aria-label'))),
+    ['Select apps/core', 'Select apps/framework', 'Select apps/web-backend', 'Select root'],
+  );
+  assert.equal(await repositories.getByRole('separator').count(), 1);
   await chips.click();
   assert.match(await chips.innerText(), /core[\s\S]*framework[\s\S]*\+1/);
   await panel.getByRole('button', { name: 'Choose Switch branch', exact: true }).click();

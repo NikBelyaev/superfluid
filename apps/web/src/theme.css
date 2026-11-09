@@ -31,6 +31,7 @@
   --primary-foreground: #fff;
   --muted: #fafafa;
   --muted-foreground: #71717a;
+  --caption-foreground: var(--muted-foreground);
   --control-muted-foreground: #52525b;
   --accent: #f4f4f5;
   --accent-foreground: var(--foreground);
@@ -67,6 +68,7 @@
   --primary-foreground: #18181b;
   --muted: #252526;
   --muted-foreground: #a1a1aa;
+  --caption-foreground: color-mix(in srgb, var(--muted-foreground) 85%, var(--popover));
   --control-muted-foreground: #b4b4bc;
   --accent: #333337;
   --border: #3f3f46;
@@ -103,6 +105,7 @@
   --primary: #88b9ec;
   --muted: #313335;
   --muted-foreground: #a2a6ad;
+  --caption-foreground: color-mix(in srgb, var(--muted-foreground) 90%, var(--popover));
   --control-muted-foreground: #b6bbc4;
   --accent: #3c3f41;
   --border: #484b4e;

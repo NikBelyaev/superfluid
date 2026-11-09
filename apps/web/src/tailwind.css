@@ -14,6 +14,7 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-caption-foreground: var(--caption-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-border: var(--border);
@@ -22,6 +23,10 @@
   --color-sidebar: var(--sidebar);
   --color-diff-addition-foreground: var(--success-foreground);
   --color-diff-deletion-foreground: var(--error-foreground);
+}
+
+@utility text-caption {
+  @apply text-[length:var(--text-2xs)] leading-4 font-normal text-caption-foreground;
 }
 
 /* Adapted from T3 Code (MIT), commit 337c5858c33bc7f8f6dfd391a2c279fa0f7e4d17. */
