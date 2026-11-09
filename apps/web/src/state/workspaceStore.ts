@@ -51,7 +51,7 @@ interface State {
   error: string | null;
   busy: string | null;
   modal: Modal;
-  palette: 'files' | 'commands' | 'search' | null;
+  palette: 'files' | 'commands' | 'search' | 'symbols' | null;
   surfaceMenu: { sessionId: string; group: TabGroup; tabKey?: string; kind?: 'chain' } | null;
   island: boolean;
   language: Record<string, string>;

@@ -286,7 +286,11 @@ export default function Editor({
         }
         editor.current.render();
       }
-      if (changed || revealed || ownerChanged) {
+      if (
+        (changed || revealed || ownerChanged) &&
+        !useApp.getState().palette &&
+        !useApp.getState().modal
+      ) {
         editor.current.focus();
         documents.focused = d;
         documents.focusedGroup = group;

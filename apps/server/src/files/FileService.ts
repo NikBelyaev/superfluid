@@ -1,9 +1,8 @@
 import { lstat, open, rename, unlink, mkdir, access } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { command } from '../process/ProcessRunner';
 import { Gate } from '../utils/Gate';
-import type { DocumentData, FileEntry, Session, SearchHit } from '@superfluid/contracts';
+import type { DocumentData, FileEntry, Session } from '@superfluid/contracts';
 import { logicalPath, within } from './paths';
 import { digest } from '../utils/digest';
 
@@ -20,7 +19,6 @@ const excluded = new Set([
 export class FileService {
   private writes = new Gate(1, 16);
   private io = new Gate(2, 8);
-  private searchGate = new Gate(2, 8);
   async list(s: Session, path: string): Promise<FileEntry[]> {
     const directory = await within(s.path, path);
     const entries: FileEntry[] = [];
@@ -129,46 +127,6 @@ export class FileService {
         if (e.code !== 'ENOENT') throw e;
       }
       await rename(source, destination);
-    });
-  }
-  async search(
-    s: Session,
-    query: string,
-    content: boolean,
-  ): Promise<{ hits: SearchHit[]; truncated: boolean }> {
-    return this.searchGate.run(async () => {
-      if (!query.trim()) return { hits: [], truncated: false };
-      const args = content
-        ? ['--json', '--max-count', '10', '--fixed-strings', '--', query, '.']
-        : ['--files', '--hidden', '-0', '-g', '!.git', '-g', '!.venv', '-g', '!node_modules'];
-      const result = await command('rg', args, {
-        cwd: s.path,
-        timeout: 10000,
-        accept: [1],
-        limit: 4 * 1024 * 1024,
-      });
-      if (!content) {
-        const matches = result
-          .split('\0')
-          .filter((p) => p && p.toLowerCase().includes(query.toLowerCase()));
-        return {
-          hits: matches.slice(0, 500).map((path) => ({ path })),
-          truncated: matches.length > 500,
-        };
-      }
-      const hits: SearchHit[] = [];
-      for (const line of result.split('\n')) {
-        if (!line) continue;
-        const entry = JSON.parse(line);
-        if (entry.type === 'match')
-          hits.push({
-            path: entry.data.path.text.replace(/^\.\//, ''),
-            line: entry.data.line_number,
-            text: entry.data.lines.text.trimEnd(),
-          });
-        if (hits.length >= 500) break;
-      }
-      return { hits, truncated: hits.length >= 500 };
     });
   }
 }

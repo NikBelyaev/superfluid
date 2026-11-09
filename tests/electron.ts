@@ -532,7 +532,7 @@ try {
   );
   assert.equal(errors.length, 0, errors.join('\n'));
   await page.keyboard.press('Meta+P');
-  await page.locator('.palette').waitFor();
+  await page.getByRole('dialog', { name: 'Search', exact: true }).waitFor();
   await page.screenshot({ path: 'test-results/file-palette.png' });
   await page.keyboard.press('Escape');
   await page.locator('.right-group').getByRole('button', { name: 'New tab', exact: true }).click();

@@ -1,13 +1,35 @@
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { basename, dirname, isAbsolute, relative, join } from 'node:path';
 import { access } from 'node:fs/promises';
-import type { Session, ParsedInput, PythonDefinition, PythonLocation } from '@superfluid/contracts';
+import type {
+  Session,
+  ParsedInput,
+  PythonDefinition,
+  PythonLocation,
+  SearchHit,
+} from '@superfluid/contracts';
+import { z } from 'zod';
 import { LanguageServers } from './LanguageServers';
 import { WorkspaceWatcher } from '../workspace/WorkspaceWatcher';
 import { within } from '../files/paths';
 import { command } from '../process/ProcessRunner';
 import { FileService } from '../files/FileService';
 import { DocumentService } from '../files/DocumentService';
+import { excludedSearchPath } from '../files/searchPaths';
+import { compareSearchHits } from '../search/relevance';
+import { Gate } from '../utils/Gate';
+
+const symbolInformation = z.object({
+  name: z.string(),
+  containerName: z.string().optional(),
+  kind: z.number().int().min(1).max(26),
+  location: z.object({
+    uri: z.string(),
+    range: z.object({
+      start: z.object({ line: z.number().int().min(0), character: z.number().int().min(0) }),
+    }),
+  }),
+});
 
 type Range = { start: PythonLocation['position']; end: PythonLocation['position'] };
 interface Symbol {
@@ -129,6 +151,91 @@ export class PythonService {
       const server = await this.languages.get(session);
       const value = await server.request(input.method, input.params, signal);
       return { generation: server.generation, value };
+    });
+  }
+
+  symbols(
+    session: Session,
+    input: ParsedInput<'python.symbols'>,
+    include: (path: string, kind: number) => boolean = () => true,
+  ) {
+    return this.cancellable(session, input.requestId, async (signal) => {
+      this.watcher.observe(session);
+      const server = await this.languages.get(session);
+      const result: unknown = await server.request(
+        'workspace/symbol',
+        { query: input.query },
+        signal,
+      );
+      if (result !== null && !Array.isArray(result))
+        throw new Error('Python returned invalid symbols.');
+      const candidates: SearchHit[] = [];
+      const seen = new Set<string>();
+      for (const raw of result ?? []) {
+        signal?.throwIfAborted();
+        const parsed = symbolInformation.safeParse(raw);
+        if (!parsed.success || !parsed.data.location.uri.startsWith('file:')) continue;
+        const symbol = parsed.data;
+        const path = workspacePath(session.path, fileURLToPath(symbol.location.uri));
+        if (path === undefined || excludedSearchPath(path) || !include(path, symbol.kind)) continue;
+        const position = symbol.location.range.start;
+        const key = `${path}:${position.line}:${position.character}:${symbol.name}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        candidates.push({
+          path,
+          line: position.line + 1,
+          column: position.character + 1,
+          name: symbol.name.slice(0, 500),
+          ...([6, 9].includes(symbol.kind) && symbol.containerName
+            ? { containerName: symbol.containerName.slice(0, 500) }
+            : {}),
+          kind: symbol.kind,
+        });
+      }
+      const hits: SearchHit[] = [];
+      for (const hit of candidates.sort(compareSearchHits(input.query))) {
+        signal?.throwIfAborted();
+        if (
+          !(await within(session.path, hit.path).then(
+            () => true,
+            () => false,
+          ))
+        )
+          continue;
+        hits.push(hit);
+        if (hits.length > 500) break;
+      }
+      const outlines = new Map<string, Promise<Symbol[]>>();
+      const enrichment = new Gate(4, 500);
+      await Promise.all(
+        hits
+          .slice(0, 500)
+          .filter((hit) => [6, 9].includes(hit.kind!) && !hit.containerName)
+          .map((hit) =>
+            enrichment.run(async () => {
+              signal?.throwIfAborted();
+              const uri = pathToFileURL(join(session.path, hit.path)).href;
+              if (!outlines.has(uri))
+                outlines.set(
+                  uri,
+                  server.symbolOutline(uri, signal).then((value) => value ?? []),
+                );
+              const containers = scopesAt(await outlines.get(uri)!, {
+                line: hit.line! - 1,
+                character: hit.column! - 1,
+              })
+                .filter((symbol) => symbol.kind === 5)
+                .map((symbol) => symbol.name);
+              if (containers.length) hit.containerName = containers.join('.').slice(0, 500);
+            }),
+          ),
+      );
+      server.assertCurrent();
+      return {
+        generation: server.generation,
+        value: { hits: hits.slice(0, 500), truncated: hits.length > 500 },
+      };
     });
   }
 
