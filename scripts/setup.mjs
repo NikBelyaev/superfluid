@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { installTy } from './ty.mjs';
 import { copyZoekt } from './zoekt.mjs';
+import { download } from './download.ts';
 const require = createRequire(import.meta.url);
 for (let attempt = 0; ; attempt++) {
   const install = spawnSync(process.execPath, [require.resolve('electron/install.js')], {
@@ -15,6 +16,23 @@ for (let attempt = 0; ; attempt++) {
   if (install.status === 0) break;
   if (attempt === 2 || !/HTTPError: Response code (?:429|5\d\d)\b/.test(install.stderr ?? ''))
     process.exit(install.status ?? 1);
+  const artifact =
+    /for (https:\/\/github\.com\/electron\/electron\/releases\/download\/[^/]+\/electron-[^\s]+-([a-z0-9]+)-([a-z0-9]+)\.zip)\b/.exec(
+      install.stderr,
+    );
+  if (artifact) {
+    const electronRequire = createRequire(require.resolve('electron/package.json'));
+    const { downloadArtifact } = await import(electronRequire.resolve('@electron/get'));
+    await downloadArtifact({
+      version: require('electron/package.json').version,
+      artifactName: 'electron',
+      platform: artifact[2],
+      arch: artifact[3],
+      cacheRoot: process.env.electron_config_cache,
+      checksums: require('electron/checksums.json'),
+      downloader: { download },
+    });
+  }
   console.error('Retrying Electron download after a temporary HTTP failure…');
   await setTimeout(1000 * 2 ** attempt);
 }

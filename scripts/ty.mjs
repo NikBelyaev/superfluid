@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
-import { access, chmod, copyFile, mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, copyFile, mkdir, mkdtemp, readFile, rename, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { download } from './download.ts';
 
 const version = '0.0.99';
 const targets = {
@@ -49,16 +50,11 @@ export async function installTy() {
   const staging = await mkdtemp(join(cache, 'ty-download-'));
   try {
     const archive = `ty-${triple}.${process.platform === 'win32' ? 'zip' : 'tar.gz'}`;
-    const response = await fetch(
-      `https://github.com/astral-sh/ty/releases/download/${version}/${archive}`,
-      { signal: AbortSignal.timeout(60000) },
-    );
-    if (!response.ok) throw new Error(`Downloading ty failed: HTTP ${response.status}.`);
-    const data = Buffer.from(await response.arrayBuffer());
+    const path = join(staging, archive);
+    await download(`https://github.com/astral-sh/ty/releases/download/${version}/${archive}`, path);
+    const data = await readFile(path);
     if (createHash('sha256').update(data).digest('hex') !== hash)
       throw new Error('Downloaded ty failed SHA-256 verification.');
-    const path = join(staging, archive);
-    await writeFile(path, data);
     execFileSync('tar', ['-xf', path, '-C', staging]);
     await rm(path);
     const stagedBinary = join(staging, `ty-${triple}`, executable);

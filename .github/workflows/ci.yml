@@ -13,6 +13,8 @@ jobs:
   macos:
     runs-on: macos-15
     timeout-minutes: 25
+    env:
+      electron_config_cache: ${{ github.workspace }}/node_modules/.cache/electron
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -21,6 +23,12 @@ jobs:
         with:
           node-version: '26'
       - run: npm install --global pnpm@12.14.0
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            node_modules/.cache/electron
+            node_modules/.cache/superfluid
+          key: tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'scripts/ty.mjs', 'scripts/zoekt.mjs') }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm format:check

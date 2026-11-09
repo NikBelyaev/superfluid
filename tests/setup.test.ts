@@ -39,6 +39,10 @@ for (const scenario of [
         new URL('../scripts/setup.mjs', import.meta.url),
         join(directory, 'setup.mjs'),
       );
+      await copyFile(
+        new URL('../scripts/download.ts', import.meta.url),
+        join(directory, 'download.ts'),
+      );
       await writeFile(join(directory, 'ty.mjs'), 'export async function installTy() {}');
       await writeFile(join(directory, 'zoekt.mjs'), 'export async function copyZoekt() {}');
       const electron = join(directory, 'node_modules/electron');
