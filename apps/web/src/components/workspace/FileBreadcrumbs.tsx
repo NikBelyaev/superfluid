@@ -8,6 +8,9 @@ import { documentPath } from '~/state/editor/Documents';
 import { useFileGitStatus } from '~/hooks/useFileGitStatus';
 import { fileLabelClassName } from '~/components/vcs/fileLabels';
 
+const menuItemClassName =
+  'flex min-h-7 w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-left text-sm leading-5 outline-none hover:bg-accent data-[highlighted]:bg-accent data-[highlighted]:text-foreground aria-[current=location]:bg-accent aria-[current=location]:text-foreground data-[disabled]:cursor-default data-[disabled]:text-muted-foreground';
+
 function DirectoryItems({
   sessionId,
   directory,
@@ -40,17 +43,24 @@ function DirectoryItems({
   return (
     <>
       {error ? (
-        <Menu.Item disabled>{error}</Menu.Item>
+        <Menu.Item className={menuItemClassName} disabled>
+          {error}
+        </Menu.Item>
       ) : entries === null ? (
-        <Menu.Item disabled>Loading…</Menu.Item>
+        <Menu.Item className={menuItemClassName} disabled>
+          Loading…
+        </Menu.Item>
       ) : entries.length === 0 ? (
-        <Menu.Item disabled>Empty folder</Menu.Item>
+        <Menu.Item className={menuItemClassName} disabled>
+          Empty folder
+        </Menu.Item>
       ) : (
         entries.map((entry) => {
           const Icon = entry.directory ? Folder : FileCode2;
           const status = getGitStatus(entry.path);
           return (
             <Menu.Item
+              className={menuItemClassName}
               key={entry.path}
               title={entry.path}
               aria-label={entry.name}
@@ -63,11 +73,17 @@ function DirectoryItems({
               }}
             >
               <Icon size={13} aria-hidden="true" />
-              <span className={fileLabelClassName(status)} data-git-status={status}>
+              <span
+                className={`overflow-hidden text-ellipsis whitespace-nowrap ${fileLabelClassName(status)}`}
+                data-git-status={status}
+              >
                 {entry.name}
               </span>
               {status && status !== 'ignored' && !entry.directory && (
-                <small className={`git-letter ${fileLabelClassName(status)}`} aria-hidden="true">
+                <small
+                  className={`ml-auto flex-none ${fileLabelClassName(status)}`}
+                  aria-hidden="true"
+                >
                   {status === 'added' ? 'A' : status === 'conflict' ? '!' : status[0].toUpperCase()}
                 </small>
               )}
@@ -106,15 +122,25 @@ function PathSegment({
         if (next) setBrowsing(parent);
       }}
     >
-      <Menu.Trigger title={path || name} aria-description={status ? `Git: ${status}` : undefined}>
+      <Menu.Trigger
+        className="flex min-w-0 items-center gap-[5px] rounded-[3px] px-1 py-0.5 text-sm leading-4 text-muted-foreground hover:bg-accent hover:text-foreground data-[popup-open]:bg-accent data-[popup-open]:text-foreground"
+        title={path || name}
+        aria-description={status ? `Git: ${status}` : undefined}
+      >
         <Icon size={12} aria-hidden="true" />
-        <span className={fileLabelClassName(status)} data-git-status={status}>
+        <span
+          className={`overflow-hidden text-ellipsis whitespace-nowrap ${fileLabelClassName(status)}`}
+          data-git-status={status}
+        >
           {name}
         </span>
       </Menu.Trigger>
       <Menu.Portal>
-        <Menu.Positioner className="menu-positioner" side="top" align="start" sideOffset={4}>
-          <Menu.Popup className="small-menu path-menu" aria-label="Path navigation">
+        <Menu.Positioner className="z-[110]" side="top" align="start" sideOffset={4}>
+          <Menu.Popup
+            className="z-90 max-h-[min(320px,var(--available-height))] w-max min-w-[180px] max-w-[min(360px,var(--available-width))] overflow-y-auto rounded-lg border border-solid border-border bg-popover p-1 shadow-[var(--shadow-popover)] outline-none"
+            aria-label="Path navigation"
+          >
             {open && (
               <DirectoryItems
                 key={browsing}
@@ -139,7 +165,10 @@ export function FileBreadcrumbs({ session, path }: { session: Session; path: str
   );
   if (path.startsWith('file://'))
     return (
-      <span className="status-path" title={documentPath(path)}>
+      <span
+        className="flex min-w-0 overflow-hidden text-sm leading-4 text-ellipsis"
+        title={documentPath(path)}
+      >
         {documentPath(path)}
       </span>
     );
@@ -153,9 +182,15 @@ export function FileBreadcrumbs({ session, path }: { session: Session; path: str
     })),
   ];
   return (
-    <nav className="status-path" aria-label="File path">
+    <nav
+      className="flex min-w-0 overflow-hidden text-sm leading-4 text-ellipsis"
+      aria-label="File path"
+    >
       {segments.map((segment, index) => (
-        <span className="path-segment" key={segment.path}>
+        <span
+          className="flex min-w-0 items-center last:max-w-[70%] last:shrink-0"
+          key={segment.path}
+        >
           {index > 0 && <ChevronRight size={12} aria-hidden="true" />}
           <PathSegment sessionId={session.id} getGitStatus={getGitStatus} {...segment} />
         </span>

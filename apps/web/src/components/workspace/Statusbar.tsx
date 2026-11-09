@@ -14,7 +14,9 @@ export function Statusbar({ session }: { session: Session }) {
       {path ? (
         <FileBreadcrumbs key={`${session.id}:${path}`} session={session} path={path} />
       ) : (
-        <span className="status-path">No file selected</span>
+        <span className="flex min-w-0 overflow-hidden text-sm leading-4 text-ellipsis">
+          No file selected
+        </span>
       )}
       <div className="spacer" />
       <span>{language[session.id] || 'Python intelligence starts with a .py file'}</span>

@@ -982,56 +982,6 @@ kbd {
   height: 10px;
   border-left: 1px solid var(--border);
 }
-.statusbar .status-path {
-  display: flex;
-  font-size: var(--text-sm);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.path-segment {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-}
-.path-segment:last-child {
-  flex-shrink: 0;
-  max-width: 70%;
-}
-.statusbar .path-segment button {
-  font-size: inherit;
-  min-width: 0;
-  padding: 2px 4px;
-  border-radius: 3px;
-}
-.path-segment button:hover,
-.path-segment button[data-popup-open] {
-  background: var(--accent);
-  color: var(--foreground);
-}
-.path-segment svg {
-  flex: none;
-}
-.path-segment button span,
-.path-menu [role='menuitem'] span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.small-menu.path-menu {
-  width: max-content;
-  min-width: 180px;
-  max-width: min(360px, var(--available-width));
-  max-height: min(320px, var(--available-height));
-}
-.path-menu [role='menuitem'][aria-current='location'] {
-  background: var(--accent);
-  color: var(--foreground);
-}
-.path-menu .git-letter {
-  margin-left: auto;
-  flex: none;
-}
 .python-dot {
   width: 5px;
   height: 5px;
