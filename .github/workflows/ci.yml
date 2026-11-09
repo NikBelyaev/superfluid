@@ -1,6 +1,7 @@
 name: Desktop checks
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_call:
     inputs:
@@ -9,10 +10,17 @@ on:
         required: true
 permissions:
   contents: read
+concurrency:
+  group: desktop-checks-${{ inputs.ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   macos:
     runs-on: macos-15
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [checks, electron]
     env:
       electron_config_cache: ${{ github.workspace }}/node_modules/.cache/electron
     steps:
@@ -23,23 +31,49 @@ jobs:
         with:
           node-version: '26'
       - run: npm install --global pnpm@12.14.0
+      - id: cache
+        run: |
+          echo "pnpm-store=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+          echo "electron=$(node -p 'require("./package.json").devDependencies.electron')" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          path: |
-            node_modules/.cache/electron
-            node_modules/.cache/superfluid
-          key: tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'scripts/ty.mjs', 'scripts/zoekt.mjs') }}
+          path: ${{ steps.cache.outputs.pnpm-store }}
+          key: pnpm-${{ runner.os }}-${{ runner.arch }}-node26-pnpm12.14.0-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-${{ runner.arch }}-node26-pnpm12.14.0-
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: node_modules/.cache/electron
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ steps.cache.outputs.electron }}
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: node_modules/.cache/superfluid/ty-*
+          key: ty-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/ty.mjs') }}
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: node_modules/.cache/superfluid/zoekt
+          key: zoekt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/zoekt.mjs') }}-${{ matrix.suite }}-${{ hashFiles('packages/zoekt/go.mod', 'packages/zoekt/go.sum', 'packages/zoekt/*.go') }}
+          restore-keys: |
+            zoekt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/zoekt.mjs') }}-${{ matrix.suite }}-
+            zoekt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/zoekt.mjs') }}-
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+        if: matrix.suite == 'checks'
       - run: pnpm format:check
+        if: matrix.suite == 'checks'
       - run: pnpm typecheck
+        if: matrix.suite == 'checks'
       - run: pnpm audit --audit-level high
+        if: matrix.suite == 'checks'
       - run: pnpm audit --prod --audit-level moderate
+        if: matrix.suite == 'checks'
       - run: pnpm test
+        if: matrix.suite == 'checks'
       - run: pnpm build
+        if: matrix.suite == 'electron'
       - run: pnpm test:electron
+        if: matrix.suite == 'electron'
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        if: always()
+        if: always() && matrix.suite == 'electron'
         with:
           name: electron-results
           path: test-results
