@@ -133,12 +133,15 @@ try {
   assert.ok(bom.includes('\r\n'));
   await page.keyboard.insertText('# kept after a save conflict\r\n');
   await writeFile(join(project, 'bom.py'), '# external edit\r\n');
-  await page.getByRole('alert').filter({ hasText: 'changed on disk' }).waitFor();
+  const saveConflict = page.getByRole('alert').filter({ hasText: 'changed on disk' });
+  await saveConflict.waitFor();
   assert.equal(await readFile(join(project, 'bom.py'), 'utf8'), '# external edit\r\n');
   await writeFile(join(project, 'bom.py'), bom);
   using conflictSave = savedText(project, 'bom.py', '# kept after a save conflict');
   await page.keyboard.press('Meta+S');
   assert.match(await conflictSave.done, /kept after a save conflict/);
+  await saveConflict.getByRole('button', { name: 'Dismiss message', exact: true }).click();
+  await expect(saveConflict).toBeHidden();
   const rootSession = await page.evaluate(
     async (path) => {
       const { projects } = await window.superfluid.call('bootstrap', {});
