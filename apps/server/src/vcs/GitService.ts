@@ -7,6 +7,8 @@ import { Store } from '../persistence/Store';
 import { digest } from '../utils/digest';
 import { readBranchBase, resolveBranch } from './branchBase';
 import { within } from '../files/paths';
+import { ProcessError } from '../process/ProcessRunner';
+import { recoverOperation, remoteCommit, trackPush } from './operationRecovery';
 
 export const unresolvedPhases = [
   'committing',
@@ -70,6 +72,7 @@ export class GitService {
   private writers = new Map<string, Gate>();
   private statuses = new Map<string, Promise<GitStatus>>();
   private running = new Map<string, Promise<Operation>>();
+  private reconciling = new Map<string, Promise<Operation>>();
   constructor(
     private store: Store,
     private notify: (operation: Operation) => void,
@@ -288,7 +291,35 @@ export class GitService {
     this.running.set(input.operationId, run);
     return run;
   }
+  async recover(s: Session, repositoryId?: string) {
+    for (const operation of this.store.all<Operation>('operations')) {
+      if (
+        operation.sessionId === s.id &&
+        operation.repositoryId === repositoryId &&
+        unresolvedPhases.includes(operation.phase) &&
+        !this.running.has(operation.id)
+      )
+        await this.reconcile(s, operation);
+    }
+  }
+  private reconcile(s: Session, operation: Operation) {
+    const pending = this.reconciling.get(operation.id);
+    if (pending) return pending;
+    const work = recoverOperation(s, operation, this.hosting)
+      .catch(() => operation)
+      .then((result) => {
+        if (result !== operation) {
+          this.store.put('operations', result);
+          this.notify(result);
+        }
+        return result;
+      })
+      .finally(() => this.reconciling.delete(operation.id));
+    this.reconciling.set(operation.id, work);
+    return work;
+  }
   private async perform(s: Session, input: Input<'git.act'>): Promise<Operation> {
+    await this.recover(s, input.repositoryId);
     const unresolved = this.store
       .all<Operation>('operations')
       .find(
@@ -300,7 +331,7 @@ export class GitService {
       );
     if (unresolved)
       throw new Error(
-        'Review the previous Git operation in the actions panel before starting another. Its result is uncertain.',
+        'We couldn’t confirm how your last Git action finished. Review the result to continue.',
       );
     let op = this.store.get<Operation>('operations', input.operationId);
     if (op && (op.sessionId !== s.id || op.repositoryId !== input.repositoryId))
@@ -308,6 +339,7 @@ export class GitService {
     const intent = digest(JSON.stringify({ ...input, operationId: undefined }));
     if (op?.evidence.intent && op.evidence.intent !== intent)
       throw new Error('This operation ID already belongs to another request.');
+    if (op && unresolvedPhases.includes(op.phase)) op = await this.reconcile(s, op);
     if (op?.phase === 'completed' || op?.evidence.rolledBack) return op;
     if (op?.phase === 'reviewed')
       throw new Error('This attempt was reviewed. Start a new operation.');
@@ -324,9 +356,11 @@ export class GitService {
     };
     const operation = op;
     operation.evidence.intent = intent;
+    operation.evidence.action = input.action;
     const update = (phase: string) => {
       operation.phase = phase;
       delete operation.error;
+      delete operation.evidence.pendingPhase;
       this.store.put('operations', operation);
       this.notify(operation);
     };
@@ -336,6 +370,12 @@ export class GitService {
           await git(s.path, ['status', '--porcelain=v2', '--untracked-files=all', '-z']),
         ).files.filter((file) => file.index !== '?' || !file.path.endsWith('/'));
         operation.evidence.stashAction = input.action;
+        operation.evidence.initial = (
+          await git(s.path, ['rev-parse', '--verify', '--quiet', 'HEAD'], { accept: [1] })
+        ).trim();
+        operation.evidence.originalBranch = (
+          await git(s.path, ['symbolic-ref', '--quiet', '--short', 'HEAD'], { accept: [1] })
+        ).trim();
         if (input.action === 'stash') {
           if (await git(s.path, ['ls-files', '--unmerged', '-z']))
             throw new Error('Resolve merge conflicts before stashing.');
@@ -407,6 +447,19 @@ export class GitService {
         const files = parseStatus(
           await git(s.path, ['status', '--porcelain=v2', '--untracked-files=all', '-z']),
         ).files.filter((file) => file.index !== '?' || !file.path.endsWith('/'));
+        operation.evidence.worktreeClean = !files.length;
+        operation.evidence.targetHead = (
+          await git(
+            s.path,
+            [
+              'rev-parse',
+              '--verify',
+              '--quiet',
+              `${input.action === 'create-branch' ? input.base || 'HEAD' : input.branch}^{commit}`,
+            ],
+            { accept: [1] },
+          )
+        ).trim();
         if (files.length) {
           operation.evidence.stashAction = input.action;
           const before = (
@@ -428,12 +481,23 @@ export class GitService {
         update('switching');
         let switched = false;
         try {
-          await git(
-            s.path,
-            input.action === 'create-branch'
-              ? ['switch', '-c', input.branch!, input.base || 'HEAD']
-              : ['switch', '--', input.branch!],
-          );
+          try {
+            await git(
+              s.path,
+              input.action === 'create-branch'
+                ? ['switch', '-c', input.branch!, input.base || 'HEAD']
+                : ['switch', '--', input.branch!],
+            );
+          } catch (error) {
+            if (
+              input.branch === originalBranch ||
+              !operation.evidence.targetHead ||
+              (await git(s.path, ['branch', '--show-current'])).trim() !== input.branch ||
+              (await git(s.path, ['rev-parse', 'HEAD'])).trim() !== operation.evidence.targetHead
+            )
+              throw error;
+            operation.evidence.warning = `Switched to “${input.branch}”, but a Git hook reported an error.`;
+          }
           switched = true;
         } finally {
           if (stash) {
@@ -636,10 +700,31 @@ export class GitService {
           (await git(s.path, ['rev-parse', 'HEAD'])).trim() !== operation.commit
         )
           throw new Error('The active branch or commit changed. Publication stopped.');
-        update('pushing');
-        await this.hosting.network.run(() =>
-          git(s.path, ['push', '--', remote, `${operation.commit}:${branch}`], { timeout: 120000 }),
+        before.remoteBefore = await this.hosting.network.run(() =>
+          remoteCommit(s.path, remote, branch),
         );
+        delete before.pushRejected;
+        update('pushing');
+        try {
+          await this.hosting.network.run(() =>
+            git(s.path, ['push', '--porcelain', '--', remote, `${operation.commit}:${branch}`], {
+              timeout: 120000,
+              env: { LC_ALL: 'C' },
+            }),
+          );
+        } catch (error) {
+          before.pushRejected =
+            error instanceof ProcessError &&
+            error.stdout.split('\n').some((line) => {
+              const [flag, ref, status] = line.split('\t');
+              return (
+                flag === '!' &&
+                ref?.endsWith(`:${branch}`) &&
+                /^\[(?:remote )?rejected\]/.test(status || '')
+              );
+            });
+          throw error;
+        }
         const actual = (await git(s.path, ['ls-remote', '--', remote, branch]))
           .trim()
           .split(/\s/)[0];
@@ -648,21 +733,7 @@ export class GitService {
           throw new Error('The remote branch moved. Inspect it before creating the pull request.');
         }
         before.remoteCommit = actual;
-        const { selected } = await this.hosting.remotes(s);
-        if (
-          selected &&
-          (await git(s.path, ['remote', 'get-url', '--push', selected])).trim() === remote
-        ) {
-          const name = branch.slice('refs/heads/'.length);
-          // Pushing a pinned OID does not update branch tracking.
-          await git(s.path, ['update-ref', `refs/remotes/${selected}/${name}`, operation.commit]);
-          if (
-            !(
-              await git(s.path, ['config', '--get', `branch.${name}.remote`], { accept: [1] })
-            ).trim()
-          )
-            await git(s.path, ['branch', `--set-upstream-to=${selected}/${name}`, '--', name]);
-        }
+        await trackPush(s, remote, branch, operation.commit, this.hosting);
         update('pushed');
       }
       if (input.action === 'push') {
@@ -716,6 +787,7 @@ export class GitService {
       operation.error = error.message || 'Git operation failed.';
       if (operation.evidence.autoStash && !operation.evidence.changesRestored)
         operation.error += ` Local changes are saved in stash ${operation.evidence.autoStash}. Inspect the current branch and resolve conflicts before restoring with git stash apply --index ${operation.evidence.autoStash}.`;
+      operation.evidence.pendingPhase = operation.phase;
       operation.phase = operation.evidence.rolledBack
         ? 'failed'
         : [
@@ -731,6 +803,10 @@ export class GitService {
             ? 'needs-review'
             : 'failed';
       this.store.put('operations', operation);
+      if (operation.phase === 'uncertain') {
+        const result = await this.reconcile(s, operation);
+        if (result !== operation) return result;
+      }
       this.notify(operation);
       return operation;
     }

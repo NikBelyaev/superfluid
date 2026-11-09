@@ -44,6 +44,19 @@ export function repositoriesForAction(
   });
 }
 
+export function gitOperationToReview(
+  sessionId: string,
+  repositories: GitRepository[],
+  operations: Operation[],
+) {
+  return operations.find(
+    (op) =>
+      op.sessionId === sessionId &&
+      !['completed', 'failed', 'reviewed', 'preparing'].includes(op.phase) &&
+      repositories.some((r) => op.repositoryId === r.id || (!r.path && !op.repositoryId)),
+  );
+}
+
 export function gitActionProblem(
   action: Action,
   repositories: GitRepository[],
@@ -59,7 +72,7 @@ export function gitActionProblem(
         repositories.some((r) => op.repositoryId === r.id || (!r.path && !op.repositoryId)),
     )
   )
-    return 'Inspect the previous Git operation before continuing.';
+    return 'Review your last Git result to continue.';
   const values = repositories.map((r) => statuses[r.id]);
   const targets = repositoriesForAction(action, repositories, statuses);
   const dirty = values.some((status) => status.files.length > 0);
