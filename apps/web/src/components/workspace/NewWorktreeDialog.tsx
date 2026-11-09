@@ -28,6 +28,8 @@ export function NewWorktreeDialog() {
           );
           return;
         }
+        const { documents } = await import('~/state/editor/Documents');
+        await documents.saveSession(session.id, ['']);
         const created = await desktop.call('session.create', {
           sessionId: session.id,
           branch,
@@ -36,7 +38,7 @@ export function NewWorktreeDialog() {
         const app = useApp.getState(),
           project = app.projects.find((p) => p.id === session.projectId)!;
         await app.openProject(project);
-        useApp.getState().switchSession(created.id);
+        await useApp.getState().switchSession(created.id);
       }}
     >
       <p className="modal-description">

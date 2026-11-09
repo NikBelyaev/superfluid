@@ -1,6 +1,6 @@
 import { desktop } from '~/rpc/desktop';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { AlertCircle, Braces, Save } from 'lucide-react';
+import { AlertCircle, Braces } from 'lucide-react';
 import {
   documents,
   documentPath,
@@ -219,6 +219,10 @@ export default function Editor({
       documents.focused = bound.current;
       documents.focusedGroup = group;
     });
+    const blur = instance.onDidBlurEditorWidget(() => {
+      const d = bound.current;
+      if (d?.dirty) void documents.save(d).catch(useApp.getState().fail);
+    });
     return () => {
       remember();
       unregister();
@@ -231,6 +235,7 @@ export default function Editor({
       removeDefinitionLinks();
       removeSymbolActions();
       focus.dispose();
+      blur.dispose();
       instance.dispose();
       editor.current = null;
     };
@@ -344,18 +349,6 @@ export default function Editor({
           <span className="definition-readonly">
             {doc.path.endsWith('.pyi') ? 'Type stub · Read only' : 'Read only'}
           </span>
-        )}
-        {doc?.dirty && (
-          <>
-            <span className="unsaved">Unsaved</span>
-            <button
-              className="icon-button"
-              title="Save file (⌘S)"
-              onClick={() => void documents.save(doc).catch(useApp.getState().fail)}
-            >
-              <Save size={14} />
-            </button>
-          </>
         )}
       </div>
       {doc?.recovered && (

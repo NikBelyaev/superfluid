@@ -1,8 +1,29 @@
 import { expect } from 'playwright/test';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, realpath } from 'node:fs/promises';
+import { watch } from 'node:fs';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import { createElectronFixture } from './electronFixture';
+import { git } from '../apps/server/src/vcs/gitCommand';
+
+function savedText(directory: string, file: string, marker: string) {
+  const watcher = watch(directory);
+  const done = new Promise<string>((resolve, reject) => {
+    watcher.on('error', reject);
+    watcher.on('change', (_event, name) => {
+      if (name !== file) return;
+      void readFile(join(directory, file), 'utf8')
+        .then((text) => {
+          if (text.includes(marker)) {
+            watcher.close();
+            resolve(text);
+          }
+        })
+        .catch(reject);
+    });
+  });
+  return { done, [Symbol.dispose]: () => watcher.close() };
+}
 
 console.time('Electron editor');
 const fixture = await createElectronFixture();
@@ -10,6 +31,7 @@ const { project, prFixture, errors } = fixture;
 let failed = false;
 
 try {
+  await git(project, ['branch', 'autosave-check']);
   const page = await fixture.firstWindow();
   if (process.env.SF_EXECUTABLE) assert.ok(page.url().startsWith('superfluid://app/'));
   assert.deepEqual(
@@ -103,12 +125,58 @@ try {
   await expect(page.locator('.main-editor .view-lines')).toContainText('value = 1');
   await page.locator('.editor-host').first().click();
   await page.keyboard.press('Meta+ArrowDown');
+  using bomSave = savedText(project, 'bom.py', '# saved through Monaco');
   await page.keyboard.insertText('# saved through Monaco\r\n');
-  await page.keyboard.press('Meta+S');
-  await page.waitForTimeout(150);
-  const bom = await readFile(join(project, 'bom.py'), 'utf8');
+  const bom = await bomSave.done;
+  assert.ok(bom.includes('# saved through Monaco'));
   assert.ok(bom.startsWith('\ufeff'));
   assert.ok(bom.includes('\r\n'));
+  await page.keyboard.insertText('# kept after a save conflict\r\n');
+  await writeFile(join(project, 'bom.py'), '# external edit\r\n');
+  await page.getByRole('alert').filter({ hasText: 'changed on disk' }).waitFor();
+  assert.equal(await readFile(join(project, 'bom.py'), 'utf8'), '# external edit\r\n');
+  await writeFile(join(project, 'bom.py'), bom);
+  using conflictSave = savedText(project, 'bom.py', '# kept after a save conflict');
+  await page.keyboard.press('Meta+S');
+  assert.match(await conflictSave.done, /kept after a save conflict/);
+  const rootSession = await page.evaluate(
+    async (path) => {
+      const { projects } = await window.superfluid.call('bootstrap', {});
+      const project = projects.find((p) => p.path === path)!;
+      return (await window.superfluid.call('session.list', { projectId: project.id })).find(
+        (s) => s.path === path,
+      )!;
+    },
+    await realpath(project),
+  );
+  await page.evaluate(async (sessionId) => {
+    const doc = await window.superfluid.call('files.read', { sessionId, path: 'README.md' });
+    await window.superfluid.call('draft.put', {
+      sessionId,
+      path: doc.path,
+      hash: doc.hash,
+      text: doc.text + '\nRecovered from a closed tab.\n',
+      version: 1,
+    });
+  }, rootSession.id);
+  await page.getByRole('button', { name: 'Project repositories', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Switch branch', exact: true }).fill('autosave-check');
+  await page.getByRole('option', { name: 'autosave-check', exact: true }).click();
+  await page.getByRole('button', { name: 'Switch · 1', exact: true }).click();
+  await page
+    .getByRole('alert')
+    .filter({ hasText: 'Commit or discard local changes before switching branches.' })
+    .waitFor();
+  assert.equal((await git(project, ['branch', '--show-current'])).trim(), 'main');
+  assert.match(await readFile(join(project, 'README.md'), 'utf8'), /Recovered from a closed tab/);
+  assert.deepEqual(
+    await page.evaluate(
+      (sessionId) => window.superfluid.call('draft.list', { sessionId }),
+      rootSession.id,
+    ),
+    [],
+  );
+  await page.keyboard.press('Escape');
   await page.locator('.tree-row').filter({ hasText: 'main.py' }).click();
   await page.getByRole('tab', { name: 'main.py', exact: true }).focus();
   await page.keyboard.press('ArrowLeft');
@@ -132,6 +200,10 @@ try {
   await page.getByLabel('Start from').fill('main');
   await page.getByRole('button', { name: 'Create worktree', exact: true }).click();
   await page.locator('.worktree-chip.active').filter({ hasText: 'feature/parallel' }).waitFor();
+  const featureSession = await page.evaluate(async (projectId) => {
+    const sessions = await window.superfluid.call('session.list', { projectId });
+    return sessions.find((s) => s.branch === 'feature/parallel')!;
+  }, rootSession.projectId);
   await page.keyboard.press('Meta+Shift+P');
   await page.getByRole('button', { name: 'Open project files', exact: true }).click();
   await page.locator('.tree-row').filter({ hasText: 'main.py' }).click();
@@ -159,6 +231,7 @@ try {
       .then((t) => t.includes('feature unsaved')),
     false,
   );
+  assert.match(await readFile(join(featureSession.path, 'main.py'), 'utf8'), /feature unsaved/);
   await page.keyboard.press('Meta+S');
   await page.waitForTimeout(300);
   assert.match(await readFile(join(project, 'main.py'), 'utf8'), /main unsaved/);
@@ -215,11 +288,15 @@ try {
   await page.getByLabel('Name', { exact: true }).fill('Python smoke');
   await page.getByLabel('Action type').selectOption('python');
   await page.getByLabel('Python file', { exact: true }).fill('main.py');
+  await page.getByLabel('Keybinding', { exact: true }).press('Control+Alt+R');
   await page.screenshot({ path: 'test-results/action-dialog.png' });
   await page.getByRole('button', { name: 'Create action', exact: true }).click();
-  await page.getByRole('button', { name: 'Python smoke', exact: true }).click();
-  await page.waitForFunction(() =>
-    document.querySelector('[aria-label="Terminal output"]')?.textContent?.includes('42'),
+  await page.locator('.main-editor .editor-host').click();
+  await page.keyboard.press('Meta+ArrowDown');
+  await page.keyboard.insertText("\nprint('SAVED_BEFORE_ACTION')\n");
+  await page.keyboard.press('Control+Alt+R');
+  await expect(page.getByLabel('Terminal output', { exact: true })).toContainText(
+    'SAVED_BEFORE_ACTION',
   );
   await page.getByRole('tab', { name: 'Terminal', exact: true }).click();
   await page.waitForFunction(() =>

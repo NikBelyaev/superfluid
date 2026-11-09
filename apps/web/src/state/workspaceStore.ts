@@ -59,7 +59,8 @@ interface State {
   revision: number;
   bootstrap: () => Promise<void>;
   openProject: (p: Project) => Promise<void>;
-  switchSession: (id: string) => void;
+  closeProject: () => Promise<void>;
+  switchSession: (id: string) => Promise<void>;
   setView: (patch: Partial<ViewState>, id?: string) => void;
   openFile: (
     path: string,
@@ -77,6 +78,7 @@ interface State {
 
 const persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const repositoryReads = new Map<string, symbol>();
+let contextChange = 0;
 
 export const useApp = create<State>((set, get) => ({
   projects: [],
@@ -112,26 +114,63 @@ export const useApp = create<State>((set, get) => ({
     }
   },
   openProject: async (p) => {
+    const change = ++contextChange;
     set({ busy: 'Opening project…' });
     try {
+      if (get().projectId) {
+        const { documents } = await import('~/state/editor/Documents');
+        await documents.saveAll();
+      }
       const sessions = await desktop.call('session.list', { projectId: p.id });
+      if (change !== contextChange) return;
       const views = { ...get().views };
       const runIds = new Set(get().runs.map((r) => r.id));
       for (const s of sessions) views[s.id] = restoreView(views[s.id] ?? s.state, runIds);
       const selected = sessions.find((s) => s.available)?.id ?? sessions[0]?.id ?? null;
       set({ projectId: p.id, sessions, views, sessionId: selected, busy: null });
-      if (selected) get().switchSession(selected);
+      if (selected) await get().switchSession(selected);
     } catch (e) {
+      if (change !== contextChange) return;
       set({ busy: null });
       get().fail(e);
     }
   },
-  switchSession: (id) => {
+  closeProject: async () => {
+    const change = ++contextChange;
+    try {
+      const { documents } = await import('~/state/editor/Documents');
+      await documents.saveAll();
+      if (change === contextChange) set({ projectId: null, busy: null });
+    } catch (error) {
+      if (change === contextChange) get().fail(error);
+    }
+  },
+  switchSession: async (id) => {
     if (!get().sessions.some((s) => s.id === id)) return;
     performance.mark('superfluid:switch-start');
-    set({ sessionId: id, modal: null, palette: null, surfaceMenu: null, repositoryMenu: null });
-    void import('~/state/editor/Documents').then((d) => d.documents.activate(id)).catch(get().fail);
-    void get().refreshGit(id);
+    const change = ++contextChange;
+    const previous = get().sessionId;
+    try {
+      if (previous && previous !== id) {
+        const { documents } = await import('~/state/editor/Documents');
+        await documents.saveSession(previous, ['']);
+      }
+      if (change !== contextChange) return;
+      set({
+        sessionId: id,
+        modal: null,
+        palette: null,
+        surfaceMenu: null,
+        repositoryMenu: null,
+        busy: null,
+      });
+      void import('~/state/editor/Documents')
+        .then((d) => d.documents.activate(id))
+        .catch(get().fail);
+      void get().refreshGit(id);
+    } catch (error) {
+      if (change === contextChange) get().fail(error);
+    }
   },
   setView: (patch, id) => {
     const target = id ?? get().sessionId;

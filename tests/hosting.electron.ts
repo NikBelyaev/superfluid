@@ -38,6 +38,11 @@ try {
   await page.getByLabel('Start from').fill('main');
   await page.getByRole('button', { name: 'Create worktree', exact: true }).click();
   await page.locator('.worktree-chip.active').filter({ hasText: 'feature/parallel' }).waitFor();
+  const featureSession = await page.evaluate(async () => {
+    const { projects } = await window.superfluid.call('bootstrap', {});
+    const sessions = await window.superfluid.call('session.list', { projectId: projects[0].id });
+    return sessions.find((s) => s.branch === 'feature/parallel')!;
+  });
   await page.keyboard.press('Meta+Shift+P');
   await page.getByRole('button', { name: 'Open project files', exact: true }).click();
   await page.locator('.tree-row').filter({ hasText: 'main.py' }).click();
@@ -727,6 +732,10 @@ try {
   await page.keyboard.press('Meta+A');
   await page.keyboard.insertText('# newest edit must survive immediate quit\n');
   await fixture.reopen();
+  assert.equal(
+    await readFile(join(featureSession.path, 'main.py'), 'utf8'),
+    '# newest edit must survive immediate quit\n',
+  );
   const restored = await fixture.app.firstWindow();
   restored.on('pageerror', (error) => errors.push(error.message));
   await restored
@@ -743,7 +752,7 @@ try {
       ?.textContent?.replaceAll('\u00a0', ' ')
       .includes('newest edit must survive immediate quit'),
   );
-  await restored.getByText('Recovered unsaved changes.', { exact: false }).waitFor();
+  await expect(restored.locator('.recovery-banner')).toHaveCount(0);
   await restored.keyboard.insertText('# cursor restored');
   await restored.waitForFunction(() =>
     document
