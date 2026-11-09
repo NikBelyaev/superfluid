@@ -1,19 +1,29 @@
+.repository-field-caption {
+  padding: 0;
+  margin: 0 0 4px;
+}
+.repository-picker-caption {
+  padding: 8px var(--floating-content-inset) 0;
+  margin: 0;
+}
 .repository-chip-bar {
   position: relative;
+  padding: var(--sidebar-content-inset);
 }
 .repository-chip-field {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 48px;
-  padding: 8px var(--floating-content-inset);
-  border-radius: var(--floating-radius) var(--floating-radius) 0 0;
+  min-height: 32px;
+  padding: calc(var(--floating-content-inset) - var(--sidebar-content-inset));
+  border-radius: var(--control-radius);
   text-align: left;
   font-size: var(--text-xs);
 }
-.repository-chip-field:hover {
-  background: var(--sidebar);
+.repository-chip-bar:hover .repository-chip-field:not(:disabled),
+.repository-chip-bar:focus-within .repository-chip-field:not(:disabled) {
+  background: var(--accent);
 }
 .repository-chip-field > svg {
   flex: none;
@@ -126,6 +136,11 @@
   padding: var(--sidebar-content-inset);
   min-height: 0;
   overflow: auto;
+}
+.repository-select-separator {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--border);
 }
 .repository-select-list .repository-choice {
   padding: 6px 8px;

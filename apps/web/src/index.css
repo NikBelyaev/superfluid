@@ -81,6 +81,12 @@ select:focus-visible,
 .muted {
   color: var(--muted-foreground);
 }
+.text-caption {
+  color: var(--caption-foreground);
+  font-size: var(--text-2xs);
+  font-weight: 400;
+  line-height: 16px;
+}
 .positive {
   color: var(--success-foreground);
 }

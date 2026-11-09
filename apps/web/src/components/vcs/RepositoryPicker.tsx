@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { Fragment, useRef, useState } from 'react';
 import { Popover } from '@base-ui/react/popover';
 import { Check, ChevronDown, FolderGit2, GitBranch, Search, X } from 'lucide-react';
 import type { Session } from '@superfluid/contracts';
@@ -21,9 +21,10 @@ export function RepositoryPicker({ session, disabled }: { session: Session; disa
     useApp.getState().setView({ repositoryIds: next }, session.id);
     void useApp.getState().refreshRepositoryGit(session.id, next).catch(useApp.getState().fail);
   };
-  const filtered = repositories.filter((r) =>
-    `${r.path} ${r.branch}`.toLowerCase().includes(query.toLowerCase()),
-  );
+  const filtered = repositories
+    .filter((r) => `${r.path} ${r.branch}`.toLowerCase().includes(query.toLowerCase()))
+    .sort((a, b) => Number(ids.includes(b.id)) - Number(ids.includes(a.id)));
+  const firstUnselected = filtered.findIndex((r) => !ids.includes(r.id));
   return (
     <Popover.Root
       open={open}
@@ -48,6 +49,9 @@ export function RepositoryPicker({ session, disabled }: { session: Session; disa
             .catch(useApp.getState().fail);
       }}
     >
+      <div className="text-caption repository-field-caption repository-picker-caption">
+        Select repository
+      </div>
       <div className="repository-chip-bar" ref={anchor}>
         <Popover.Trigger
           className="repository-chip-field"
@@ -130,35 +134,39 @@ export function RepositoryPicker({ session, disabled }: { session: Session; disa
               </button>
             </div>
             <div className="repository-select-list">
-              {filtered.map((r) => (
-                <button
-                  type="button"
-                  className="repository-choice"
-                  role="checkbox"
-                  aria-label={`Select ${r.path || 'root'}`}
-                  aria-checked={ids.includes(r.id)}
-                  key={r.id}
-                  title={errors?.[r.id]}
-                  onClick={() =>
-                    choose(ids.includes(r.id) ? ids.filter((id) => id !== r.id) : [...ids, r.id])
-                  }
-                >
-                  <span className="repository-choice-label">
-                    <span>{r.path || name('')}</span>
-                    <small>
-                      <GitBranch size={12} />
-                      {errors?.[r.id] ? 'Git status unavailable' : r.branch}
-                    </small>
-                  </span>
-                  {statuses?.[r.id] ? (
-                    <DiffStat changes={statuses[r.id].changes} />
-                  ) : (
-                    <span className="muted">…</span>
+              {filtered.map((r, index) => (
+                <Fragment key={r.id}>
+                  {index > 0 && index === firstUnselected && (
+                    <div role="separator" className="repository-select-separator" />
                   )}
-                  <span className="repository-check">
-                    {ids.includes(r.id) && <Check size={14} />}
-                  </span>
-                </button>
+                  <button
+                    type="button"
+                    className="repository-choice"
+                    role="checkbox"
+                    aria-label={`Select ${r.path || 'root'}`}
+                    aria-checked={ids.includes(r.id)}
+                    title={errors?.[r.id] || r.path || session.path}
+                    onClick={() =>
+                      choose(ids.includes(r.id) ? ids.filter((id) => id !== r.id) : [...ids, r.id])
+                    }
+                  >
+                    <span className="repository-choice-label">
+                      <span>{name(r.path)}</span>
+                      <small>
+                        <GitBranch size={12} />
+                        {errors?.[r.id] ? 'Git status unavailable' : r.branch}
+                      </small>
+                    </span>
+                    {statuses?.[r.id] ? (
+                      <DiffStat changes={statuses[r.id].changes} />
+                    ) : (
+                      <span className="muted">…</span>
+                    )}
+                    <span className="repository-check">
+                      {ids.includes(r.id) && <Check size={14} />}
+                    </span>
+                  </button>
+                </Fragment>
               ))}
               {!filtered.length && <p className="field-hint">No matching repositories.</p>}
             </div>
