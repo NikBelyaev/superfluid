@@ -85,13 +85,7 @@ export function GitDialog({
         if ((action === 'pr' || action === 'publish') && !context)
           throw new Error(contextError || 'Wait for the hosting connection.');
         const { documents } = await import('~/state/editor/Documents');
-        const dirty = [...documents.items.values()].filter(
-          (d) => d.session.id === s.id && d.dirty && (!path || d.path.startsWith(path + '/')),
-        );
-        if (dirty.length)
-          throw new Error(
-            `Save ${dirty.length} unsaved file${dirty.length === 1 ? '' : 's'} before publishing.`,
-          );
+        await documents.saveSession(s.id, [path]);
         const op = await desktop.call('git.act', {
           sessionId: s.id,
           repositoryId,

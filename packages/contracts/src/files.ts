@@ -50,6 +50,7 @@ export const filesRequests = {
     requestId: id.optional(),
   }),
   'files.cancel': z.object({ sessionId: id, requestId: id }),
+  'draft.list': z.object({ sessionId: id }),
   'draft.put': z.object({
     sessionId: id,
     path,
@@ -69,6 +70,7 @@ export interface FileResults {
   'files.resolve': string;
   'files.search': { hits: SearchHit[]; truncated: boolean };
   'files.cancel': null;
+  'draft.list': string[];
   'draft.put': { version: number; updatedAt: number };
   'draft.drop': null;
 }

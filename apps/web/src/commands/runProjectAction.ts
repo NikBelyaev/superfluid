@@ -5,6 +5,8 @@ import type { TabGroup } from '~/state/workspaceView';
 
 export async function runAction(session: Session, action?: Action, group: TabGroup = 'bottom') {
   try {
+    const { documents } = await import('~/state/editor/Documents');
+    await documents.saveSession(session.id, ['']);
     const run = await desktop.call('terminal.run', {
       sessionId: session.id,
       ...(action ? { actionId: action.id } : { name: 'Terminal' }),
