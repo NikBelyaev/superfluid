@@ -22,6 +22,10 @@
   --color-sidebar: var(--sidebar);
   --color-diff-addition-foreground: var(--success-foreground);
   --color-diff-deletion-foreground: var(--error-foreground);
+  --color-git-added: light-dark(#16a994, #00cab1);
+  --color-git-modified: light-dark(#1ca1c7, #08c0ef);
+  --color-git-deleted: light-dark(#ff2e3f, #ff6762);
+  --color-git-renamed: light-dark(#d5a910, #ffd452);
 }
 
 /* Adapted from T3 Code (MIT), commit 337c5858c33bc7f8f6dfd391a2c279fa0f7e4d17. */

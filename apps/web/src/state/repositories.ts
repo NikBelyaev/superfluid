@@ -116,6 +116,22 @@ export function selectedRepositories(repositories: GitRepository[], ids: string[
   });
 }
 
+export function fileRepository(repositories: GitRepository[], path: string) {
+  if (path.startsWith('file://')) return;
+  let owner: GitRepository | undefined;
+  for (const repository of repositories)
+    if (
+      (!repository.path || path.startsWith(repository.path + '/')) &&
+      (!owner || repository.path.length > owner.path.length)
+    )
+      owner = repository;
+  return owner;
+}
+
+export function fileRepositoryIds(repositories: GitRepository[], paths: string[]) {
+  return [...new Set(paths.flatMap((path) => fileRepository(repositories, path)?.id ?? []))];
+}
+
 export function hasRepositoryChanges(
   repositories: GitRepository[],
   statuses: Record<string, GitStatus> = {},

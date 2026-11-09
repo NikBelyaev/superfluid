@@ -30,6 +30,7 @@ import { activeFile } from '~/state/workspaceView';
 import { moveFiles, renameFile } from '~/commands/files';
 import { treeGit } from './treeGit';
 import { TreeMenu } from './TreeMenu';
+import { fileLabelClassName } from '~/components/vcs/fileLabels';
 
 const collapsedItems: string[] = [];
 
@@ -564,12 +565,14 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
                     onClick={(event) => event.stopPropagation()}
                   />
                 ) : (
-                  <span className="file-label">{changes ? entry.path : entry.name}</span>
+                  <span className={`file-label ${fileLabelClassName(change)}`}>
+                    {changes ? entry.path : entry.name}
+                  </span>
                 )}
                 {!item.isRenaming() && (
                   <div className="tree-row-end">
                     {change && change !== 'ignored' && !entry.directory && (
-                      <span className="git-letter" title={change}>
+                      <span className={`git-letter ${fileLabelClassName(change)}`} title={change}>
                         {change === 'added'
                           ? 'A'
                           : change === 'conflict'
@@ -580,7 +583,7 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
                     {entry.directory &&
                       (git.directories.has(entry.path) || change === 'untracked') && (
                         <span
-                          className="tree-git-dot"
+                          className="tree-git-dot bg-git-modified"
                           role="img"
                           aria-label="Contains Git changes"
                         />

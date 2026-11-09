@@ -2,11 +2,14 @@ import { ArrowLeft, ArrowRight, X } from 'lucide-react';
 import { useLayoutEffect, useRef } from 'react';
 import type { Session } from '@superfluid/contracts';
 import { useApp } from '~/state/workspaceStore';
+import { useFileGitStatus } from '~/hooks/useFileGitStatus';
 import { removeLineageEntry } from './lineage';
 import { locationIcon } from './locationIcon';
+import { fileLabelClassName } from '~/components/vcs/fileLabels';
 
 export function LineageSection({ session }: { session: Session }) {
   const view = useApp((a) => a.views[session.id]);
+  const getGitStatus = useFileGitStatus(session.id);
   const current = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
     current.current?.scrollIntoView({ block: 'nearest' });
@@ -69,18 +72,27 @@ export function LineageSection({ session }: { session: Session }) {
         <div className="lineage-list">
           {view.history.map((item, index) => {
             const Icon = locationIcon(item);
+            const status = getGitStatus(item.path);
             return (
-              <div className="lineage-row" key={`${item.path}:${item.line}:${index}`}>
+              <div className="lineage-row group/lineage" key={`${item.path}:${item.line}:${index}`}>
                 <button
                   ref={view.historyIndex === index ? current : undefined}
-                  className={`island-row ${view.historyIndex === index ? 'current' : ''}`}
+                  className={`island-row font-normal group-hover/lineage:font-medium ${view.historyIndex === index ? 'current' : ''}`}
                   aria-current={view.historyIndex === index ? 'location' : undefined}
                   title={`${item.symbol ? `${item.symbol} — ` : ''}${item.path}:${item.line}`}
                   onClick={() => go(index)}
                 >
                   <Icon size={13} aria-hidden="true" />
-                  <span>{item.symbol ?? item.label}</span>
-                  <small>
+                  <span
+                    className={`tab-label ${fileLabelClassName(item.symbol ? undefined : status)}`}
+                    data-git-status={item.symbol ? undefined : status}
+                  >
+                    {item.symbol ?? item.label}
+                  </span>
+                  <small
+                    className={`tab-label min-w-0 max-w-[60%] truncate [font-weight:inherit] ${fileLabelClassName(item.symbol ? status : undefined, 'secondary')}`}
+                    data-git-status={item.symbol ? status : undefined}
+                  >
                     {item.symbol ? item.label : ''}:{item.line}
                   </small>
                 </button>
