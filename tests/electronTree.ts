@@ -354,6 +354,7 @@ try {
   await expect(entry('src/models/added.py')).toBeVisible();
   await entry('src/models/added.py').focus();
   await page.keyboard.press('End');
+  await expect(entry('main.py')).toBeFocused();
   await page.keyboard.press('ArrowUp');
   await expect(entry('src/models/model_159.py')).toBeFocused();
   await page
