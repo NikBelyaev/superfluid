@@ -7,7 +7,6 @@ import { ProjectActionDialog } from '~/components/scripts/ProjectActionDialog';
 import { NewWorktreeDialog } from '~/components/workspace/NewWorktreeDialog';
 import { GitDialog } from '~/components/vcs/GitDialog';
 import { CloneRepositoryDialog } from '~/components/projects/CloneRepositoryDialog';
-import { FileDialog } from '~/components/editor/FileDialog';
 import { TerminalNameDialog } from '~/components/terminal/TerminalNameDialog';
 import { GitReviewDialog } from '~/components/vcs/GitReviewDialog';
 import { InterpreterDialog } from '~/components/python/InterpreterDialog';
@@ -31,8 +30,6 @@ export default function DialogHost() {
     'git-review': 'Review Git operation',
     'terminal-name': 'Terminal name',
     clone: 'Clone repository',
-    'new-file': modal.kind === 'new-file' && modal.directory ? 'New folder' : 'New file',
-    rename: 'Rename or delete',
     interpreter: 'Python interpreter',
     launcher: 'Open a surface',
     'rename-symbol': 'Rename symbol',
@@ -88,10 +85,6 @@ export default function DialogHost() {
             <TerminalNameDialog id={modal.id} name={modal.name} />
           ) : modal.kind === 'clone' ? (
             <CloneRepositoryDialog />
-          ) : modal.kind === 'new-file' ? (
-            <FileDialog directory={modal.directory} parent={modal.parent} />
-          ) : modal.kind === 'rename' ? (
-            <FileDialog path={modal.path} />
           ) : modal.kind === 'interpreter' ? (
             <InterpreterDialog />
           ) : modal.kind === 'rename-symbol' ? (

@@ -43,6 +43,7 @@ export interface ViewState {
   tabs: Surface[];
   active: Surface | null;
   expanded: string[];
+  fileTreeScroll?: Partial<Record<'project' | 'changes', number>>;
   changes: boolean;
   surface: Surface | null;
   rightTabs: Surface[];

@@ -547,6 +547,7 @@ kbd {
   background: var(--background);
 }
 .project-tree {
+  container: project-files / inline-size;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -647,9 +648,23 @@ kbd {
   flex: none;
 }
 .file-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+}
+.tree-name-input {
+  width: 0;
+  min-width: 0;
+  flex: 1;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--ring);
+  border-radius: 3px;
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  outline: none;
 }
 .git-letter {
   font-size: var(--text-2xs);
@@ -658,6 +673,89 @@ kbd {
 }
 .git-letter.new {
   color: var(--success-foreground);
+}
+.tree-row[data-git-status='added'] .file-label,
+.tree-row[data-git-status='added'] .git-letter,
+.tree-row[data-git-status='untracked'] .file-label,
+.tree-row[data-git-status='untracked'] .git-letter {
+  color: light-dark(#16a994, #00cab1);
+}
+.tree-row[data-git-status='modified'] .file-label,
+.tree-row[data-git-status='modified'] .git-letter {
+  color: light-dark(#1ca1c7, #08c0ef);
+}
+.tree-row[data-git-status='deleted'] .file-label,
+.tree-row[data-git-status='conflict'] .file-label,
+.tree-row[data-git-status='deleted'] .git-letter,
+.tree-row[data-git-status='conflict'] .git-letter {
+  color: light-dark(#ff2e3f, #ff6762);
+}
+.tree-row[data-git-status='renamed'] .file-label,
+.tree-row[data-git-status='renamed'] .git-letter {
+  color: light-dark(#d5a910, #ffd452);
+}
+.tree-row[data-git-status='ignored'] .file-label {
+  color: var(--muted-foreground);
+}
+.tree-git-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: light-dark(#1ca1c7, #08c0ef);
+  opacity: 0.5;
+}
+.tree-row-end {
+  display: grid;
+  align-items: center;
+  justify-items: end;
+  flex: none;
+}
+.tree-row-end > * {
+  grid-area: 1 / 1;
+}
+.tree-row:hover .tree-row-end > .git-letter,
+.tree-row:hover .tree-row-end > .tree-git-dot {
+  opacity: 0;
+  pointer-events: none;
+}
+.tree-actions {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+}
+.tree-row:hover .tree-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.tree-action-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  flex: none;
+  border-radius: 4px;
+  color: var(--control-muted-foreground);
+}
+.tree-action-button:hover,
+.tree-action-button[aria-expanded='true'] {
+  background: var(--background);
+  color: var(--foreground);
+}
+@container project-files (width < 300px) {
+  .tree-inline-action {
+    display: none;
+  }
+}
+.tree-row[data-drop-target],
+.tree-root[data-drop-target] {
+  background: var(--accent);
+  outline: 1px solid var(--ring);
+  outline-offset: -1px;
 }
 .tree-empty {
   padding: 20px 16px;

@@ -286,7 +286,12 @@ export default function Editor({
         }
         editor.current.render();
       }
-      if (changed || revealed || ownerChanged) {
+      const active = document.activeElement;
+      const editingElsewhere =
+        active instanceof HTMLElement &&
+        active.matches('input, textarea, [contenteditable="true"]') &&
+        !host.current?.contains(active);
+      if ((changed || revealed || ownerChanged) && !editingElsewhere) {
         editor.current.focus();
         documents.focused = d;
         documents.focusedGroup = group;
