@@ -24,7 +24,7 @@ import {
   type Location,
 } from './workspaceView';
 import type { Modal } from './dialogs';
-import { repositorySummary } from './repositories';
+import { fileRepositoryIds, repositorySummary } from './repositories';
 import type { GitMenuPage, GitBatch } from '~/commands/gitBatch';
 import { sameSymbol, symbolAt, type DocumentSymbol } from '~/components/python/symbols';
 import { recordLocation } from '~/components/editor/lineage';
@@ -317,6 +317,18 @@ export const useApp = create<State>((set, get) => ({
       }
       get().setView({ ...next, ...trail }, s.id);
       if (source?.kind !== 'file') showSurface({ kind: 'file', path }, s.id, group);
+      const repositories = get().repositories[s.id] || [];
+      const known = new Set([
+        ...(view.repositoryIds || []),
+        ...fileRepositoryIds(
+          repositories,
+          [...view.tabs, ...view.rightTabs, ...view.bottomTabs].flatMap(surfacePaths),
+        ),
+      ]);
+      const missing = fileRepositoryIds(repositories, [path]).filter(
+        (id) => !known.has(id) || !get().repositoryGit[s.id]?.[id],
+      );
+      if (missing.length) void get().refreshRepositoryGit(s.id, missing);
       const location = trail.history[trail.historyIndex];
       if (record && location?.path === path && location.symbolKind === undefined)
         void resolveLocationSymbol(s.id, location);
@@ -411,7 +423,19 @@ export const useApp = create<State>((set, get) => ({
     if (!id) return;
     try {
       if (!get().repositories[id]) return await get().refreshRepositories(id);
-      await get().refreshRepositoryGit(id, get().views[id]?.repositoryIds || []);
+      const view = get().views[id];
+      const paths = view
+        ? [
+            ...[...view.tabs, ...view.rightTabs, ...view.bottomTabs].flatMap(surfacePaths),
+            ...view.history.map((item) => item.path),
+          ]
+        : [];
+      await get().refreshRepositoryGit(id, [
+        ...new Set([
+          ...(view?.repositoryIds || []),
+          ...fileRepositoryIds(get().repositories[id], paths),
+        ]),
+      ]);
     } catch (e) {
       get().fail(e);
     }

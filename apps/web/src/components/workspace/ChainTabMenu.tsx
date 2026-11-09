@@ -5,15 +5,18 @@ import { surfaceKey, type TabGroup } from '~/state/workspaceView';
 import type { FileSurface } from '~/state/fileChains';
 import { documentPath } from '~/state/editor/Documents';
 import { locationIcon } from '~/components/editor/locationIcon';
+import { fileLabelClassName } from '~/components/vcs/fileLabels';
 
 export function ChainTabMenu({
   sessionId,
   group,
   tab,
+  getGitStatus,
 }: {
   sessionId: string;
   group: TabGroup;
   tab: FileSurface;
+  getGitStatus: (path: string) => string | undefined;
 }) {
   const menu = useApp((state) => state.surfaceMenu);
   const history = useApp((state) => state.views[sessionId]?.history);
@@ -65,6 +68,7 @@ export function ChainTabMenu({
                   ) ?? entry);
               const Icon = locationIcon(item);
               const filename = documentPath(entry.path).split('/').at(-1);
+              const status = getGitStatus(entry.path);
               return (
                 <div className="chain-menu-row" role="none" key={index}>
                   <Menu.Item
@@ -79,8 +83,16 @@ export function ChainTabMenu({
                     }
                   >
                     <Icon size={13} aria-hidden="true" />
-                    <span>{item.symbol ?? filename}</span>
-                    <small>
+                    <span
+                      className={`tab-label ${fileLabelClassName(item.symbol ? undefined : status)}`}
+                      data-git-status={item.symbol ? undefined : status}
+                    >
+                      {item.symbol ?? filename}
+                    </span>
+                    <small
+                      className={`tab-label ${fileLabelClassName(item.symbol ? status : undefined, 'secondary')}`}
+                      data-git-status={item.symbol ? status : undefined}
+                    >
                       {item.symbol ? filename : ''}:{entry.line}
                     </small>
                   </Menu.Item>

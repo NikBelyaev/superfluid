@@ -674,35 +674,11 @@ kbd {
 .git-letter.new {
   color: var(--success-foreground);
 }
-.tree-row[data-git-status='added'] .file-label,
-.tree-row[data-git-status='added'] .git-letter,
-.tree-row[data-git-status='untracked'] .file-label,
-.tree-row[data-git-status='untracked'] .git-letter {
-  color: light-dark(#16a994, #00cab1);
-}
-.tree-row[data-git-status='modified'] .file-label,
-.tree-row[data-git-status='modified'] .git-letter {
-  color: light-dark(#1ca1c7, #08c0ef);
-}
-.tree-row[data-git-status='deleted'] .file-label,
-.tree-row[data-git-status='conflict'] .file-label,
-.tree-row[data-git-status='deleted'] .git-letter,
-.tree-row[data-git-status='conflict'] .git-letter {
-  color: light-dark(#ff2e3f, #ff6762);
-}
-.tree-row[data-git-status='renamed'] .file-label,
-.tree-row[data-git-status='renamed'] .git-letter {
-  color: light-dark(#d5a910, #ffd452);
-}
-.tree-row[data-git-status='ignored'] .file-label {
-  color: var(--muted-foreground);
-}
 .tree-git-dot {
   flex: none;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: light-dark(#1ca1c7, #08c0ef);
   opacity: 0.5;
 }
 .tree-row-end {
@@ -1393,10 +1369,6 @@ kbd {
 .lineage-row:hover .lineage-remove,
 .lineage-row:focus-within .lineage-remove {
   visibility: visible;
-}
-.lineage-row:hover small,
-.lineage-row:focus-within small {
-  display: none;
 }
 .lineage-remove:hover {
   color: var(--foreground);

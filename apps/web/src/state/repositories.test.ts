@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { GitStatus, Operation } from '@superfluid/contracts';
-import { gitActionProblem, repositoriesForAction } from './repositories';
+import { fileRepositoryIds, gitActionProblem, repositoriesForAction } from './repositories';
 
 const repository = { id: 'core', path: 'apps/core', branch: 'task/example' };
 const clean: GitStatus = {
@@ -19,6 +19,28 @@ const clean: GitStatus = {
   push: { ahead: 0, behind: 0 },
   prChanges: false,
 };
+
+test('file decorations include the owning repositories of navigation targets', () => {
+  const repositories = [
+    { ...repository, id: 'root', path: '' },
+    repository,
+    { ...repository, id: 'procs', path: 'apps/procs' },
+    { ...repository, id: 'nested', path: 'apps/procs/nested' },
+  ];
+  assert.deepEqual(
+    fileRepositoryIds(repositories, [
+      'apps/core/main.py',
+      'apps/procs/base_command.py',
+      'apps/procs/other.py',
+      'apps/procs/nested/model.py',
+      'README.md',
+      'file:///outside/source.py',
+    ]),
+    ['core', 'procs', 'nested', 'root'],
+  );
+  assert.deepEqual(fileRepositoryIds(repositories, ['apps/coreutils/main.py']), ['root']);
+  assert.deepEqual(fileRepositoryIds([repository], ['outside.py']), []);
+});
 
 test('Git actions follow dirty, unpushed and published states and block unresolved operations', () => {
   const group = [repository];

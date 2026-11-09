@@ -71,7 +71,7 @@ export function WorkspaceTab({
         data-tab-key={key}
         data-dragging={isDragging || undefined}
         data-cross-drop={(isOver && active?.data.current?.group !== group) || undefined}
-        className={`${group === 'main' ? 'editor-tab' : 'surface-tab'} ${selected ? 'active' : ''}`}
+        className={`${group === 'main' ? 'editor-tab' : 'surface-tab'} ${selected ? 'active' : ''} ${tab.kind === 'file' && tab.chain ? '' : 'group/file-link'}`}
         style={{
           transform: CSS.Translate.toString(transform),
           transition,

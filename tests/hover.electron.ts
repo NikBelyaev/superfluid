@@ -603,6 +603,8 @@ try {
     page.locator('.right-group').getByRole('textbox', { name: 'Editor content', exact: true }),
   ).toBeFocused();
   await expect(page.locator('.right-group .view-lines')).toContainText('return');
+  await page.locator('.titlebar-search').hover();
+  await expect(page.locator('.right-group .chain-last-link .tab-label')).toHaveCSS('opacity', '1');
   await page.getByRole('button', { name: 'Toggle right panel' }).click();
   await back();
   await expect(selected('main.py')).toHaveAttribute('aria-selected', 'true');
