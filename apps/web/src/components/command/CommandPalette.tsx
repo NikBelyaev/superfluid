@@ -24,7 +24,9 @@ function Commands({ session }: { session?: Session }) {
   const [index, setIndex] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const selected = useRef<HTMLButtonElement>(null);
-  useLayoutEffect(() => selected.current?.scrollIntoView({ block: 'nearest' }), [index]);
+  useLayoutEffect(() => {
+    selected.current?.scrollIntoView({ block: 'nearest' });
+  }, [index]);
   const commands = [
     { name: 'Find a file', run: () => useApp.setState({ palette: 'files' }) },
     { name: 'Search worktree', run: () => useApp.setState({ palette: 'search' }) },
