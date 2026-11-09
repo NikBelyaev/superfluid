@@ -2,6 +2,7 @@ import { BrowserWindow } from 'electron';
 
 export function createMainWindow(preloadPath: string, devUrl: string | undefined) {
   const window = new BrowserWindow({
+    show: process.env.SF_TEST !== '1' || process.env.SF_TEST_VERBOSE === '1',
     width: 1512,
     height: 980,
     minWidth: 900,

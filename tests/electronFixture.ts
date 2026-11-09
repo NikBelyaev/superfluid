@@ -1,4 +1,5 @@
 import { _electron as electron } from 'playwright';
+import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -265,6 +266,12 @@ export async function createElectronFixture() {
     errors,
     async firstWindow() {
       const page = await app.firstWindow();
+      const window = await app.browserWindow(page);
+      assert.equal(
+        await window.evaluate((window) => window.isVisible()),
+        process.env.SF_TEST_VERBOSE === '1',
+      );
+      await window.dispose();
       page.on('pageerror', (error) => errors.push(error.message));
       page.on('console', (message) => {
         if (message.type() === 'error') errors.push(message.text());
