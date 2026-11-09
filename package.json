@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node scripts/build.mjs --backend-only && node scripts/zoekt.mjs --test && tsx --test 'apps/**/*.test.ts' 'packages/**/*.test.ts' 'tests/*.test.ts'",
     "test:electron": "tsx tests/electron.ts && tsx tests/electronTree.ts && pnpm test:electron:search",
+    "test:electron-verbose": "SF_TEST_VERBOSE=1 pnpm test:electron",
     "test:electron:search": "tsx tests/search.electron.ts",
     "dist": "pnpm build && electron-builder --mac dir",
     "lint": "eslint .",
