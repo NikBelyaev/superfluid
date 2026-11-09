@@ -61,6 +61,7 @@ const capture = () => {
 capture();
 try {
   let page = await app.firstWindow();
+  await page.setViewportSize({ width: 1512, height: 980 });
   page.on('pageerror', (error) => errors.push(error.message));
   await page
     .getByRole('button', { name: new RegExp(basename(project)) })
@@ -272,13 +273,13 @@ try {
   await page.mouse.dblclick(handle.x + 8, handle.y + 8);
 
   await page.emulateMedia({ colorScheme: 'dark' });
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 800));
+  await page.setViewportSize({ width: 1280, height: 800 });
   await expect(page.getByRole('complementary', { name: 'Result preview' })).toBeVisible();
   await page.screenshot({ path: join(evidence, 'dark-1280.png') });
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(900, 700));
+  await page.setViewportSize({ width: 900, height: 700 });
   await expect(page.getByRole('complementary', { name: 'Result preview' })).toBeHidden();
   await page.screenshot({ path: join(evidence, 'compact-900.png') });
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1512, 980));
+  await page.setViewportSize({ width: 1512, height: 980 });
   await page.emulateMedia({ colorScheme: 'light' });
   await results().first().hover();
   await input().focus();
@@ -376,6 +377,7 @@ try {
   app = await launch();
   capture();
   page = await app.firstWindow();
+  await page.setViewportSize({ width: 1512, height: 980 });
   page.on('pageerror', (error) => errors.push(error.message));
   await page
     .getByRole('button', { name: new RegExp(basename(project)) })
