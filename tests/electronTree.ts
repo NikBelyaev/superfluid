@@ -200,6 +200,10 @@ try {
   await renameInput.press('Enter');
   await expect(entry('src/copy.py')).toHaveCount(0);
   await entry('src/renamed.py').waitFor();
+  await expect(page.getByRole('tree', { name: 'Project files' })).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
   await entry('src/renamed.py').focus();
   await page.keyboard.press('F2');
   await expect(renameInput).toHaveValue('renamed.py');
@@ -223,6 +227,10 @@ try {
   await folderInput.fill('generated.v2');
   await folderInput.press('Enter');
   await entry('src/generated.v2').waitFor();
+  await expect(page.getByRole('tree', { name: 'Project files' })).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
   await entry('src/generated.v2').focus();
   await page.keyboard.press('F2');
   await expect(folderInput).toBeFocused();
@@ -236,6 +244,10 @@ try {
   await folderInput.fill('generated');
   await folderInput.press('Enter');
   await entry('src/generated').waitFor();
+  await expect(page.getByRole('tree', { name: 'Project files' })).toHaveAttribute(
+    'aria-busy',
+    'false',
+  );
   for (const [name, end] of [
     ['.env', 4],
     ['README', 6],
