@@ -81,12 +81,6 @@ select:focus-visible,
 .muted {
   color: var(--muted-foreground);
 }
-.text-caption {
-  color: var(--caption-foreground);
-  font-size: var(--text-2xs);
-  font-weight: 400;
-  line-height: 16px;
-}
 .positive {
   color: var(--success-foreground);
 }
@@ -1466,47 +1460,6 @@ kbd {
   box-shadow: var(--shadow-popover);
   font-size: var(--text-detail);
   line-height: 20px;
-}
-.repository-choice {
-  display: flex;
-  width: 100%;
-  gap: 10px;
-  align-items: center;
-  padding: 7px 10px;
-  border-radius: var(--control-radius);
-  text-align: left;
-}
-.repository-choice:hover {
-  background: var(--sidebar);
-}
-.repository-choice-label {
-  min-width: 0;
-  flex: 1;
-}
-.repository-choice-label > span {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.repository-choice-label small {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--muted-foreground);
-  font-size: var(--text-xs);
-  line-height: 16px;
-  overflow-wrap: anywhere;
-}
-.repository-check {
-  display: inline-flex;
-  width: 16px;
-  height: 16px;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  color: var(--foreground);
 }
 .right-group {
   width: var(--right-width);
