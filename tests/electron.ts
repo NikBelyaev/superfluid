@@ -17,6 +17,8 @@ const executablePath = process.env.SF_EXECUTABLE || require('electron');
 
 const launchArgs = process.env.SF_EXECUTABLE ? [] : [resolve('.')];
 
+console.time('Electron smoke');
+
 const temp = await mkdtemp(join(tmpdir(), 'superfluid-electron-'));
 
 const project = join(temp, 'fluid-lab');
@@ -211,6 +213,8 @@ if (process.env.SF_EXECUTABLE) launchEnv.SF_DEV_URL = 'https://untrusted.invalid
 
 delete launchEnv.ELECTRON_RUN_AS_NODE;
 
+console.timeLog('Electron smoke', 'fixture ready');
+
 let app = await electron.launch({
   executablePath,
   args: [...launchArgs, '--project=' + project],
@@ -291,6 +295,7 @@ try {
   await page.getByRole('button', { name: 'Open project files', exact: true }).click();
   await page.locator('.tree-row').filter({ hasText: 'bom.py' }).waitFor();
   await page.screenshot({ path: 'test-results/editor-empty.png' });
+  console.timeLog('Electron smoke', 'workspace opened');
   const firstRequest = page.getByRole('button', { name: 'Open PR #15 in Root', exact: true });
   await firstRequest.waitFor();
   const requestSkeletons = await page.evaluateHandle<{ stop: () => boolean }>(`(() => {
@@ -530,6 +535,7 @@ try {
     ),
   );
   assert.equal(errors.length, 0, errors.join('\n'));
+  console.timeLog('Electron smoke', 'editor and worktree switching checked');
   await page.keyboard.press('Meta+P');
   await page.getByRole('dialog', { name: 'Search', exact: true }).waitFor();
   await page.screenshot({ path: 'test-results/file-palette.png' });
@@ -630,6 +636,7 @@ try {
   await gitlabSettings.getByRole('checkbox', { name: 'Git over HTTPS', exact: true }).check();
   await gitlabSettings.getByRole('row', { name: 'Code Download · Push', exact: true }).waitFor();
   await page.screenshot({ path: 'test-results/source-control-onboarding.png' });
+  console.timeLog('Electron smoke', 'GitHub and source control settings checked');
   await page.keyboard.press('Escape');
   await page.getByRole('dialog').waitFor({ state: 'detached' });
   await git(project, [
@@ -1102,6 +1109,8 @@ try {
   await page.locator('.pr-panel diffs-container').waitFor();
   await page.screenshot({ path: 'test-results/gitlab-code.png' });
 
+  console.timeLog('Electron smoke', 'GitLab request reads and writes checked');
+
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 800));
   await page.waitForFunction(() => {
     if (innerWidth !== 1280) return false;
@@ -1187,6 +1196,7 @@ try {
   await new Promise<void>((resolve) => preview!.close(() => resolve()));
   preview = undefined;
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1512, 980));
+  console.timeLog('Electron smoke', 'layout and native preview checked');
   await page
     .locator('.worktree-chip')
     .filter({ hasText: /^feature\/parallel$/ })
@@ -1236,6 +1246,7 @@ try {
     .getByRole('heading', { name: 'Enterprise MR edited in Superfluid', exact: true })
     .waitFor();
   await restored.screenshot({ path: 'test-results/gitlab-restored.png' });
+  console.timeLog('Electron smoke', 'unsaved buffers and requests restored');
   const nested = join(project, 'nested-github');
   await rename(await repository(), nested);
   await git(nested, [
@@ -1291,6 +1302,7 @@ try {
   assert.equal(gitlabAfter.title, 'Enterprise MR edited in Superfluid');
   assert.ok(!JSON.stringify(gitlabAfter).includes('Nested comment stays in GitHub.'));
   await restored.screenshot({ path: 'test-results/nested-github-request.png' });
+  console.timeLog('Electron smoke', 'nested repository isolation checked');
   await restored.getByRole('tab', { name: '!42', exact: true }).click();
   await restored
     .getByRole('heading', { name: 'Enterprise MR edited in Superfluid', exact: true })
@@ -1420,6 +1432,7 @@ try {
     .click();
   await islandRequest.waitFor();
   assert.equal(errors.length, 0, errors.join('\n'));
+  console.timeLog('Electron smoke', 'island requests checked');
   await closeApp();
   app = await electron.launch({ executablePath, args: launchArgs, env: launchEnv });
   captureNativeOutput();
@@ -1556,6 +1569,7 @@ try {
   assert.equal(JSON.parse(await readFile(ghState, 'utf8')).state, 'MERGED');
   assert.equal(JSON.parse(await readFile(glState, 'utf8')).mergeAttempts, 3);
   assert.equal(errors.length, 0, errors.join('\n'));
+  console.timeLog('Electron smoke', 'request polling and merges checked');
   console.log('Electron smoke passed:', project);
 } catch (e) {
   failed = true;
@@ -1573,5 +1587,6 @@ try {
     if (!failed) await closeApp();
   } finally {
     if (appProcess.exitCode === null) await app.evaluate(({ app }) => app.exit(1)).catch(() => {});
+    console.timeEnd('Electron smoke');
   }
 }

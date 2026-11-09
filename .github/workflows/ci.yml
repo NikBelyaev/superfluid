@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [checks, electron]
+        suite: ${{ fromJSON(inputs.ref && '["checks", "electron"]' || '["checks", "electron", "tree-search"]') }}
     env:
       electron_config_cache: ${{ github.workspace }}/node_modules/.cache/electron
     steps:
@@ -51,9 +51,9 @@ jobs:
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: node_modules/.cache/superfluid/zoekt
-          key: zoekt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/zoekt.mjs') }}-${{ matrix.suite }}-${{ hashFiles('packages/zoekt/go.mod', 'packages/zoekt/go.sum', 'packages/zoekt/*.go') }}
+          key: zoekt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/zoekt.mjs') }}-${{ matrix.suite == 'checks' && 'checks' || 'electron' }}-${{ hashFiles('packages/zoekt/go.mod', 'packages/zoekt/go.sum', 'packages/zoekt/*.go') }}
           restore-keys: |
-            zoekt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/zoekt.mjs') }}-${{ matrix.suite }}-
+            zoekt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/zoekt.mjs') }}-${{ matrix.suite == 'checks' && 'checks' || 'electron' }}-
             zoekt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/zoekt.mjs') }}-
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
@@ -69,11 +69,17 @@ jobs:
       - run: pnpm test
         if: matrix.suite == 'checks'
       - run: pnpm build
-        if: matrix.suite == 'electron'
+        if: matrix.suite != 'checks'
+      - run: pnpm test:electron:smoke
+        if: matrix.suite == 'electron' && !inputs.ref
       - run: pnpm test:electron
-        if: matrix.suite == 'electron'
+        if: matrix.suite == 'electron' && inputs.ref
+      - run: pnpm test:electron:tree
+        if: matrix.suite == 'tree-search'
+      - run: pnpm test:electron:search
+        if: matrix.suite == 'tree-search'
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        if: always() && matrix.suite == 'electron'
+        if: always() && matrix.suite != 'checks'
         with:
-          name: electron-results
+          name: electron-results-${{ matrix.suite }}
           path: test-results
