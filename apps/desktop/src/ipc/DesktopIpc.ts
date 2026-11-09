@@ -1,4 +1,12 @@
-import { BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
+import {
+  BrowserWindow,
+  clipboard,
+  ClipboardItem,
+  ipcMain,
+  shell,
+  type IpcMainInvokeEvent,
+} from 'electron';
+import { pathToFileURL } from 'node:url';
 import {
   requests,
   updateRequest,
@@ -56,6 +64,16 @@ export function installDesktopIpc(
     if (!path) throw new Error('The worktree root cannot be deleted here.');
     const file = await backend.call('files.resolve', { sessionId, path });
     await shell.trashItem(file);
+  });
+  ipcMain.handle('copy-file', async (event, sessionId: string, path: string) => {
+    trusted(event, window, devUrl);
+    if (!path) throw new Error('Choose a file or folder.');
+    const file = await backend.call('files.resolve', { sessionId, path });
+    await clipboard.write([
+      new ClipboardItem({
+        'electron application/osclipboard;format="public.file-url"': pathToFileURL(file).href,
+      }),
+    ]);
   });
   ipcMain.handle('external', async (event, url: string) => {
     trusted(event, window, devUrl);

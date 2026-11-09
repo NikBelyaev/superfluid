@@ -17,8 +17,6 @@ export type Modal =
   | { kind: 'git-review'; id: string }
   | { kind: 'terminal-name'; id: string; name: string }
   | { kind: 'clone' }
-  | { kind: 'new-file'; directory: boolean; parent: string }
-  | { kind: 'rename'; path: string }
   | { kind: 'interpreter' }
   | { kind: 'launcher'; group?: TabGroup; sessionId?: string }
   | { kind: 'rename-symbol'; edit?: any; source?: { path: string; line: number; column: number } }

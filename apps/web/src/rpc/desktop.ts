@@ -11,6 +11,7 @@ export const desktop: Bridge = {
   chooseDirectory: () => window.superfluid.chooseDirectory(),
   exportText: (text, name) => window.superfluid.exportText(text, name),
   trash: (sessionId, path) => window.superfluid.trash(sessionId, path),
+  copyFile: (sessionId, path) => window.superfluid.copyFile(sessionId, path),
   external: (url) => window.superfluid.external(url),
   browser: (input) => window.superfluid.browser(input),
 };

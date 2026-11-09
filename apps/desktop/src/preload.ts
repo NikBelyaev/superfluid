@@ -39,6 +39,7 @@ const bridge: Bridge = {
   chooseDirectory: () => ipcRenderer.invoke('choose-directory'),
   exportText: (text, name) => ipcRenderer.invoke('export-text', text, name),
   trash: (sessionId, path) => ipcRenderer.invoke('trash', sessionId, path),
+  copyFile: (sessionId, path) => ipcRenderer.invoke('copy-file', sessionId, path),
   external: (url) => ipcRenderer.invoke('external', url),
   browser: (input) => ipcRenderer.invoke('browser', input),
 };

@@ -286,8 +286,14 @@ export default function Editor({
         }
         editor.current.render();
       }
+      const active = document.activeElement;
+      const editingElsewhere =
+        active instanceof HTMLElement &&
+        active.matches('input, textarea, [contenteditable="true"]') &&
+        !host.current?.contains(active);
       if (
         (changed || revealed || ownerChanged) &&
+        !editingElsewhere &&
         !useApp.getState().palette &&
         !useApp.getState().modal
       ) {
