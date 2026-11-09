@@ -284,6 +284,17 @@ test('repository status, diffs, commits and pushes stay in their destination ses
     assert.equal(op.phase, 'completed', op.error ?? '');
     assert.equal(op.sessionId, f.s.id);
     assert.equal(op.repositoryId, f.firstId);
+    f.store.put('operations', { ...op, phase: 'committing', commit: undefined });
+    await f.service.status(f.s, f.firstId);
+    assert.equal(
+      f.store.get<import('@superfluid/contracts').Operation>('operations', op.id)?.phase,
+      'completed',
+    );
+    assert.equal(
+      f.store.get<import('@superfluid/contracts').Operation>('operations', 'unresolved-sibling')
+        ?.phase,
+      'uncertain',
+    );
     assert.equal((await git(f.root, ['rev-parse', 'HEAD'])).trim(), parent);
     assert.equal((await git(f.second, ['rev-parse', 'HEAD'])).trim(), sibling);
     assert.match((await f.service.inspect(f.s, op.id)).log, /First only/);
@@ -295,7 +306,7 @@ test('repository status, diffs, commits and pushes stay in their destination ses
     });
     await assert.rejects(
       () => f.act(f.repos.find((r) => !r.path)!.id, 'commit', { message: 'Root' }),
-      /previous Git operation/,
+      /Review the result to continue/,
     );
     await assert.rejects(
       () => f.service.status({ ...f.s, id: 'inactive-session' }, f.firstId),

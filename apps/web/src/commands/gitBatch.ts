@@ -8,9 +8,11 @@ import {
   hasRepositoryChanges,
   selectedRepositories,
   gitActionProblem,
+  gitOperationToReview,
   repositoriesForAction,
   repositoryBranch,
 } from '~/state/repositories';
+import { openGitReview } from '~/state/dialogs';
 
 export type GitAction = Input<'git.act'>['action'];
 export type GitMenuPage = 'repositories' | Exclude<GitAction, 'stash' | 'stash-apply'>;
@@ -36,6 +38,11 @@ export function openRepositoryMenu(
   );
   const statuses = app.repositoryGit[sessionId];
   const operations = app.operations.filter((op) => op.sessionId === sessionId);
+  const review = gitOperationToReview(sessionId, group, operations);
+  if (page !== 'repositories' && review) {
+    openGitReview(review);
+    return;
+  }
   const business = page !== 'repositories' && page !== 'create-branch' && page !== 'checkout';
   if (business) {
     const problem = gitActionProblem(page, group, statuses, operations);
@@ -125,7 +132,9 @@ export async function runGitBatch(
     try {
       const result = await desktop.call('git.act', entry.request);
       if (
-        (result.phase === 'completed' || !!result.evidence.autoStash) &&
+        (result.phase === 'completed' ||
+          !!result.evidence.autoStash ||
+          !!result.evidence.conflicts) &&
         ['create-branch', 'checkout', 'stash', 'stash-apply'].includes(action)
       ) {
         const { documents } = await import('~/state/editor/Documents');
@@ -154,6 +163,7 @@ export async function runGitBatch(
         if (useApp.getState().sessionId === sessionId)
           useApp.setState((s) => ({ revision: s.revision + 1 }));
       }
+      if (result.evidence.conflicts) showSurface({ kind: 'diff' }, sessionId);
       if (result.url)
         showSurface(
           { kind: 'pr', repositoryId: entry.request.repositoryId, ref: result.pullRequest },

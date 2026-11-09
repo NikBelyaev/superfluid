@@ -18,10 +18,12 @@ import { showSurface, useApp } from '~/state/workspaceStore';
 import { openRepositoryMenu, runGitBatch } from '~/commands/gitBatch';
 import {
   gitActionProblem,
+  gitOperationToReview,
   hasRepositoryChanges,
   repositoriesForAction,
   selectedRepositories,
 } from '~/state/repositories';
+import { openGitReview } from '~/state/dialogs';
 import { RepositoryMenu } from './RepositoryMenu';
 import { Tooltip } from '~/components/ui/Tooltip';
 import { DiffStat } from './DiffStat';
@@ -100,17 +102,15 @@ export function SourceControlSection({ session }: { session: Session }) {
   const worktree = useApp((s) => s.repositoryWorktrees[session.id]);
   const running = batch?.phase === 'running' || !!worktree;
   const failures = batch?.entries.filter((e) => e.error) || [];
-  const unresolved = operations.find(
-    (o) =>
-      o.sessionId === session.id &&
-      uncertain.includes(o.phase) &&
-      repositoryIds?.includes(o.repositoryId || repositories?.find((r) => !r.path)?.id || ''),
-  );
+  const warnings =
+    batch?.entries.flatMap((entry) =>
+      typeof entry.result?.evidence.warning === 'string' ? [entry.result.evidence.warning] : [],
+    ) || [];
+  const unresolved = gitOperationToReview(session.id, selected, operations);
   const review =
     failures
       .map((e) => operations.find((o) => o.id === e.request.operationId) || e.result)
-      .find((o) => o && uncertain.includes(o.phase)) ||
-    (!batch && unresolved);
+      .find((o) => o && uncertain.includes(o.phase)) || unresolved;
   const action =
     batch &&
     {
@@ -126,7 +126,7 @@ export function SourceControlSection({ session }: { session: Session }) {
   const label = worktree
     ? 'Creating worktree…'
     : review
-      ? 'Inspect Git result…'
+      ? 'Review Git result'
       : !batch
         ? primaryLabel
         : running
@@ -137,39 +137,45 @@ export function SourceControlSection({ session }: { session: Session }) {
               : `${action} completed`
             : `${action} · Retry`;
   const disabled = running || (!review && !failures.length && !!problems[primaryAction]);
-  const feedback = !running && (!!failures.length || review || problems[primaryAction]) && (
-    <div
-      className="repository-operation-feedback"
-      data-tone={failures.length || (review && review.error) ? 'error' : 'warning'}
-    >
-      <strong>
-        <CircleAlert size={16} aria-hidden />
-        {review
-          ? 'Review Git result'
-          : failures.length
-            ? `${action} failed`
-            : 'Git action unavailable'}
-      </strong>
-      {failures.length ? (
-        failures.map((entry) => (
-          <p key={entry.request.operationId}>
-            {batch!.entries.length > 1 && (
-              <b>
-                {repositories?.find((r) => r.id === entry.request.repositoryId)?.path || 'Root'}
-                :{' '}
-              </b>
-            )}
-            {entry.error}
+  const feedback = !running &&
+    (!!failures.length || warnings.length > 0 || review || problems[primaryAction]) && (
+      <div
+        className="repository-operation-feedback"
+        data-tone={failures.length || (review && review.error) ? 'error' : 'warning'}
+      >
+        <strong>
+          <CircleAlert size={16} aria-hidden />
+          {review
+            ? 'Review Git result'
+            : failures.length
+              ? `${action} failed`
+              : warnings.length
+                ? `${action} completed with a warning`
+                : 'Git action unavailable'}
+        </strong>
+        {review ? (
+          <p>
+            We couldn’t confirm how your last Git action finished. Review the result to continue.
           </p>
-        ))
-      ) : (
-        <p>
-          {(review && (review.error || 'Inspect the previous Git result before continuing.')) ||
-            problems[primaryAction]}
-        </p>
-      )}
-    </div>
-  );
+        ) : failures.length ? (
+          failures.map((entry) => (
+            <p key={entry.request.operationId}>
+              {batch!.entries.length > 1 && (
+                <b>
+                  {repositories?.find((r) => r.id === entry.request.repositoryId)?.path || 'Root'}
+                  :{' '}
+                </b>
+              )}
+              {entry.error}
+            </p>
+          ))
+        ) : warnings.length ? (
+          warnings.map((warning, index) => <p key={index}>{warning}</p>)
+        ) : (
+          <p>{problems[primaryAction]}</p>
+        )}
+      </div>
+    );
   return (
     <div className="island-section">
       {repositories?.length ? (
@@ -199,7 +205,7 @@ export function SourceControlSection({ session }: { session: Session }) {
             aria-disabled={disabled}
             onClick={() => {
               if (disabled) return;
-              if (review) useApp.setState({ modal: { kind: 'git-review', id: review.id } });
+              if (review) openGitReview(review);
               else if (failures.length) {
                 const reopen = failures.some(
                   (e) =>
@@ -218,7 +224,7 @@ export function SourceControlSection({ session }: { session: Session }) {
           >
             {running ? (
               <LoaderCircle size={14} className="repository-spinner" />
-            ) : review || failures.length ? (
+            ) : review || failures.length || warnings.length ? (
               <CircleAlert size={14} />
             ) : batch?.phase === 'completed' ? (
               <Check size={14} />

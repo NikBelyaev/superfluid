@@ -80,7 +80,7 @@ export default function DialogHost() {
               repositoryId={modal.repositoryId}
             />
           ) : modal.kind === 'git-review' ? (
-            <GitReviewDialog id={modal.id} />
+            <GitReviewDialog key={modal.id} id={modal.id} sessionId={modal.sessionId} />
           ) : modal.kind === 'terminal-name' ? (
             <TerminalNameDialog id={modal.id} name={modal.name} />
           ) : modal.kind === 'clone' ? (

@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { GitStatus, Operation } from '@superfluid/contracts';
-import { fileRepositoryIds, gitActionProblem, repositoriesForAction } from './repositories';
+import {
+  fileRepositoryIds,
+  gitActionProblem,
+  gitOperationToReview,
+  repositoriesForAction,
+} from './repositories';
 
 const repository = { id: 'core', path: 'apps/core', branch: 'task/example' };
 const clean: GitStatus = {
@@ -66,6 +71,19 @@ test('Git actions follow dirty, unpushed and published states and block unresolv
     url: 'https://example.test/1',
     evidence: { branch: 'refs/heads/task/example' },
   };
+  const operations = [
+    { ...operation, id: 'other-session', sessionId: 'other' },
+    { ...operation, id: 'other-repository', repositoryId: 'other' },
+    { ...operation, id: 'reviewed', phase: 'reviewed' },
+    operation,
+    { ...operation, id: 'new-failed-attempt', phase: 'failed' },
+  ];
+  assert.equal(gitOperationToReview('session', [repository], operations), operation);
+  assert.equal(gitOperationToReview('session', [], operations), undefined);
+  const legacy = { ...operation, repositoryId: undefined };
+  assert.equal(gitOperationToReview('session', [repository], [legacy]), undefined);
+  assert.equal(gitOperationToReview('session', [{ ...repository, path: '' }], [legacy]), legacy);
+
   assert.ok(gitActionProblem('pr', group, { core: published }, [operation]));
   assert.ok(gitActionProblem('publish', group, { core: published }, [operation]));
   assert.equal(

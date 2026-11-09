@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import type { Operation } from '@superfluid/contracts';
 import { mkdir, writeFile, readFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { within } from '../files/paths';
@@ -7,7 +8,7 @@ import { Store } from '../persistence/Store';
 import { GitService, parseStatus } from './GitService';
 import { git } from './gitCommand';
 import { HostingService } from '../hosting/HostingService';
-import { githubRequest } from '../../../../tests/hostingFixtures';
+import { githubRequest, gitlabRequest } from '../../../../tests/hostingFixtures';
 import { temp, session, repository } from '../../../../tests/fixtures';
 
 test('porcelain parsing preserves whitespace and rename paths', () => {
@@ -159,7 +160,11 @@ test('failed checkout restores local changes on the original branch', async () =
       action: 'checkout',
       branch: 'missing',
     });
+    assert.equal(result.phase, 'failed');
     assert.ok(result.error);
+    assert.match(result.error, /“missing”/);
+    assert.match(result.error, /“main”/);
+    assert.doesNotMatch(result.error, /fatal:/);
     assert.equal((await git(root, ['branch', '--show-current'])).trim(), 'main');
     assert.equal(await git(root, ['status', '--porcelain=v2', '-z']), status);
     assert.equal(await readFile(join(root, 'main.py'), 'utf8'), 'unstaged\n');
@@ -167,6 +172,153 @@ test('failed checkout restores local changes on the original branch', async () =
     assert.equal(await git(root, ['stash', 'list']), '');
   } finally {
     store.close();
+  }
+});
+
+test('checkout refusals and failing post-checkout hooks have known results', async () => {
+  for (const kind of ['missing', 'existing', 'occupied', 'hook'] as const) {
+    for (const dirty of [false, true]) {
+      const root = await repository(),
+        store = new Store(await temp()),
+        service = new GitService(store, () => {}),
+        s = session(root);
+      try {
+        if (kind === 'occupied') await git(root, ['worktree', 'add', '-b', 'target', await temp()]);
+        if (kind === 'hook') {
+          await git(root, ['branch', 'target']);
+          await writeFile(join(root, '.git/hooks/post-checkout'), '#!/bin/sh\nexit 1\n', {
+            mode: 0o755,
+          });
+        }
+        if (dirty) await writeFile(join(root, 'main.py'), 'local changes\n');
+        const result = await service.act(s, {
+          sessionId: s.id,
+          operationId: 'checkout',
+          action: kind === 'existing' ? 'create-branch' : 'checkout',
+          branch: kind === 'existing' ? 'main' : 'target',
+        });
+        assert.equal(result.phase, kind === 'hook' ? 'completed' : 'failed', kind);
+        assert.equal(
+          (await git(root, ['branch', '--show-current'])).trim(),
+          kind === 'hook' ? 'target' : 'main',
+        );
+        if (kind === 'hook') assert.match(String(result.evidence.warning), /hook/i);
+        assert.equal(
+          await readFile(join(root, 'main.py'), 'utf8'),
+          dirty ? 'local changes\n' : 'print("initial")\n',
+        );
+        assert.equal(await git(root, ['stash', 'list']), '');
+        const next = await service.act(s, {
+          sessionId: s.id,
+          operationId: 'next',
+          action: 'commit',
+          message: 'Save changes',
+          allChanges: true,
+        });
+        assert.equal(next.phase, 'completed', next.error ?? '');
+      } finally {
+        store.close();
+      }
+    }
+  }
+});
+
+test('rejected commits and pushes do not require review and lost push acknowledgments are verified', async () => {
+  for (const kind of [
+    'commit-hook',
+    'push-hook',
+    'non-fast-forward',
+    'lost-push-ack',
+    'changed-remote',
+  ] as const) {
+    const root = await repository(),
+      remote = await temp(),
+      store = new Store(await temp()),
+      service = new GitService(store, () => {}),
+      s = session(root);
+    try {
+      await git(remote, ['init', '--bare']);
+      await git(root, ['remote', 'add', 'origin', remote]);
+      await git(root, ['push', 'origin', 'main']);
+      const remoteHead = (await git(remote, ['rev-parse', 'main'])).trim();
+      await writeFile(join(root, 'main.py'), 'local changes\n');
+      await git(root, ['add', 'main.py']);
+      if (kind === 'commit-hook')
+        await writeFile(join(root, '.git/hooks/pre-commit'), '#!/bin/sh\nexit 1\n', {
+          mode: 0o755,
+        });
+      else {
+        await git(root, ['commit', '-m', 'Local changes']);
+        if (kind === 'push-hook')
+          await writeFile(join(remote, 'hooks/pre-receive'), '#!/bin/sh\nexit 1\n', {
+            mode: 0o755,
+          });
+        else if (kind === 'lost-push-ack') {
+          await writeFile(
+            join(root, '.git/hooks/pre-push'),
+            '#!/bin/sh\ngit -c core.hooksPath=/dev/null push origin main\nexit 1\n',
+            { mode: 0o755 },
+          );
+        } else {
+          await git(remote, ['config', 'user.name', 'Test']);
+          await git(remote, ['config', 'user.email', 'test@example.invalid']);
+          const tree = (await git(remote, ['rev-parse', 'main^{tree}'])).trim();
+          const moved = (
+            await git(remote, ['commit-tree', tree, '-p', remoteHead, '-m', 'Other change'])
+          ).trim();
+          if (kind === 'changed-remote') {
+            await git(root, ['fetch', remote, `${moved}:refs/heads/remote-change`]);
+            await git(root, ['config', 'superfluid-test.remote', remote]);
+            await writeFile(
+              join(root, '.git/hooks/pre-push'),
+              '#!/bin/sh\ngit --git-dir="$(git config superfluid-test.remote)" update-ref refs/heads/main "$(git rev-parse remote-change)"\nexit 1\n',
+              { mode: 0o755 },
+            );
+          } else await git(remote, ['update-ref', 'refs/heads/main', moved]);
+        }
+      }
+      const head = await git(root, ['rev-parse', 'HEAD']);
+      const remoteBefore = await git(remote, ['rev-parse', 'main']);
+      const request = {
+        sessionId: s.id,
+        operationId: 'rejected',
+        action: kind === 'commit-hook' ? ('commit' as const) : ('push' as const),
+        message: 'Save changes',
+      };
+      const result = await service.act(s, request);
+      assert.equal(
+        result.phase,
+        kind === 'lost-push-ack'
+          ? 'completed'
+          : kind === 'changed-remote'
+            ? 'needs-review'
+            : 'failed',
+        result.error ?? '',
+      );
+      assert.equal(await git(root, ['rev-parse', 'HEAD']), head);
+      assert.equal(
+        await git(remote, ['rev-parse', 'main']),
+        kind === 'lost-push-ack'
+          ? head
+          : kind === 'changed-remote'
+            ? await git(root, ['rev-parse', 'remote-change'])
+            : remoteBefore,
+      );
+      assert.equal(await readFile(join(root, 'main.py'), 'utf8'), 'local changes\n');
+      if (kind === 'lost-push-ack') assert.equal((await service.status(s)).upstream, 'origin/main');
+      if (kind === 'changed-remote')
+        await assert.rejects(
+          () => service.act(s, { ...request, operationId: 'next' }),
+          /Review the result/,
+        );
+      else
+        assert.equal(
+          (await service.act(s, { ...request, operationId: 'next' })).phase,
+          kind === 'lost-push-ack' ? 'completed' : 'failed',
+        );
+    } finally {
+      store.close();
+    }
   }
 });
 
@@ -270,7 +422,7 @@ test('branch conflicts roll back staged, unstaged and untracked changes without 
         if (action === 'create-branch')
           assert.equal(await git(root, ['branch', '--list', 'task']), '');
         const repeated = await service.act(s, request);
-        assert.equal(repeated.error, result.error);
+        assert.equal(repeated.error, result.error ?? '');
         assert.equal(repeated.evidence.autoStash, result.evidence.autoStash);
         const next = await service.act(s, {
           sessionId: s.id,
@@ -680,10 +832,24 @@ test('stash preserves staged and new files, pins restoration, and retains recove
     await writeFile(join(root, 'main.py'), 'conflicting base\n');
     await git(root, ['commit', '-am', 'Conflicting base']);
     const conflict = await service.act(s, { ...restore, operationId: 'apply-conflict' });
-    assert.equal(conflict.phase, 'uncertain');
+    assert.equal(conflict.phase, 'failed');
     assert.equal(await readFile(join(root, 'main.py'), 'utf8'), 'conflicting base\n');
     assert.match((await service.inspect(s, conflict.id)).log, new RegExp(oid));
     assert.ok((await git(root, ['stash', 'list', '--format=%H'])).includes(oid));
+    await writeFile(join(root, 'main.py'), 'unstaged stash\n');
+    await git(root, ['stash', 'push']);
+    const unstaged = (await git(root, ['rev-parse', 'refs/stash'])).trim();
+    await writeFile(join(root, 'main.py'), 'another base\n');
+    await git(root, ['commit', '-am', 'Another base']);
+    const unmerged = await service.act(s, {
+      ...restore,
+      operationId: 'apply-unmerged',
+      stash: unstaged,
+    });
+    assert.equal(unmerged.phase, 'failed');
+    assert.match(unmerged.error || '', /Resolve.*conflicts/);
+    assert.ok(await git(root, ['ls-files', '--unmerged']));
+    assert.ok((await git(root, ['stash', 'list', '--format=%H'])).includes(unstaged!));
   } finally {
     store.close();
   }
@@ -704,12 +870,67 @@ test('an uncertain Git result blocks a fresh operation ID until explicitly revie
           action: 'commit',
           message: 'Duplicate',
         }),
-      /previous Git operation/,
+      /Review the result to continue/,
     );
     assert.equal(service.acknowledge(s, 'unknown').phase, 'reviewed');
     assert.equal(store.get<any>('operations', 'unknown').evidence.previousPhase, 'uncertain');
   } finally {
     store.close();
+  }
+});
+
+test('interrupted Git actions recover their persisted result without repeating the mutation', async () => {
+  for (const action of ['commit', 'checkout', 'stash', 'push'] as const) {
+    const root = await repository(),
+      store = new Store(await temp()),
+      s = session(root);
+    const interrupted: Operation[] = [];
+    const pending = {
+      commit: 'committing',
+      checkout: 'switching',
+      stash: 'stashing',
+      push: 'pushing',
+    }[action];
+    const service = new GitService(store, (operation) => {
+      if (
+        operation.phase === pending ||
+        operation.phase === 'committed' ||
+        operation.phase === 'pushed'
+      )
+        interrupted.push(structuredClone(operation));
+    });
+    try {
+      await git(root, ['branch', 'task']);
+      if (action === 'commit' || action === 'stash')
+        await writeFile(join(root, 'main.py'), 'saved changes\n');
+      if (action === 'push') {
+        const remote = await temp();
+        await git(remote, ['init', '--bare']);
+        await git(root, ['remote', 'add', 'origin', remote]);
+      }
+      const result = await service.act(s, {
+        sessionId: s.id,
+        operationId: 'interrupted',
+        action,
+        branch: action === 'checkout' ? 'task' : undefined,
+        message: 'Save changes',
+        allChanges: true,
+      });
+      assert.equal(result.phase, 'completed', result.error ?? '');
+      assert.ok(interrupted.length);
+      const head = await git(root, ['rev-parse', 'HEAD']);
+      const stashes = await git(root, ['stash', 'list', '--format=%H']);
+      for (const snapshot of interrupted) {
+        store.put('operations', snapshot);
+        const restarted = new GitService(store, () => {});
+        await Promise.all([restarted.recover(s), restarted.recover(s)]);
+        assert.equal(store.get<Operation>('operations', result.id)?.phase, 'completed', action);
+        assert.equal(await git(root, ['rev-parse', 'HEAD']), head);
+        assert.equal(await git(root, ['stash', 'list', '--format=%H']), stashes);
+      }
+    } finally {
+      store.close();
+    }
   }
 });
 
@@ -733,13 +954,23 @@ test('hosting preflight stops before commit and uncertain creation preserves its
     },
   });
   let authenticated = false;
+  let readUnavailable = true;
+  let creates = 0;
   const hosting = new HostingService(store, async (_file, args) => {
     if (!authenticated) throw new Error('Sign in to GitLab.');
     if (args[0] === 'repo') return '{"default_branch":"main","id":11}';
     if (args[1] === 'list') return '[]';
-    if (args[1] === 'create')
+    if (args[1] === 'create') {
+      creates++;
       return 'https://gitlab.example.test/platform/editor/-/merge_requests/42';
-    throw new Error('Connection lost after creation.');
+    }
+    if (readUnavailable) throw new Error('Connection lost after creation.');
+    return JSON.stringify({
+      ...gitlabRequest,
+      source_branch: 'main',
+      target_branch: 'main',
+      sha: (await git(root, ['rev-parse', 'HEAD'])).trim(),
+    });
   });
   try {
     const service = new GitService(store, () => {}, hosting);
@@ -780,6 +1011,10 @@ test('hosting preflight stops before commit and uncertain creation preserves its
     assert.equal(uncertain.phase, 'uncertain');
     assert.equal(uncertain.pullRequest?.number, 42);
     assert.equal(uncertain.url, 'https://gitlab.example.test/platform/editor/-/merge_requests/42');
+    readUnavailable = false;
+    await service.recover(session(root));
+    assert.equal(store.get<Operation>('operations', uncertain.id)?.phase, 'completed');
+    assert.equal(creates, 1);
   } finally {
     store.close();
   }
