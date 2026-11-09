@@ -13,11 +13,15 @@ const evidence = resolve('test-results/hover');
 await mkdir(evidence, { recursive: true });
 await writeFile(
   join(project, 'models.py'),
-  'class Store(dict[str, int]):\n    def __init__(self, get_response: object | None = None): pass\n    def count(self) -> int:\n        """Count the items in this store."""\n        return 42\n',
+  'class Store(dict[str, int]):\n    def __init__(self, get_response: object | None = None): pass\n    @staticmethod\n    def count() -> int:\n        """Count the items in this store.\n\n        Includes all stored items.\n\n        Returns the current count.\n        """\n        return 42\n',
 );
 await writeFile(
   join(project, 'main.py'),
-  'from models import Store\nimport base64\n\nstore = Store()\nstore.count()\nbase64.decodebytes(b"")\n',
+  'from models import Store; Store.count\nimport base64\n\nstore = Store()\nstore.count()\nbase64.decodebytes(b"")\nmissing_symbol\nfrom models import Store as Inventory\nalias_store = Inventory()\nflag = 1\nflag = 2\nprint(flag)\n',
+);
+await writeFile(
+  join(project, 'attributes.py'),
+  'class NestedAttributeValueFromObjectGetter:\n    def __init__(self):\n        self.attribute_path = self.get_attribute_path()\n    def reset(self):\n        self.attribute_path = 2\n    def read(self):\n        return self.attribute_path\n',
 );
 const env = Object.fromEntries(
   Object.entries({ ...process.env, SF_DATA_DIR: join(data, 'data'), SF_TEST: '1' }).filter(
@@ -54,13 +58,25 @@ try {
     await page.locator(`${surface} .editor-host`).click();
     await page.keyboard.press('Meta+ArrowUp');
     for (let i = 0; i < line; i++) await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Control+A');
     for (let i = 0; i < column; i++) await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Meta+K');
     await page.keyboard.press('Meta+I');
+    await expect(hover.locator('.monaco-tokenized-source').first()).toBeVisible();
   };
-  await showSymbol(4, 8);
-  await expect(hover).toContainText('Count the items');
-  await page.keyboard.press('Escape');
+  const visit = async (name: string, target = page) => {
+    await target
+      .getByRole('button', { name: 'Navigation chain from main.py', exact: true })
+      .click();
+    await target
+      .getByRole('menuitem', { name: new RegExp(name.replaceAll('.', '\\.') + '\\s*:') })
+      .first()
+      .click();
+    await expect(target.getByRole('tab', { name, exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  };
   const symbolPoint = (surface = '.main-editor', text = 'count', lineText = 'store.count()') =>
     page
       .locator(`${surface} .view-line`)
@@ -78,6 +94,246 @@ try {
         }
         throw new Error('Symbol token was not rendered');
       }, text);
+  await showSymbol(4, 8);
+  await expect(hover).toContainText('Count the items');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Shift+F10');
+  const contextMenu = page.locator('.monaco-menu-container:visible');
+  const activateMenuAction = async (name: string) => {
+    const item = contextMenu.getByRole('menuitem', { name, exact: true });
+    await item.hover();
+    await item.press('Enter');
+  };
+  await expect(contextMenu).toBeVisible();
+  await expect(contextMenu.locator('[data-symbol-action]')).toHaveCount(3);
+  await expect(
+    contextMenu.getByRole('menuitem', { name: 'Copy reference', exact: true }),
+  ).toBeVisible();
+  await expect(contextMenu.getByRole('menuitem', { name: 'Rename', exact: true })).toHaveCount(0);
+  await expect(
+    contextMenu.getByRole('menuitem', { name: 'Delete definition', exact: true }),
+  ).toHaveCount(0);
+  await page.screenshot({ path: join(evidence, 'context-menu-usage-light.png') });
+  await page.keyboard.press('Escape');
+  await showSymbol(4, 8);
+  const action = (name: string) => hover.getByRole('link', { name, exact: true });
+  await expect(action('Go to definition')).toBeVisible();
+  await expect(action('Rename')).toHaveCount(0);
+  await expect(action('Search')).toBeVisible();
+  await expect(action('Copy reference')).toBeVisible();
+  await expect(action('Delete definition')).toHaveCount(0);
+  await expect(hover).toHaveClass(/symbol-actions-above/);
+  await page.screenshot({ path: join(evidence, 'actions-usage.png') });
+  await page.keyboard.press('Escape');
+  await showSymbol(0, 34);
+  await expect(action('Go to definition')).toBeVisible();
+  await expect(hover).toHaveClass(/symbol-actions-above/);
+  await page.screenshot({ path: join(evidence, 'actions-below-symbol.png') });
+  await page.keyboard.press('Escape');
+  await showSymbol(4, 8);
+  await page.evaluate(`Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+    writeText: async text => { document.documentElement.dataset.copiedReference = text; }
+  } })`);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Control+E');
+  await page.keyboard.press('Meta+Shift+ArrowLeft');
+  const copyPoint = await symbolPoint();
+  await page.mouse.click(copyPoint.x, copyPoint.y, { button: 'right' });
+  await activateMenuAction('Copy reference');
+  await expect(page.locator('html')).toHaveAttribute('data-copied-reference', 'models.Store.count');
+  await page.evaluate(() => {
+    Reflect.deleteProperty(navigator, 'clipboard');
+  });
+  await showSymbol(4, 8);
+  await action('Search').click();
+  const search = page.getByRole('dialog', { name: 'Search', exact: true });
+  await expect(search.getByRole('textbox')).toHaveValue('count');
+  await expect(search.getByRole('option').filter({ hasText: 'models.py' }).first()).toBeVisible();
+  await expect(
+    search
+      .locator('[role="option"][data-type="text"][data-path="main.py"]')
+      .filter({ hasText: 'store.count()' }),
+  ).toBeVisible();
+  await page.screenshot({ path: join(evidence, 'search-symbol-action.png') });
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Meta+Shift+F');
+  await expect(search.getByRole('textbox')).toHaveValue('');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Meta+ArrowDown');
+  const contextPoint = await symbolPoint();
+  await page.mouse.click(contextPoint.x, contextPoint.y, { button: 'right' });
+  await expect(contextMenu.locator('[data-symbol-action]')).toHaveCount(3);
+  await activateMenuAction('Search');
+  await expect(search.getByRole('textbox')).toHaveValue('count');
+  await expect(
+    search
+      .locator('[role="option"][data-type="text"][data-path="main.py"]')
+      .filter({ hasText: 'store.count()' }),
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+  await showSymbol(6, 6);
+  await expect(action('Copy name')).toBeVisible();
+  await expect(action('Rename')).toHaveCount(0);
+  await expect(action('Copy reference')).toHaveCount(0);
+  await page.screenshot({ path: join(evidence, 'actions-unresolved.png') });
+  await page.keyboard.press('Escape');
+  await showSymbol(11, 7);
+  await action('Choose definition').click();
+  await expect(hover.locator('a[title="Open definition"]').first()).toBeFocused();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Shift+F10');
+  await activateMenuAction('Choose definition');
+  await expect(hover.locator('a[title="Open definition"]').first()).toBeVisible();
+  await page.keyboard.press('Escape');
+  await showSymbol(7, 31);
+  await action('Rename alias').click();
+  const rename = page.getByRole('textbox', { name: 'New symbol name', exact: true });
+  await rename.fill('Stock');
+  await rename.press('Enter');
+  await expect(page.locator('.main-editor .view-lines')).toContainText('Store as Stock');
+  await expect(page.locator('.main-editor .view-lines')).toContainText('alias_store = Stock()');
+  await page.keyboard.press('Meta+Z');
+  await expect(page.locator('.main-editor .view-lines')).toContainText('Store as Inventory');
+  await page.locator('[data-path="attributes.py"]').click();
+  await expect(page.locator('.main-editor .view-lines')).toContainText('self.attribute_path');
+  await page.locator('.main-editor .editor-host').click();
+  await page.keyboard.press('Meta+ArrowUp');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Control+A');
+  for (let i = 0; i < 15; i++) await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Meta+K');
+  await page.keyboard.press('Meta+I');
+  await expect(action('Rename')).toBeVisible();
+  await expect(action('Delete definition')).toHaveCount(0);
+  await page.screenshot({ path: join(evidence, 'attribute-declaration.png') });
+  await action('Rename').click();
+  await expect(rename).toHaveValue('attribute_path');
+  await rename.fill('я');
+  await page.screenshot({ path: join(evidence, 'inline-rename-short.png') });
+  await rename.press('Escape');
+  await expect(rename).toHaveCount(0);
+  await expect(page.locator('.main-editor .view-lines')).toContainText('self.attribute_path');
+  await page.keyboard.press('F2');
+  await rename.fill('discarded_on_resize');
+  await page.getByRole('separator', { name: 'Resize panel', exact: true }).first().click();
+  await expect(rename).toHaveCount(0);
+  await page
+    .locator('.main-editor')
+    .getByRole('textbox', { name: 'Editor content', exact: true })
+    .focus();
+  await page.keyboard.press('F2');
+  await expect(rename).toHaveValue('attribute_path');
+  await rename.fill('discarded_draft');
+  await page.locator('.main-editor .editor-host').click({ position: { x: 600, y: 400 } });
+  await expect(rename).toHaveCount(0);
+  await expect(page.locator('.main-editor .view-lines')).not.toContainText('discarded_draft');
+  await page.keyboard.press('Meta+ArrowUp');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Control+A');
+  for (let i = 0; i < 15; i++) await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('F2');
+  await expect(rename).toHaveValue('attribute_path');
+  await rename.fill('renamed_path');
+  await rename.press('Enter');
+  await expect(page.locator('.main-editor .view-lines')).toContainText(
+    'self.renamed_path = self.get_attribute_path()',
+  );
+  await expect(page.locator('.main-editor .view-lines')).toContainText('return self.renamed_path');
+  await page.keyboard.press('Meta+Z');
+  await expect(page.locator('.main-editor .view-lines')).toContainText(
+    'return self.attribute_path',
+  );
+  await page.getByRole('button', { name: 'Close attributes.py', exact: true }).click();
+  await page.getByRole('tab', { name: 'main.py', exact: true }).click();
+  await showSymbol(4, 8);
+  const openDeclaration = async () => {
+    await action('Go to definition').click();
+    await expect(page.getByRole('tab', { name: 'models.py', exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await expect(
+      page.locator('.main-editor').getByRole('textbox', { name: 'Editor content', exact: true }),
+    ).toBeFocused();
+    await page.keyboard.press('Meta+K');
+    await page.keyboard.press('Meta+I');
+    await expect(action('Rename')).toBeVisible();
+  };
+  await openDeclaration();
+  await expect(action('Delete definition')).toBeVisible();
+  await page.screenshot({ path: join(evidence, 'actions-definition.png') });
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Shift+F10');
+  await expect(contextMenu.locator('[data-symbol-action]')).toHaveCount(4);
+  await page.screenshot({ path: join(evidence, 'context-menu-definition-light.png') });
+  await activateMenuAction('Rename');
+  await expect(rename).toBeFocused();
+  await expect(rename).toHaveValue('count');
+  await rename.fill('total_count_for_inventory');
+  await page.screenshot({ path: join(evidence, 'inline-rename.png') });
+  await rename.press('Enter');
+  await expect(page.locator('.main-editor .view-lines')).toContainText(
+    'def total_count_for_inventory',
+  );
+  await expect(rename).toHaveCount(0);
+  await page.keyboard.press('Meta+Z');
+  await expect(page.locator('.main-editor .view-lines')).toContainText('def count');
+  await visit('main.py');
+  await expect(page.locator('.main-editor .view-lines')).toContainText(
+    'store.total_count_for_inventory',
+  );
+  await page.keyboard.press('Meta+Z');
+  await expect(page.locator('.main-editor .view-lines')).toContainText('store.count');
+  await visit('models.py');
+  await expect(page.locator('.main-editor .view-lines')).toContainText('def count');
+  await expect(
+    page.locator('.main-editor').getByRole('textbox', { name: 'Editor content', exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press('Meta+ArrowUp');
+  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Control+A');
+  for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Meta+K');
+  await page.keyboard.press('Meta+I');
+  await expect(hover).toContainText('Count the items');
+  await page.keyboard.press('Escape');
+  await visit('main.py');
+  await showSymbol(4, 8);
+  await openDeclaration();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Shift+F10');
+  await activateMenuAction('Delete definition');
+  await expect(page.getByRole('tab', { name: 'models.py', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(page.locator('.main-editor .view-lines')).not.toContainText('def count');
+  await expect(page.locator('.main-editor .view-lines')).not.toContainText('return 42');
+  await expect(page.locator('.main-editor .view-lines')).not.toContainText('@staticmethod');
+  await expect(page.locator('.main-editor .view-lines')).toContainText('class Store');
+  await page.keyboard.press('Meta+Z');
+  await expect(page.locator('.main-editor .view-lines')).toContainText('def count');
+  await visit('main.py');
+  await showSymbol(3, 10);
+  await openDeclaration();
+  await action('Delete definition').click();
+  await expect(page.getByRole('tab', { name: 'models.py', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(page.locator('.main-editor .view-lines')).not.toContainText('class Store');
+  await page.keyboard.press('Meta+Z');
+  await expect(page.locator('.main-editor .view-lines')).toContainText('class Store');
+  await visit('main.py');
+  await showSymbol(4, 8);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('F2');
+  await expect(rename).toBeFocused();
+  await rename.press('Escape');
+  await expect(rename).toHaveCount(0);
+  await page.keyboard.press('Escape');
   // Freeze hover timers while keeping Monaco's rendering and performance measurements live.
   const rendering = await page.evaluateHandle(() => ({
     request: window.requestAnimationFrame.bind(window),
@@ -100,7 +356,7 @@ try {
   const immediateHover = async (surface = '.main-editor', hour = 0) => {
     const point = await symbolPoint(surface, 'Store', 'store = Store()');
     const method = await symbolPoint(surface);
-    await page.getByRole('tab', { name: 'main.py', exact: true }).first().hover();
+    await page.locator('.titlebar-search').hover();
     await page.clock.pauseAt(new Date(Date.UTC(2030, 0, 1, hour, 1)));
     try {
       for (const key of ['Meta', 'Control']) {
@@ -114,14 +370,14 @@ try {
         await page.mouse.move(method.x, method.y);
         await expect(hover).toContainText('Count the items');
         await page.keyboard.up(key);
-        await page.getByRole('tab', { name: 'main.py', exact: true }).first().hover();
+        await page.locator('.titlebar-search').hover();
         await expect(hover).toHaveCount(0);
         await page.keyboard.down(key);
         await page.mouse.move(point.x, point.y);
         await expect(page.locator(`${surface} .symbol-definition-link`)).toHaveText('Store');
         await expect(hover).toContainText('class Store');
         await page.keyboard.up(key);
-        await page.getByRole('tab', { name: 'main.py', exact: true }).first().hover();
+        await page.locator('.titlebar-search').hover();
         await expect(hover).toHaveCount(0);
       }
     } finally {
@@ -129,7 +385,7 @@ try {
       await page.keyboard.up('Control');
       await page.clock.resume();
     }
-    await page.getByRole('tab', { name: 'main.py', exact: true }).first().hover();
+    await page.locator('.titlebar-search').hover();
     await page.mouse.move(point.x, point.y);
     await expect(hover).toContainText('class Store');
     await page.screenshot({
@@ -229,19 +485,6 @@ try {
   await hover.locator('.monaco-tokenized-source').click({ modifiers: ['Meta'] });
   const dialog = page.getByRole('dialog');
   const selected = (name: string) => page.getByRole('tab', { name, exact: true });
-  const visit = async (name: string, target = page) => {
-    await target
-      .getByRole('button', { name: 'Navigation chain from main.py', exact: true })
-      .click();
-    await target
-      .getByRole('menuitem', { name: new RegExp(name.replaceAll('.', '\\.') + '\\s*:') })
-      .first()
-      .click();
-    await expect(target.getByRole('tab', { name, exact: true })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
-  };
   const moveTab = async (name: string, group: 'main' | 'right') => {
     const tab = selected(name);
     await tab.hover();
@@ -265,8 +508,8 @@ try {
   await expect(dialog).toHaveCount(0);
   await expect(page.locator('.main-editor .view-lines')).toContainText('return');
   await page.getByRole('button', { name: 'Navigation chain from main.py', exact: true }).click();
-  await expect(page.getByRole('menuitem').filter({ hasText: 'Store.count' })).toContainText(
-    'models.py:3',
+  await expect(page.locator('[role="menuitem"][aria-current="location"]')).toContainText(
+    'models.py:4',
   );
   await expect(
     page.getByRole('menuitem', { name: 'Open current file separately', exact: true }),
@@ -318,6 +561,27 @@ try {
   await moveTab('main.py', 'right');
   await showSymbol(4, 8, '.right-group');
   await expect(hover).toContainText('Count the items');
+  await expect(action('Rename')).toHaveCount(0);
+  await expect(action('Delete definition')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Shift+F10');
+  await expect(contextMenu.locator('[data-symbol-action]')).toHaveCount(3);
+  await page.screenshot({ path: join(evidence, 'context-menu-side-light.png') });
+  await activateMenuAction('Search');
+  await expect(search.getByRole('textbox')).toHaveValue('count');
+  await expect(
+    search
+      .locator('[role="option"][data-type="text"][data-path="main.py"]')
+      .filter({ hasText: 'store.count()' }),
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('F2');
+  await expect(page.locator('.right-group .symbol-rename input')).toBeFocused();
+  await rename.fill('canceled_side_rename');
+  await rename.press('Escape');
+  await expect(page.locator('.right-group .view-lines')).toContainText('store.count');
+  await showSymbol(4, 8, '.right-group');
+  await expect(hover).toContainText('Count the items');
   await page.keyboard.press('Escape');
   await immediateHover('.right-group', 1);
   const sidePoint = await symbolPoint('.right-group');
@@ -355,6 +619,12 @@ try {
   await showSymbol(4, 8);
   await expect(hover).toContainText('Count the items');
   await page.screenshot({ path: join(evidence, 'card-dark.png') });
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Shift+F10');
+  await expect(contextMenu.locator('[data-symbol-action]')).toHaveCount(3);
+  await page.screenshot({ path: join(evidence, 'context-menu-usage-dark.png') });
+  await page.keyboard.press('Escape');
+  await showSymbol(4, 8);
   await hover.getByRole('link', { name: 'models', exact: true }).hover();
   await page.screenshot({ path: join(evidence, 'link-hover-dark.png') });
   await hover.getByRole('link', { name: /click to open definition/ }).hover();
@@ -371,6 +641,8 @@ try {
 
   await showSymbol(5, 10);
   await expect(hover).toContainText('Decode a bytestring');
+  await expect(action('Delete definition')).toHaveCount(0);
+  await expect(action('Rename')).toHaveCount(0);
   await hover.locator('.monaco-tokenized-source').click({ modifiers: ['Meta'] });
   await expect(selected('base64.pyi')).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('.main-editor .view-lines')).toContainText('decodebytes');
@@ -408,6 +680,10 @@ try {
   ).toBeFocused();
   await expect(page.locator('.main-editor .view-lines')).not.toContainText('READONLY_PROBE');
   await page.screenshot({ path: join(evidence, 'dependency-dark.png') });
+  await page.keyboard.press('Shift+F10');
+  await expect(contextMenu.getByRole('menuitem', { name: 'Copy', exact: true })).toBeVisible();
+  await expect(contextMenu.locator('[data-symbol-action]')).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await page.keyboard.press('F2');
   await expect(dialog).toHaveCount(0);
   await back();

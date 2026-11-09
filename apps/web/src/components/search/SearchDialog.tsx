@@ -24,13 +24,15 @@ const keyClassName =
 export function SearchDialog({
   session,
   mode,
+  initialQuery = '',
 }: {
   session: Session;
   mode: 'files' | 'search' | 'symbols';
+  initialQuery?: string;
 }) {
   const project = useApp((app) => app.projects.find((project) => project.id === session.projectId));
   const repositories = useApp((app) => app.repositories[session.id]) ?? noRepositories;
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialQuery);
   const savedFilters = useApp((app) => app.views[session.id]?.searchFilters?.[mode]);
   const filters = savedFilters ?? defaultFilters[mode];
   const types = filters.types;

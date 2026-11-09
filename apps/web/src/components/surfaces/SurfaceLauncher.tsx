@@ -8,7 +8,7 @@ import {
   Braces,
 } from 'lucide-react';
 import type { Session } from '@superfluid/contracts';
-import { useApp, showSurface } from '~/state/workspaceStore';
+import { useApp, showSurface, openPalette } from '~/state/workspaceStore';
 import { runAction } from '~/commands/runProjectAction';
 import type { TabGroup } from '~/state/workspaceView';
 
@@ -29,13 +29,13 @@ export const surfaceActions = (session: Session, group: TabGroup) => [
     icon: Search,
     label: 'Search worktree',
     shortcut: 'S',
-    run: () => useApp.setState({ palette: 'search' }),
+    run: () => openPalette('search'),
   },
   {
     icon: Braces,
     label: 'Go to symbol',
     shortcut: 'Y',
-    run: () => useApp.setState({ palette: 'symbols' }),
+    run: () => openPalette('symbols'),
   },
   {
     icon: Files,

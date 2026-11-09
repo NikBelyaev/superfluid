@@ -17,6 +17,7 @@ import '~/components/python/languageProviders';
 import { navigate } from '~/components/python/navigation';
 import { installDefinitionHover } from '~/components/python/definitionPreview';
 import { installDefinitionLinks } from '~/components/python/definitionLinks';
+import { installSymbolActions, renameSymbol } from '~/components/python/symbolActions';
 import {
   editorViewKey,
   setTabGroup,
@@ -62,6 +63,8 @@ export default function Editor({
       scrollBeyondLastLine: false,
       smoothScrolling: false,
       automaticLayout: true,
+      fixedOverflowWidgets: true,
+      useShadowDOM: false,
       renderLineHighlight: 'line',
       overviewRulerBorder: false,
       roundedSelection: false,
@@ -73,6 +76,7 @@ export default function Editor({
     editor.current = instance;
     const removeHoverNavigation = installDefinitionHover(host.current);
     const removeDefinitionLinks = installDefinitionLinks(instance, host.current);
+    const removeSymbolActions = installSymbolActions(instance, host.current);
     const remember = () => {
       const d = bound.current;
       if (!d || d.model.isDisposed()) return;
@@ -154,13 +158,7 @@ export default function Editor({
       run: () => {
         const d = bound.current,
           p = instance.getPosition();
-        if (d && p && !d.readOnly)
-          useApp.setState({
-            modal: {
-              kind: 'rename-symbol',
-              source: { path: d.path, line: p.lineNumber, column: p.column },
-            },
-          });
+        if (d && p && !d.readOnly) renameSymbol(instance, d, p);
       },
     });
     const format = instance.addAction({
@@ -231,6 +229,7 @@ export default function Editor({
       opener.dispose();
       removeHoverNavigation();
       removeDefinitionLinks();
+      removeSymbolActions();
       focus.dispose();
       instance.dispose();
       editor.current = null;

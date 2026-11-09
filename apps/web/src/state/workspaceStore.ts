@@ -52,6 +52,7 @@ interface State {
   busy: string | null;
   modal: Modal;
   palette: 'files' | 'commands' | 'search' | 'symbols' | null;
+  paletteQuery?: string;
   surfaceMenu: { sessionId: string; group: TabGroup; tabKey?: string; kind?: 'chain' } | null;
   island: boolean;
   language: Record<string, string>;
@@ -474,6 +475,10 @@ export const currentSession = () => {
   const a = useApp.getState();
   return a.sessions.find((s) => s.id === a.sessionId);
 };
+
+export function openPalette(palette: NonNullable<State['palette']>, query = '') {
+  useApp.setState({ palette, paletteQuery: query });
+}
 
 export function showSurface(
   surface: Surface,

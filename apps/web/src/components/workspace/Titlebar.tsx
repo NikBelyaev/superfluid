@@ -1,6 +1,6 @@
 import { ChevronDown, Search, Settings2, Settings } from 'lucide-react';
 import type { Session } from '@superfluid/contracts';
-import { useApp } from '~/state/workspaceStore';
+import { useApp, openPalette } from '~/state/workspaceStore';
 import { WorktreeStrip } from './WorktreeStrip';
 import { UpdateButton } from '~/components/settings/UpdateButton';
 import { useUpdates } from '~/state/updates';
@@ -20,7 +20,7 @@ export function Titlebar({ session }: { session: Session }) {
       <div className="titlebar-divider" />
       <WorktreeStrip session={session} />
       <div className="spacer" />
-      <button className="titlebar-search" onClick={() => useApp.setState({ palette: 'files' })}>
+      <button className="titlebar-search" onClick={() => openPalette('files')}>
         <Search size={13} />
         <span>Go to file</span>
         <kbd>⌘ P</kbd>

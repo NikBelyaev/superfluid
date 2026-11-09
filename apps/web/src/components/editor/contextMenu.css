@@ -1,0 +1,92 @@
+.editor-host .context-view.monaco-menu-container {
+  --vscode-menu-background: var(--popover);
+  --vscode-menu-foreground: var(--foreground);
+  --vscode-menu-border: var(--border);
+  --vscode-menu-separatorBackground: var(--border);
+  --vscode-menu-selectionBorder: var(--ring);
+  --vscode-list-hoverBackground: var(--accent);
+  --vscode-list-hoverForeground: var(--foreground);
+  --vscode-cornerRadius-large: var(--floating-radius);
+  --vscode-cornerRadius-medium: var(--control-radius);
+  --vscode-strokeThickness: 1px;
+  background: var(--popover);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  box-shadow: var(--shadow-popover);
+  animation: none;
+}
+
+.editor-host .monaco-menu-container .monaco-action-bar.vertical .action-label:not(.separator),
+.editor-host .monaco-menu-container .monaco-action-bar.vertical .keybinding {
+  padding: 0 8px;
+}
+
+.monaco-menu-container
+  .monaco-action-bar.vertical
+  .actions-container:has(
+    .action-label:is(
+      [aria-label='Rename'],
+      [aria-label='Rename alias'],
+      [aria-label='Go to definition'],
+      [aria-label='Choose definition'],
+      [aria-label='Search'],
+      [aria-label='Copy reference'],
+      [aria-label='Copy name'],
+      [aria-label='Delete definition']
+    )
+  ) {
+  display: grid;
+  grid-template-columns: repeat(3, 36px) minmax(36px, auto);
+  width: max-content;
+
+  &::before {
+    content: '';
+    grid-column: 1 / -1;
+    order: 1;
+    border-top: 1px solid var(--border);
+    margin: 4px 0;
+  }
+
+  > .action-item {
+    grid-column: 1 / -1;
+    order: 2;
+  }
+
+  > .action-item:has(
+      .action-label:is(
+        [aria-label='Rename'],
+        [aria-label='Rename alias'],
+        [aria-label='Go to definition'],
+        [aria-label='Choose definition'],
+        [aria-label='Search'],
+        [aria-label='Copy reference'],
+        [aria-label='Copy name'],
+        [aria-label='Delete definition']
+      )
+    ) {
+    grid-column: auto;
+    order: 0;
+    width: 36px;
+    min-width: 0;
+
+    .action-menu-item {
+      height: 32px;
+      margin: 0 2px;
+    }
+
+    .action-label {
+      display: flex;
+      justify-content: center;
+      padding: 0;
+      font-size: 0;
+    }
+
+    .menu-item-check {
+      display: none;
+    }
+  }
+}
+
+.monaco-menu-container .action-menu-item:has([aria-label='Delete definition']) {
+  color: var(--error-foreground) !important;
+}

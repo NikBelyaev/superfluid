@@ -428,12 +428,11 @@ try {
   await page.getByRole('button', { name: 'Navigate back (Ctrl −)', exact: true }).click();
   await page.getByRole('tab', { name: 'main.py', exact: true }).waitFor();
   await page.keyboard.press('F2');
-  await page.getByLabel('New symbol name').fill('Inventory');
-  await page.getByRole('button', { name: 'Preview changes', exact: true }).click();
-  await page.getByRole('button', { name: 'Apply to buffers', exact: true }).click();
-  await page.waitForFunction(() =>
-    document.querySelector('.view-lines')?.textContent?.includes('Inventory'),
-  );
+  const renameInput = page.getByRole('textbox', { name: 'New symbol name', exact: true });
+  await renameInput.fill('Inventory');
+  await renameInput.press('Enter');
+  await expect(renameInput).toHaveCount(0);
+  await expect(page.locator('.main-editor .view-lines')).toContainText('Inventory');
   await page.keyboard.press('Meta+S');
   await page.getByRole('button', { name: 'Navigation chain from main.py', exact: true }).click();
   await page

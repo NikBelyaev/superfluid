@@ -37,11 +37,14 @@ export type PythonLocation = z.infer<typeof location>;
 export interface PythonSymbol extends PythonLocation {
   name: string;
   kind: number;
+  range?: { start: PythonLocation['position']; end: PythonLocation['position'] };
 }
 export interface PythonDefinition {
   module: PythonSymbol;
   containers: PythonSymbol[];
   symbol: PythonSymbol;
+  // The server exposes the containing scope; append the hovered name for this binding.
+  binding?: boolean;
 }
 export interface PythonHover {
   markdown: string;

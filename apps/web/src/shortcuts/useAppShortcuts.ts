@@ -1,6 +1,6 @@
 import { runAction } from '~/commands/runProjectAction';
 import { useEffect } from 'react';
-import { useApp, currentSession } from '~/state/workspaceStore';
+import { useApp, currentSession, openPalette } from '~/state/workspaceStore';
 import { keySignature } from '~/shortcuts/keySignature';
 import { activeFile } from '~/state/workspaceView';
 
@@ -23,17 +23,17 @@ export function useAppShortcuts() {
       }
       if (e.metaKey && e.code === 'KeyP') {
         e.preventDefault();
-        useApp.setState({ palette: e.shiftKey ? 'commands' : 'files' });
+        openPalette(e.shiftKey ? 'commands' : 'files');
         return;
       }
       if (e.metaKey && e.shiftKey && e.code === 'KeyF') {
         e.preventDefault();
-        useApp.setState({ palette: 'search' });
+        openPalette('search');
         return;
       }
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.code === 'KeyT') {
         e.preventDefault();
-        useApp.setState({ palette: 'symbols' });
+        openPalette('symbols');
         return;
       }
       if (e.metaKey && e.code === 'KeyS') {
