@@ -5,6 +5,7 @@ import { createRepositoryWorktree, runGitBatch } from '~/commands/gitBatch';
 import { selectedRepositories, repositoryBranch } from '~/state/repositories';
 import { useApp } from '~/state/workspaceStore';
 import { RepositoryBranchPicker, RepositoryCreationPicker } from './RepositoryBranchPicker';
+import { RepositoryNotice } from './RepositoryNotice';
 
 export function RepositoryGraph({
   session,
@@ -198,10 +199,7 @@ export function RepositoryGraph({
           </div>
         </div>
         {(failure || (action && problem)) && (
-          <p
-            className={failure ? 'form-error' : 'field-hint repository-graph-hint'}
-            role={failure ? 'alert' : 'status'}
-          >
+          <RepositoryNotice tone={failure ? 'error' : 'warning'}>
             {failure || problem}
             {!failure && action === 'create-branch' && branchExists && !invalidName && (
               <button
@@ -212,7 +210,12 @@ export function RepositoryGraph({
                 Switch
               </button>
             )}
-          </p>
+          </RepositoryNotice>
+        )}
+        {action && !problem && !failure && !(action === 'create-branch' && worktree) && (
+          <RepositoryNotice tone="info">
+            Your uncommitted changes will move with you to the selected branch.
+          </RepositoryNotice>
         )}
         <button
           className="button primary repository-graph-submit"

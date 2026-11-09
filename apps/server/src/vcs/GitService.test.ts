@@ -89,6 +89,239 @@ test('branch bases follow creation, persist through checkout, and respect explic
   }
 });
 
+test('branch changes carry staged, unstaged and untracked files without disturbing existing stashes', async () => {
+  for (const action of ['checkout', 'create-branch'] as const) {
+    const root = await repository(),
+      store = new Store(await temp()),
+      service = new GitService(store, () => {}),
+      s = session(root);
+    try {
+      const nested = join(root, 'nested');
+      await rename(await repository(), nested);
+      const nestedHead = await git(nested, ['rev-parse', 'HEAD']);
+      await writeFile(join(root, 'main.py'), 'previous stash\n');
+      await git(root, ['stash', 'push', '-m', 'User stash']);
+      const stashes = await git(root, ['stash', 'list', '--format=%H %gs']);
+      if (action === 'checkout') await git(root, ['branch', 'task']);
+      await writeFile(join(root, 'main.py'), 'staged\n');
+      await git(root, ['add', 'main.py']);
+      await writeFile(join(root, 'main.py'), 'unstaged\n');
+      await mkdir(join(root, 'new'));
+      await writeFile(join(root, 'new', 'task.py'), 'untracked\n');
+      const status = await git(root, ['status', '--porcelain=v2', '-z']);
+      const result = await service.act(s, {
+        sessionId: s.id,
+        operationId: action,
+        action,
+        branch: 'task',
+        base: 'main',
+      });
+      assert.equal(result.phase, 'completed', result.error ?? '');
+      assert.equal((await git(root, ['branch', '--show-current'])).trim(), 'task');
+      assert.equal(await git(root, ['status', '--porcelain=v2', '-z']), status);
+      assert.equal(await git(root, ['show', ':main.py']), 'staged\n');
+      assert.equal(await readFile(join(root, 'main.py'), 'utf8'), 'unstaged\n');
+      assert.equal(await readFile(join(root, 'new', 'task.py'), 'utf8'), 'untracked\n');
+      assert.equal(await git(root, ['stash', 'list', '--format=%H %gs']), stashes);
+      assert.equal(result.evidence.changesRestored, true);
+      assert.ok(result.evidence.autoStash);
+      assert.equal(await git(nested, ['rev-parse', 'HEAD']), nestedHead);
+      await git(root, ['restore', '--staged', '--worktree', '.']);
+      await import('node:fs/promises').then((fs) => fs.rm(join(root, 'new'), { recursive: true }));
+      const back = await service.act(s, {
+        sessionId: s.id,
+        operationId: `${action}-back`,
+        action: 'checkout',
+        branch: 'main',
+      });
+      assert.equal(back.phase, 'completed', back.error ?? '');
+      assert.equal(back.evidence.autoStash, undefined);
+      assert.equal(await git(nested, ['rev-parse', 'HEAD']), nestedHead);
+    } finally {
+      store.close();
+    }
+  }
+});
+
+test('failed checkout restores local changes on the original branch', async () => {
+  const root = await repository(),
+    store = new Store(await temp()),
+    service = new GitService(store, () => {}),
+    s = session(root);
+  try {
+    await writeFile(join(root, 'main.py'), 'staged\n');
+    await git(root, ['add', 'main.py']);
+    await writeFile(join(root, 'main.py'), 'unstaged\n');
+    const status = await git(root, ['status', '--porcelain=v2', '-z']);
+    const result = await service.act(s, {
+      sessionId: s.id,
+      operationId: 'missing-branch',
+      action: 'checkout',
+      branch: 'missing',
+    });
+    assert.ok(result.error);
+    assert.equal((await git(root, ['branch', '--show-current'])).trim(), 'main');
+    assert.equal(await git(root, ['status', '--porcelain=v2', '-z']), status);
+    assert.equal(await readFile(join(root, 'main.py'), 'utf8'), 'unstaged\n');
+    assert.equal(result.evidence.changesRestored, true);
+    assert.equal(await git(root, ['stash', 'list']), '');
+  } finally {
+    store.close();
+  }
+});
+
+test('automatic stashes are isolated when two worktrees switch concurrently', async () => {
+  const root = await repository(),
+    other = await temp(),
+    store = new Store(await temp());
+  await git(root, ['worktree', 'add', '-b', 'other', other]);
+  await git(root, ['branch', 'task-a']);
+  await git(root, ['branch', 'task-b']);
+  let stashing = '';
+  const service = new GitService(store, (operation) => {
+    if (operation.phase === 'stashing') {
+      assert.equal(stashing, '', 'Worktrees must not mutate their shared stash list concurrently.');
+      stashing = operation.id;
+    }
+    if (operation.phase === 'completed') stashing = '';
+  });
+  try {
+    const results = await Promise.all(
+      [root, other].map(async (path, i) => {
+        const s = { ...session(path), id: `worktree-${i}` };
+        s.gitDir = (await git(path, ['rev-parse', '--absolute-git-dir'])).trim();
+        await writeFile(join(path, 'main.py'), `worktree ${i}\n`);
+        return service.act(s, {
+          sessionId: s.id,
+          operationId: s.id,
+          action: 'checkout',
+          branch: i ? 'task-b' : 'task-a',
+        });
+      }),
+    );
+    for (const result of results) assert.equal(result.phase, 'completed', result.error ?? '');
+    assert.equal(await readFile(join(root, 'main.py'), 'utf8'), 'worktree 0\n');
+    assert.equal(await readFile(join(other, 'main.py'), 'utf8'), 'worktree 1\n');
+    assert.equal(await git(root, ['stash', 'list']), '');
+  } finally {
+    store.close();
+  }
+});
+
+test('branch conflicts roll back staged, unstaged and untracked changes without requiring review', async () => {
+  for (const action of ['checkout', 'create-branch'] as const) {
+    for (const staged of [false, true]) {
+      const root = await repository(),
+        store = new Store(await temp()),
+        service = new GitService(store, () => {}),
+        s = session(root);
+      try {
+        await git(root, ['switch', '-c', 'incoming']);
+        await writeFile(join(root, 'main.py'), 'incoming\n');
+        await writeFile(join(root, 'shared.py'), 'target file\n');
+        await git(root, ['add', '.']);
+        await git(root, ['commit', '-m', 'Incoming']);
+        const destination = await git(root, ['rev-parse', 'incoming']);
+        await git(root, ['switch', 'main']);
+        const detached = action === 'create-branch' && staged;
+        if (detached) await git(root, ['switch', '--detach']);
+        await writeFile(join(root, 'main.py'), 'staged\n');
+        if (staged) await git(root, ['add', 'main.py']);
+        await writeFile(join(root, 'main.py'), 'local\n');
+        await writeFile(join(root, 'shared.py'), 'local new file\n');
+        await writeFile(join(root, 'loose[1].py'), 'local loose file\n');
+        const status = await git(root, ['status', '--porcelain=v2', '-z']);
+        const stagedDiff = await git(root, ['diff', '--cached']);
+        await writeFile(
+          join(root, '.git', 'hooks', 'post-checkout'),
+          '#!/bin/sh\ncase "$(git branch --show-current)" in incoming|task) printf "unrelated\\n" > loose1.py ;; esac\n',
+          { mode: 0o755 },
+        );
+        const request = {
+          sessionId: s.id,
+          operationId: 'conflict',
+          action,
+          branch: action === 'checkout' ? 'incoming' : 'task',
+          base: 'incoming',
+        };
+        const result = await service.act(s, request);
+        assert.equal(result.phase, 'failed');
+        assert.equal(
+          (await git(root, ['branch', '--show-current'])).trim(),
+          detached ? '' : 'main',
+        );
+        assert.match(result.error || '', /restored your changes/i);
+        assert.equal(result.evidence.rolledBack, true);
+        assert.equal(result.evidence.changesRestored, true);
+        assert.deepEqual(
+          parseStatus(await git(root, ['status', '--porcelain=v2', '-z'])).files.filter(
+            (file) => file.path !== 'loose1.py',
+          ),
+          parseStatus(status).files,
+        );
+        assert.equal(await git(root, ['diff', '--cached']), stagedDiff);
+        assert.equal(await readFile(join(root, 'main.py'), 'utf8'), 'local\n');
+        assert.equal(await readFile(join(root, 'shared.py'), 'utf8'), 'local new file\n');
+        assert.equal(await readFile(join(root, 'loose[1].py'), 'utf8'), 'local loose file\n');
+        assert.equal(await readFile(join(root, 'loose1.py'), 'utf8'), 'unrelated\n');
+        assert.equal(await git(root, ['rev-parse', 'incoming']), destination);
+        assert.equal(await git(root, ['ls-files', '--unmerged']), '');
+        assert.equal(await git(root, ['stash', 'list']), '');
+        if (action === 'create-branch')
+          assert.equal(await git(root, ['branch', '--list', 'task']), '');
+        const repeated = await service.act(s, request);
+        assert.equal(repeated.error, result.error);
+        assert.equal(repeated.evidence.autoStash, result.evidence.autoStash);
+        const next = await service.act(s, {
+          sessionId: s.id,
+          operationId: 'next',
+          action: 'create-branch',
+          branch: 'safe',
+          base: 'main',
+        });
+        assert.equal(next.phase, 'completed', next.error ?? '');
+      } finally {
+        store.close();
+      }
+    }
+  }
+});
+
+test('rollback preserves its recovery stash if the original branch changes externally', async () => {
+  const root = await repository(),
+    store = new Store(await temp()),
+    service = new GitService(store, () => {}),
+    s = session(root);
+  try {
+    await git(root, ['switch', '-c', 'incoming']);
+    await writeFile(join(root, 'main.py'), 'incoming\n');
+    await git(root, ['commit', '-am', 'Incoming']);
+    await git(root, ['switch', 'main']);
+    await writeFile(join(root, 'main.py'), 'local\n');
+    await writeFile(
+      join(root, '.git', 'hooks', 'post-checkout'),
+      '#!/bin/sh\ngit update-ref refs/heads/main refs/heads/incoming\n',
+      { mode: 0o755 },
+    );
+    const result = await service.act(s, {
+      sessionId: s.id,
+      operationId: 'moved-source',
+      action: 'checkout',
+      branch: 'incoming',
+    });
+    assert.equal(result.phase, 'uncertain');
+    assert.match(result.error || '', /Automatic rollback stopped/);
+    const stash = String(result.evidence.autoStash);
+    assert.match(result.error || '', new RegExp(stash));
+    assert.equal(await git(root, ['show', `${stash}:main.py`]), 'local\n');
+    assert.equal(result.evidence.rolledBack, undefined);
+    assert.equal(result.evidence.changesRestored, undefined);
+    assert.match((await service.inspect(s, result.id)).log, new RegExp(stash));
+  } finally {
+    store.close();
+  }
+});
+
 test('publication uses a verified commit and explicit destination ref', async () => {
   const root = await repository(),
     remote = await temp();

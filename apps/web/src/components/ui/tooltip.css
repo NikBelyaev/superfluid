@@ -13,3 +13,11 @@
   line-height: 18px;
   overflow-wrap: anywhere;
 }
+.ui-tooltip[data-variant='card'] {
+  width: 320px;
+  max-width: min(320px, calc(100vw - 24px));
+  max-height: min(360px, var(--available-height));
+  overflow: auto;
+  padding: 12px;
+  border-radius: var(--floating-radius);
+}

@@ -385,9 +385,57 @@
   font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
 }
-.repository-graph-hint {
+.repository-notice {
+  --notice-color: var(--primary);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   margin: 0 0 var(--floating-content-inset);
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--notice-color) 30%, var(--popover));
+  border-radius: var(--control-radius);
+  background: color-mix(in srgb, var(--notice-color) 8%, var(--popover));
+  color: var(--notice-color);
+  font-size: var(--text-xs);
+  line-height: 18px;
   overflow-wrap: anywhere;
+}
+.repository-notice > svg {
+  margin-top: 1px;
+}
+.repository-notice > div {
+  min-width: 0;
+}
+.repository-notice[data-tone='warning'] {
+  --notice-color: var(--warning-foreground);
+  background: var(--warning-surface);
+}
+.repository-notice[data-tone='error'] {
+  --notice-color: var(--error-foreground);
+}
+.repository-operation[aria-disabled='true'] {
+  cursor: default;
+}
+.repository-operation[aria-disabled='true']:not([aria-busy='true']) {
+  opacity: 0.45;
+}
+.repository-operation-feedback > strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.repository-operation-feedback > strong > svg {
+  color: var(--warning-foreground);
+}
+.repository-operation-feedback[data-tone='error'] > strong > svg {
+  color: var(--error-foreground);
+}
+.repository-operation-feedback p {
+  margin: 8px 0 0;
+  color: var(--muted-foreground);
+  white-space: pre-wrap;
 }
 .repository-spinner {
   animation: repository-spin 1s steps(12) infinite;
@@ -458,9 +506,8 @@
 .repository-composer-send[aria-busy='true'] {
   opacity: 1;
 }
-.repository-composer > :is(.field-hint, .form-error) {
-  margin: 0;
-  padding: 0 var(--floating-content-inset) 8px;
+.repository-composer > .repository-notice {
+  margin: 0 var(--floating-content-inset) 8px;
 }
 
 .repository-graph-switch {
@@ -481,10 +528,9 @@
   border-radius: var(--floating-radius);
   background: var(--popover);
 }
-.repository-branch-form .repository-comparison > :is(.field-hint, .form-error) {
+.repository-branch-form .repository-comparison > .repository-notice {
   grid-column: 1 / -1;
   margin: 0;
-  padding: 0 4px;
 }
 .repository-comparison .repository-branch-control:hover {
   background: color-mix(in srgb, var(--foreground) 7%, var(--popover));

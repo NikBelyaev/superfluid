@@ -113,7 +113,12 @@ export async function runGitBatch(
           return !repository?.path || d.path.startsWith(repository.path + '/');
         }),
     );
-    if (dirty.length) throw new Error(`Save ${dirty.length} unsaved files before this Git action.`);
+    if (action === 'checkout' || action === 'create-branch')
+      for (const doc of dirty) await documents.save(doc);
+    if (dirty.some((doc) => doc.dirty))
+      throw new Error(
+        `Save ${dirty.filter((doc) => doc.dirty).length} unsaved files before this Git action.`,
+      );
   }
   if (
     useApp.getState().repositoryWorktrees[sessionId] ||
@@ -138,7 +143,7 @@ export async function runGitBatch(
     try {
       const result = await desktop.call('git.act', entry.request);
       if (
-        result.phase === 'completed' &&
+        (result.phase === 'completed' || !!result.evidence.autoStash) &&
         ['create-branch', 'checkout', 'stash', 'stash-apply'].includes(action)
       ) {
         const { documents } = await import('~/state/editor/Documents');

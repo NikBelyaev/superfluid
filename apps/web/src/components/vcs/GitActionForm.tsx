@@ -12,6 +12,7 @@ import {
 } from '~/state/repositories';
 import { runGitBatch, type GitAction } from '~/commands/gitBatch';
 import { RepositoryBranchPicker } from './RepositoryBranchPicker';
+import { RepositoryNotice } from './RepositoryNotice';
 
 type Action = Exclude<GitAction, 'create-branch' | 'checkout' | 'stash' | 'stash-apply'>;
 
@@ -70,13 +71,9 @@ export function GitActionForm({
         ? `Choose a base branch other than the current branch for ${invalidBases.map((r) => r.path || session.path.split('/').at(-1)).join(', ')}.`
         : '';
   const feedback = error ? (
-    <p className="form-error" role="alert">
-      {error}
-    </p>
+    <RepositoryNotice tone="error">{error}</RepositoryNotice>
   ) : !committing && baseProblem ? (
-    <p className="field-hint" role="status">
-      {baseProblem}
-    </p>
+    <RepositoryNotice tone="warning">{baseProblem}</RepositoryNotice>
   ) : null;
   const send = (
     <button
