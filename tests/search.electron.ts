@@ -327,6 +327,7 @@ try {
     .locator('.worktree-chip')
     .filter({ hasText: /^feature\/search$/ })
     .click();
+  await expect(page.locator('.worktree-chip.active')).toHaveText('feature/search');
   await openSearch('buffer-only');
   await expect(classFilter()).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByRole('checkbox', { name: 'All repositories', exact: true })).toBeChecked();
@@ -343,6 +344,7 @@ try {
     .locator('.worktree-chip')
     .filter({ hasText: /^main$/ })
     .click();
+  await expect(page.locator('.worktree-chip.active')).toHaveText('main');
   await openSearch('buffer-only');
   await expect(classFilter()).toHaveAttribute('aria-pressed', 'true');
   await expect(

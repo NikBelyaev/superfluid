@@ -16,9 +16,9 @@ export function useSearch(sessionId: string, query: string, types: SearchType[],
       void (async () => {
         const { documents } = await import('~/state/editor/Documents');
         for (const doc of documents.items.values()) {
-          if (doc.session.id !== sessionId || doc.readOnly || !doc.dirty) continue;
+          if (doc.session.id !== sessionId || doc.readOnly || (doc.closed && !doc.dirty)) continue;
           controller.signal.throwIfAborted();
-          await documents.recovery.flush(doc.key);
+          if (doc.dirty) await documents.recovery.flush(doc.key);
           if (
             (!types.length || types.some((type) => type === 'class' || type === 'symbol')) &&
             doc.model.getLanguageId() === 'python'
