@@ -53,7 +53,7 @@
   --shadow-dialog: 0 24px 64px -24px rgb(0 0 0 / 32%);
   --workspace-topbar-height: 52px;
   --worktree-strip-height: 36px;
-  --statusbar-height: 24px;
+  --statusbar-height: 32px;
 }
 
 :root[data-color-scheme='dark'],

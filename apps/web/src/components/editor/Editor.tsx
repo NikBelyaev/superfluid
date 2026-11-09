@@ -1,14 +1,7 @@
 import { desktop } from '~/rpc/desktop';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { AlertCircle, Braces } from 'lucide-react';
-import {
-  documents,
-  documentPath,
-  monaco,
-  subscribe,
-  getRevision,
-  type Doc,
-} from '~/state/editor/Documents';
+import { AlertCircle } from 'lucide-react';
+import { documents, monaco, subscribe, getRevision, type Doc } from '~/state/editor/Documents';
 import { useApp } from '~/state/workspaceStore';
 import { editorTheme, useAppearance, useSystemDark } from '~/state/appearance';
 import type { Session } from '@superfluid/contracts';
@@ -59,7 +52,8 @@ export default function Editor({
       fontSize: parseFloat(appearance.getPropertyValue('--font-size-editor')),
       lineHeight: 22,
       minimap: { enabled: false },
-      padding: { top: 14, bottom: 20 },
+      padding: { top: 0, bottom: 20 },
+      scrollbar: { useShadows: false },
       scrollBeyondLastLine: false,
       smoothScrolling: false,
       automaticLayout: true,
@@ -339,18 +333,13 @@ export default function Editor({
         documents.focusedGroup = group;
       }}
     >
-      <div className="breadcrumb">
-        <Braces size={13} />
-        <span>{session.branch || 'Project'}</span>
-        <span>/</span>
-        <span>{path ? documentPath(path) : 'No file selected'}</span>
-        <div className="spacer" />
-        {doc?.readOnly && (
+      {doc?.readOnly && (
+        <div className="editor-notice">
           <span className="definition-readonly">
             {doc.path.endsWith('.pyi') ? 'Type stub · Read only' : 'Read only'}
           </span>
-        )}
-      </div>
+        </div>
+      )}
       {doc?.recovered && (
         <div className="recovery-banner">
           <AlertCircle size={14} />
