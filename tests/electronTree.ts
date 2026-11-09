@@ -94,14 +94,18 @@ try {
     await app.evaluate(async ({ clipboard, ClipboardItem }) => {
       const original = clipboard.write;
       const backup = await Promise.all(
-        (await clipboard.read()).map(
-          async (item) =>
-            new ClipboardItem(
-              Object.fromEntries(
-                await Promise.all(item.types.map(async (type) => [type, await item.getType(type)])),
+        (await clipboard.read())
+          .filter((item) => item.types.length > 0)
+          .map(
+            async (item) =>
+              new ClipboardItem(
+                Object.fromEntries(
+                  await Promise.all(
+                    item.types.map(async (type) => [type, await item.getType(type)]),
+                  ),
+                ),
               ),
-            ),
-        ),
+          ),
       );
       const state = globalThis as typeof globalThis & { treeCopy?: Promise<string> };
       state.treeCopy = new Promise((resolve, reject) => {
