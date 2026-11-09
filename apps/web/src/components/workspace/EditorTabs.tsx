@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { Columns2, X } from 'lucide-react';
+import { SquareMenu, X } from 'lucide-react';
 import { useDroppable } from '@dnd-kit/core';
 import { horizontalListSortingStrategy, SortableContext } from '@dnd-kit/sortable';
 import { useApp, showSurface, closeTabs, surfaceKey } from '~/state/workspaceStore';
@@ -204,7 +204,7 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
               aria-pressed={island}
               onClick={() => useApp.setState({ island: !island })}
             >
-              <Columns2 size={14} />
+              <SquareMenu size={14} />
             </button>
           </div>
         )}
