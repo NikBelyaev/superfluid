@@ -288,9 +288,9 @@ try {
   for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
   for (let i = 0; i < 7; i++) await page.keyboard.press('ArrowRight');
   await page.keyboard.press('F12');
-  await page.getByRole('tab', { name: 'models.py', exact: true }).waitFor();
+  await expect(breadcrumbs.getByRole('button', { name: 'models.py', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Navigate back (Ctrl −)', exact: true }).click();
-  await page.getByRole('tab', { name: 'main.py', exact: true }).waitFor();
+  await expect(breadcrumbs.getByRole('button', { name: 'main.py', exact: true })).toBeVisible();
   await page.keyboard.press('F2');
   const renameInput = page.getByRole('textbox', { name: 'New symbol name', exact: true });
   await renameInput.fill('Inventory');
