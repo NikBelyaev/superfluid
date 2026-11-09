@@ -31,6 +31,11 @@ export function useAppShortcuts() {
         useApp.setState({ palette: 'search' });
         return;
       }
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.code === 'KeyT') {
+        e.preventDefault();
+        useApp.setState({ palette: 'symbols' });
+        return;
+      }
       if (e.metaKey && e.code === 'KeyS') {
         e.preventDefault();
         void import('~/state/editor/Documents').then(({ documents }) => {

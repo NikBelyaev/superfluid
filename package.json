@@ -11,8 +11,9 @@
     "build": "node scripts/build.mjs",
     "start": "node scripts/start.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node scripts/build.mjs --backend-only && tsx --test 'apps/**/*.test.ts' 'packages/**/*.test.ts' 'tests/*.test.ts'",
-    "test:electron": "tsx tests/electron.ts && tsx tests/electronTree.ts",
+    "test": "node scripts/build.mjs --backend-only && node scripts/zoekt.mjs --test && tsx --test 'apps/**/*.test.ts' 'packages/**/*.test.ts' 'tests/*.test.ts'",
+    "test:electron": "tsx tests/electron.ts && tsx tests/electronTree.ts && pnpm test:electron:search",
+    "test:electron:search": "tsx tests/search.electron.ts",
     "dist": "pnpm build && electron-builder --mac dir",
     "lint": "eslint .",
     "format:check": "prettier --check apps packages/contracts scripts tests vite.config.ts tsconfig.json package.json eslint.config.mjs",
@@ -35,7 +36,9 @@
       "node_modules/node-pty/**",
       "node_modules/pyright/**",
       "dist/ty",
-      "dist/ty.exe"
+      "dist/ty.exe",
+      "dist/zoekt",
+      "dist/zoekt.exe"
     ],
     "npmRebuild": true,
     "mac": {

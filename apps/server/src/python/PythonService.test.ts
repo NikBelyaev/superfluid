@@ -8,9 +8,82 @@ import { repository, temp, terminalWorker, pythonProbe } from '../../../../tests
 import type { Input, Results } from '@superfluid/contracts';
 
 for (const kind of ['ty', 'pyright'] as const)
+  test(`${kind} searches workspace symbols in unopened files and unsaved overlays`, async () => {
+    const root = await repository();
+    await writeFile(
+      join(root, 'models.py'),
+      'class Inventory:\n    def count(self): pass\n    class Inner:\n        def count(self): pass\n',
+    );
+    await writeFile(
+      join(root, 'ambiguous.py'),
+      Array.from({ length: 510 }, (_, i) => `class TestInventory${i}Control: pass`).join('\n'),
+    );
+    await mkdir(join(root, '.worktrees/other'), { recursive: true });
+    await writeFile(
+      join(root, '.worktrees/other/models.py'),
+      'class InventoryFromOtherWorktree: pass\n',
+    );
+    const workspace = new Workspace(await temp(), () => {}, { terminalWorker });
+    try {
+      const project = await workspace.projects.add(root);
+      const [session] = await workspace.projects.sessions(project.id);
+      session.python = await pythonProbe(root, kind === 'ty' ? [3, 10] : [3, 9]);
+      workspace.store.put('sessions', session);
+      const search = (query: string) =>
+        workspace.call('python.symbols', { sessionId: session.id, query });
+      const result = (await search('Inventory')).value;
+      assert.deepEqual(
+        result.hits.filter((hit) => hit.name === 'Inventory'),
+        [{ path: 'models.py', line: 1, column: 1, name: 'Inventory', kind: 5 }],
+      );
+      assert.equal(result.hits[0]?.name, 'Inventory');
+      const methods = (await search('count')).value.hits;
+      assert.equal(methods.find((hit) => hit.line === 2)?.containerName, 'Inventory');
+      assert.equal(methods.find((hit) => hit.line === 4)?.containerName, 'Inventory.Inner');
+      assert.ok(result.hits.every((hit) => !hit.path.includes('.worktrees')));
+      await workspace.call('lsp.open', {
+        sessionId: session.id,
+        path: 'models.py',
+        text: 'class RecoveredInventory:\n    def restore(self): pass\n',
+        version: 1,
+      });
+      workspace.store.draft({
+        sessionId: session.id,
+        path: 'models.py',
+        text: 'class RecoveredInventory:\n    def restore(self): pass\n',
+        hash: '',
+        version: 1,
+      });
+      assert.ok(
+        (await search('RecoveredInventory')).value.hits.some(
+          (hit) => hit.name === 'RecoveredInventory',
+        ),
+      );
+      assert.equal((await search('restore')).value.hits[0]?.containerName, 'RecoveredInventory');
+      workspace.store.dropDraft(session.id, 'models.py', 1);
+      await workspace.call('lsp.close', { sessionId: session.id, path: 'models.py' });
+      assert.equal((await search('RecoveredInventory')).value.hits.length, 0);
+      assert.ok((await search('Inventory')).value.hits.some((hit) => hit.name === 'Inventory'));
+      assert.equal((await search('NoSuchSymbol8d71')).value.hits.length, 0);
+    } finally {
+      await workspace.close();
+    }
+  });
+
+for (const kind of ['ty', 'pyright'] as const)
   test(`${kind} cancels interactive requests and hover enrichment without leaving queued work`, async (t) => {
     const root = await repository();
-    const workspace = new Workspace(await temp(), () => {}, { terminalWorker });
+    let analyzed!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      analyzed = resolve;
+    });
+    const workspace = new Workspace(
+      await temp(),
+      (event) => {
+        if (event.type === 'diagnostics' && event.uri.endsWith('/main.py')) analyzed();
+      },
+      { terminalWorker },
+    );
     try {
       const project = await workspace.projects.add(root);
       const [session] = await workspace.projects.sessions(project.id);
@@ -22,6 +95,7 @@ for (const kind of ['ty', 'pyright'] as const)
         text: 'class Store: pass\nvalue = Store()\nvalue\n',
         version: 1,
       });
+      await ready;
       const server = await workspace.lsp.get(session);
       type Message = { id?: number; method?: string; params?: { id: number } };
       const wire = server as unknown as {

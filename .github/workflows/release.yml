@@ -88,7 +88,6 @@ jobs:
         with:
           node-version: '26'
       - run: npm install --global pnpm@12.14.0
-      - run: brew install ripgrep
       - run: pnpm install --frozen-lockfile
       - run: node scripts/release.ts stamp "$RELEASE_VERSION"
         env:

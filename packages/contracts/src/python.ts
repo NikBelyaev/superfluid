@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { id, path, text } from './schema';
+import type { SearchHit } from './files';
 
 const position = z.object({ line: z.number().int().min(0), character: z.number().int().min(0) });
 const source = { sessionId: id, path, position };
@@ -27,6 +28,7 @@ export const pythonRequests = {
     params: z.record(z.string(), z.unknown()),
   }),
   'python.format': z.object({ sessionId: id, text }),
+  'python.symbols': z.object({ sessionId: id, query: z.string().max(500), requestId }),
   'python.hover': z.object({ ...source, requestId }),
   'python.source': z.object({ ...source, requestId, target: location }),
 } as const;
@@ -79,6 +81,7 @@ export interface PythonResults {
   'lsp.cancel': null;
   'lsp.request': PythonResult<any>;
   'python.format': string;
+  'python.symbols': PythonResult<{ hits: SearchHit[]; truncated: boolean }>;
   'python.hover': PythonResult<PythonHover | null>;
   'python.source': PythonResult<PythonSource>;
 }

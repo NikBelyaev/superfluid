@@ -29,7 +29,11 @@ export interface Draft {
 export interface SearchHit {
   path: string;
   line?: number;
+  column?: number;
   text?: string;
+  name?: string;
+  containerName?: string;
+  kind?: number;
 }
 
 export const filesRequests = {
@@ -43,7 +47,9 @@ export const filesRequests = {
     sessionId: id,
     query: z.string().max(500),
     content: z.boolean().default(false),
+    requestId: id.optional(),
   }),
+  'files.cancel': z.object({ sessionId: id, requestId: id }),
   'draft.put': z.object({
     sessionId: id,
     path,
@@ -62,6 +68,7 @@ export interface FileResults {
   'files.rename': null;
   'files.resolve': string;
   'files.search': { hits: SearchHit[]; truncated: boolean };
+  'files.cancel': null;
   'draft.put': { version: number; updatedAt: number };
   'draft.drop': null;
 }

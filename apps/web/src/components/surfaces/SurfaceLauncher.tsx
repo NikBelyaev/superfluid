@@ -1,4 +1,12 @@
-import { Files, GitCompareArrows, GitPullRequest, Globe, TerminalSquare } from 'lucide-react';
+import {
+  Files,
+  GitCompareArrows,
+  GitPullRequest,
+  Globe,
+  TerminalSquare,
+  Search,
+  Braces,
+} from 'lucide-react';
 import type { Session } from '@superfluid/contracts';
 import { useApp, showSurface } from '~/state/workspaceStore';
 import { runAction } from '~/commands/runProjectAction';
@@ -16,6 +24,18 @@ export const surfaceActions = (session: Session, group: TabGroup) => [
     label: 'Terminal',
     shortcut: 'T',
     run: () => void runAction(session, undefined, group),
+  },
+  {
+    icon: Search,
+    label: 'Search worktree',
+    shortcut: 'S',
+    run: () => useApp.setState({ palette: 'search' }),
+  },
+  {
+    icon: Braces,
+    label: 'Go to symbol',
+    shortcut: 'Y',
+    run: () => useApp.setState({ palette: 'symbols' }),
   },
   {
     icon: Files,

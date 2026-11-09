@@ -1,6 +1,6 @@
 import type { editor } from 'monaco-editor/editor/editor.api';
 import { z } from 'zod';
-import { pullRequestRefSchema, type Input } from '@superfluid/contracts';
+import { pullRequestRefSchema, searchTypes, type Input } from '@superfluid/contracts';
 import { fileTabKey, surfacePaths, mapSurfaceFiles, restoreFileSurface } from './fileChains';
 
 export const surfaceSchema = z
@@ -36,10 +36,22 @@ export interface Location {
   tab?: string;
 }
 
+const searchFilterSelectionSchema = z.object({
+  types: z.array(z.enum(searchTypes)).max(searchTypes.length),
+  excluded: z.array(z.string().max(256)).max(1000),
+});
+export type SearchFilterSelection = z.infer<typeof searchFilterSelectionSchema>;
+const searchFiltersSchema = z.object({
+  files: searchFilterSelectionSchema.optional(),
+  search: searchFilterSelectionSchema.optional(),
+  symbols: searchFilterSelectionSchema.optional(),
+});
+
 export interface ViewState {
   layoutVersion: 1;
   repositoryIds?: string[];
   islandCollapsed?: boolean;
+  searchFilters?: z.infer<typeof searchFiltersSchema>;
   tabs: Surface[];
   active: Surface | null;
   expanded: string[];
@@ -182,6 +194,7 @@ export function moveTab(
 
 export function restoreView(source: object, runIds = new Set<string>()): ViewState {
   const saved = source as Record<string, unknown>;
+  const searchFilters = searchFiltersSchema.safeParse(saved.searchFilters);
   const surface = (value: unknown): Surface | null => {
     if (typeof value === 'string') return { kind: 'file', path: value };
     const parsed = surfaceSchema.safeParse(value);
@@ -211,6 +224,7 @@ export function restoreView(source: object, runIds = new Set<string>()): ViewSta
     repositoryIds: Array.isArray(saved.repositoryIds)
       ? saved.repositoryIds.filter((id) => typeof id === 'string')
       : undefined,
+    searchFilters: searchFilters.success ? searchFilters.data : undefined,
   } as ViewState;
   if (saved.surface != null && !view.surface) view.surface = view.rightTabs.at(-1) ?? null;
   if (saved.layoutVersion !== 1) {

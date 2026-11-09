@@ -1,23 +1,36 @@
-import { desktop } from '~/rpc/desktop';
-import { useEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
-import { Search, Command, FileCode2, ArrowUpRight } from 'lucide-react';
-import type { SearchHit } from '@superfluid/contracts';
-import { useApp, currentSession, showSurface } from '~/state/workspaceStore';
+import { Command, ArrowUpRight } from 'lucide-react';
+import type { Session } from '@superfluid/contracts';
+import { useApp, showSurface } from '~/state/workspaceStore';
 import { runAction } from '~/commands/runProjectAction';
 import { openRepositoryMenu } from '~/commands/gitBatch';
 import { checkForAppUpdates } from '~/commands/updateApp';
+import { SearchDialog } from '~/components/search/SearchDialog';
 
 export default function CommandPalette() {
-  const mode = useApp((a) => a.palette),
-    [query, setQuery] = useState(''),
-    [hits, setHits] = useState<SearchHit[]>([]),
-    [index, setIndex] = useState(0),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
-  const generation = useRef(0),
-    session = currentSession();
+  const mode = useApp((a) => a.palette);
+  const session = useApp((a) => a.sessions.find((s) => s.id === a.sessionId));
+  if (!mode) return null;
+  if (mode !== 'commands')
+    return session ? (
+      <SearchDialog key={`${session.id}:${mode}`} session={session} mode={mode} />
+    ) : null;
+  return <Commands session={session} />;
+}
+
+function Commands({ session }: { session?: Session }) {
+  const [query, setQuery] = useState('');
+  const [index, setIndex] = useState(0);
+  const input = useRef<HTMLInputElement>(null);
+  const selected = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    selected.current?.scrollIntoView({ block: 'nearest' });
+  }, [index]);
   const commands = [
+    { name: 'Find a file', run: () => useApp.setState({ palette: 'files' }) },
+    { name: 'Search worktree', run: () => useApp.setState({ palette: 'search' }) },
+    { name: 'Go to symbol in worktree', run: () => useApp.setState({ palette: 'symbols' }) },
     { name: 'Check for app updates', run: checkForAppUpdates },
     {
       name: 'Settings: About',
@@ -69,79 +82,42 @@ export default function CommandPalette() {
     },
     { name: 'Toggle action island', run: () => useApp.setState((s) => ({ island: !s.island })) },
   ].filter((c) => c.name.toLowerCase().includes(query.toLowerCase()));
-  useEffect(() => {
-    setQuery('');
-    setHits([]);
-    setIndex(0);
-    setError('');
-  }, [mode]);
-  useEffect(() => {
-    const gen = ++generation.current;
-    setIndex(0);
-    if (!session || mode === 'commands' || !query.trim()) {
-      setHits([]);
-      return;
-    }
-    setBusy(true);
-    setError('');
-    const timer = setTimeout(() => {
-      void desktop
-        .call('files.search', { sessionId: session.id, query, content: mode === 'search' })
-        .then((result) => {
-          if (generation.current === gen) setHits(result.hits);
-        })
-        .catch((e) => {
-          if (generation.current === gen) setError(e.message);
-        })
-        .finally(() => {
-          if (generation.current === gen) setBusy(false);
-        });
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [query, session?.id, mode]);
+
   const choose = (i: number) => {
     useApp.setState({ palette: null });
-    if (mode === 'commands') commands[i]?.run();
-    else if (hits[i]) void useApp.getState().openFile(hits[i].path, hits[i].line);
+    commands[i]?.run();
   };
-  const length = mode === 'commands' ? commands.length : hits.length;
   return (
     <Dialog.Root
-      open={!!mode}
+      open
       onOpenChange={(open) => {
         if (!open) useApp.setState({ palette: null });
       }}
     >
       <Dialog.Portal>
         <Dialog.Backdrop className="modal-backdrop" />
-        <Dialog.Popup className="palette">
-          <Dialog.Title className="sr-only">
-            {mode === 'commands'
-              ? 'Commands'
-              : mode === 'search'
-                ? 'Search in project'
-                : 'Find a file'}
-          </Dialog.Title>
+        <Dialog.Popup className="palette" initialFocus={input}>
+          <Dialog.Title className="sr-only">Commands</Dialog.Title>
           <div className="palette-input">
-            {mode === 'commands' ? <Command size={18} /> : <Search size={18} />}
+            <Command size={18} />
             <input
-              autoFocus
+              ref={input}
+              aria-label="Search commands"
+              placeholder="What would you like to do?"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={
-                mode === 'commands'
-                  ? 'What would you like to do?'
-                  : mode === 'search'
-                    ? 'Search text in this worktree…'
-                    : 'Find a file by name…'
-              }
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setIndex(0);
+              }}
               onKeyDown={(e) => {
-                if (e.key === 'ArrowDown') {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                   e.preventDefault();
-                  setIndex(Math.min(length - 1, index + 1));
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  setIndex(Math.max(0, index - 1));
+                  setIndex(
+                    Math.max(
+                      0,
+                      Math.min(commands.length - 1, index + (e.key === 'ArrowDown' ? 1 : -1)),
+                    ),
+                  );
                 } else if (e.key === 'Enter') {
                   e.preventDefault();
                   choose(index);
@@ -151,54 +127,24 @@ export default function CommandPalette() {
             <kbd>esc</kbd>
           </div>
           <div className="palette-results">
-            {mode === 'commands'
-              ? commands.map((c, i) => (
-                  <button
-                    key={c.name}
-                    className={`palette-result ${i === index ? 'selected' : ''}`}
-                    onMouseEnter={() => setIndex(i)}
-                    onClick={() => choose(i)}
-                  >
-                    <Command size={14} />
-                    <span>{c.name}</span>
-                    <ArrowUpRight size={13} />
-                  </button>
-                ))
-              : hits.map((hit, i) => (
-                  <button
-                    key={`${hit.path}:${hit.line ?? ''}:${i}`}
-                    className={`palette-result ${i === index ? 'selected' : ''}`}
-                    onMouseEnter={() => setIndex(i)}
-                    onClick={() => choose(i)}
-                  >
-                    <FileCode2 size={14} />
-                    <span>
-                      {hit.path}
-                      {hit.line && (
-                        <small>
-                          {hit.line}: {hit.text}
-                        </small>
-                      )}
-                    </span>
-                  </button>
-                ))}
-            {error ? (
-              <p className="inline-error">{error}</p>
-            ) : busy ? (
-              <p className="palette-hint">Searching…</p>
-            ) : (
-              !length && (
-                <p className="palette-hint">
-                  {query ? 'No matching results.' : 'Start typing to search.'}
-                </p>
-              )
-            )}
+            {commands.map((command, i) => (
+              <button
+                key={command.name}
+                ref={i === index ? selected : undefined}
+                className={`palette-result ${i === index ? 'selected' : ''}`}
+                onMouseEnter={() => setIndex(i)}
+                onClick={() => choose(i)}
+              >
+                <Command size={14} />
+                <span>{command.name}</span>
+                <ArrowUpRight size={13} />
+              </button>
+            ))}
+            {!commands.length && <p className="palette-hint">No matching commands.</p>}
           </div>
           <div className="palette-footer">
             <span>↑ ↓ to navigate</span>
-            <span>↵ to open</span>
-            <span className="spacer" />
-            {session?.branch}
+            <span>↵ to run</span>
           </div>
         </Dialog.Popup>
       </Dialog.Portal>

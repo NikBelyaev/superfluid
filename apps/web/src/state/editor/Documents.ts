@@ -270,6 +270,15 @@ class Documents {
     notify();
     void this.sync(doc).catch(() => {});
   }
+  async refresh(doc: Doc) {
+    if (doc.dirty || doc.readOnly) return;
+    const disk = await desktop.call('files.read', {
+      sessionId: doc.session.id,
+      path: doc.path,
+      diskOnly: true,
+    });
+    if (!doc.dirty && disk.hash !== doc.hash) await this.reload(doc);
+  }
   async close(sessionId: string, path: string) {
     const doc = this.items.get(this.key(sessionId, path));
     if (!doc) return;
