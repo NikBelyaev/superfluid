@@ -315,7 +315,7 @@ test('repository status, diffs, commits and pushes stay in their destination ses
   }
 });
 
-test('branch operations preserve dirty files and drafts, allow partial results, and replay without switching again', async () => {
+test('branch operations carry dirty files, preserve drafts, and replay without switching again', async () => {
   const f = await fixture();
   try {
     await writeFile(join(f.second, 'main.py'), 'keep dirty\n');
@@ -328,12 +328,13 @@ test('branch operations preserve dirty files and drafts, allow partial results, 
       base: 'HEAD',
     });
     assert.equal((await f.service.act(f.s, input)).phase, 'completed');
-    const blocked = await f.act(f.secondId, 'create-branch', {
+    const switched = await f.act(f.secondId, 'create-branch', {
       branch: 'task/example',
       base: 'HEAD',
     });
-    assert.match(blocked.error!, /local changes/);
-    assert.equal((await git(f.second, ['branch', '--show-current'])).trim(), 'main');
+    assert.equal(switched.phase, 'completed', switched.error ?? '');
+    assert.equal((await git(f.second, ['branch', '--show-current'])).trim(), 'task/example');
+    assert.equal(await readFile(join(f.second, 'main.py'), 'utf8'), 'keep dirty\n');
     assert.equal((await git(f.root, ['branch', '--show-current'])).trim(), 'main');
     await git(f.first, ['switch', 'main']);
     assert.equal((await f.service.act(f.s, input)).phase, 'completed');
