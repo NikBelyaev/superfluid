@@ -1,4 +1,5 @@
 import * as monaco from 'monaco-editor/editor/editor.api';
+import './contextMenu.css';
 
 // Register contributions before language registration initializes Monaco services.
 import 'monaco-editor/editor/browser/coreCommands';

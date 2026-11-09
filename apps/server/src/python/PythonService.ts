@@ -274,6 +274,10 @@ export class PythonService {
           );
         const scopes = isModule ? [] : scopesAt(await symbols.get(uri)!, position);
         const scope = scopes.at(-1);
+        const binding =
+          scope?.selectionRange &&
+          (position.line !== scope.selectionRange.start.line ||
+            position.character !== scope.selectionRange.start.character);
         const name = await moduleName(session.path, fileURLToPath(uri));
         return {
           module: { uri, position: { line: 0, character: 0 }, name, kind: 2 },
@@ -283,7 +287,14 @@ export class PythonService {
             name: symbol.name,
             kind: symbol.kind,
           })),
-          symbol: { uri, position, name: scope?.name ?? name, kind: scope?.kind ?? 2 },
+          symbol: {
+            uri,
+            position,
+            range: selection,
+            name: scope?.name ?? name,
+            kind: scope?.kind ?? 2,
+          },
+          ...(binding ? { binding: true } : {}),
         };
       }),
     );

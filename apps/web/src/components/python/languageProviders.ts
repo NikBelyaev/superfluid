@@ -1,6 +1,7 @@
 import { callPython } from '~/rpc/python';
 import { documents, monaco } from '~/state/editor/Documents';
 import { definitionLink, definitionTrust } from './definitionPreview';
+import { symbolActions } from './symbolActions';
 
 async function request(
   model: monaco.editor.ITextModel,
@@ -86,9 +87,14 @@ monaco.languages.registerHoverProvider('python', {
         token,
       );
       if (!r || token.isCancellationRequested || doc.version !== version) return null;
-      const link = (target: (typeof r.definitions)[number]['symbol'], label = target.name) =>
-        `[${label.replace(/[\\`*_{}\[\]()<>]/g, '\\$&')}](${definitionLink(doc, point, target)})`;
+      const link = (
+        target: (typeof r.definitions)[number]['symbol'],
+        label = target.name,
+        title = '',
+      ) =>
+        `[${label.replace(/[\\`*_{}\[\]()<>]/g, '\\$&')}](${definitionLink(doc, point, target)}${title ? ` "${title}"` : ''})`;
       const target = r.definitions[0]?.symbol;
+      const name = model.getWordAtPosition(position)?.word;
       return {
         range: r.range ? range(r.range) : undefined,
         contents: [
@@ -98,7 +104,7 @@ monaco.languages.registerHoverProvider('python', {
               .join(' · ');
             const candidate =
               r.definitions.length > 1
-                ? ` · ${link(definition.symbol, `${definition.symbol.name}:${definition.symbol.position.line + 1}`)}`
+                ? ` · ${link(definition.symbol, `${name ?? definition.symbol.name}:${definition.symbol.position.line + 1}`, 'Open definition')}`
                 : '';
             return {
               value: `$(folder) ${context}${candidate}`,
@@ -118,6 +124,7 @@ monaco.languages.registerHoverProvider('python', {
                 },
               ]
             : []),
+          symbolActions(doc, point, r),
         ],
       };
     } catch {

@@ -68,6 +68,7 @@ export function installDefinitionHover(root: HTMLElement) {
       event.target instanceof Element
         ? event.target.closest<HTMLElement>(`a[data-href^="command:${command}?"]`)
         : null;
+    if (event.target instanceof Element && event.target.closest('a[data-href]') && !clicked) return;
     const href = clicked?.dataset.href ?? links?.[links.length - 1]?.dataset.href;
     if (!href) return;
     event.preventDefault();

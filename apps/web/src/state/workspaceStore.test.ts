@@ -10,7 +10,7 @@ import {
   tabsToClose,
 } from './workspaceView';
 import { flushLayouts, showSurface, useApp } from './workspaceStore';
-import type { GitStatus } from '@superfluid/contracts';
+import type { GitStatus, Session } from '@superfluid/contracts';
 import { session } from '../../../../tests/fixtures';
 
 test('opening projects restores supported surfaces from incompatible saved layouts', async () => {
@@ -28,7 +28,7 @@ test('opening projects restores supported surfaces from incompatible saved layou
     request,
   ];
   const incompatible = [{ kind: 'unsupported' }, null, { kind: 'file' }, { kind: 'pr', ref: {} }];
-  const sessions = incompatible.map((surface, index) => ({
+  const sessions: Session[] = incompatible.map((surface, index) => ({
     ...session('/workspace'),
     id: String(index),
     state: { tabs: ['main.py'], active: 'main.py', surface, rightTabs: [...supported, surface] },
@@ -37,6 +37,27 @@ test('opening projects restores supported surfaces from incompatible saved layou
     ...session('/workspace'),
     id: 'supported',
     state: { tabs: ['main.py'], active: 'main.py', surface: request, rightTabs: supported },
+  });
+  sessions.push({
+    ...session('/workspace'),
+    id: 'file-objects',
+    state: {
+      layoutVersion: 1,
+      tabs: [{ kind: 'file', path: 'main.py' }, { kind: 'file', path: 42 }, null],
+      active: { kind: 'file', path: 'main.py' },
+      surface: request,
+      rightTabs: supported,
+    },
+  });
+  sessions.push({
+    ...session('/workspace'),
+    id: 'invalid-active',
+    state: {
+      tabs: ['main.py'],
+      active: { kind: 'file', path: 42 },
+      surface: request,
+      rightTabs: supported,
+    },
   });
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
@@ -65,7 +86,10 @@ test('opening projects restores supported surfaces from incompatible saved layou
       assert.deepEqual(restored.rightTabs, supported);
       assert.deepEqual(restored.surface, saved.state.surface === null ? null : request);
       assert.deepEqual(restored.tabs, [{ kind: 'file', path: 'main.py' }]);
-      assert.deepEqual(restored.active, { kind: 'file', path: 'main.py' });
+      assert.deepEqual(
+        restored.active,
+        saved.id === 'invalid-active' ? null : { kind: 'file', path: 'main.py' },
+      );
     }
   } finally {
     useApp.setState(before, true);

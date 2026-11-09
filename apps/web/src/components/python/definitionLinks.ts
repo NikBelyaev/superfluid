@@ -10,7 +10,7 @@ type Definition =
   | { targetUri: string; targetSelectionRange: { start: PythonLocation['position'] } };
 type DefinitionTarget = PythonLocation & { generation: number };
 
-type ContentHover = monaco.editor.IEditorContribution & {
+export type ContentHover = monaco.editor.IEditorContribution & {
   readonly isHoverVisible: boolean;
   hideContentHover(): void;
   showContentHover(range: monaco.Range, mode: 1, source: 0, focus: false): void;

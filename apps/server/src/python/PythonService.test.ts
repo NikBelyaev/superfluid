@@ -202,6 +202,9 @@ for (const kind of ['ty', 'pyright'] as const)
       '    class Nested:',
       '        def run(self) -> None: pass',
       'def helper() -> str: return "ok"',
+      'class UnknownGetter:',
+      '    def __init__(self):',
+      '        self.attribute_path = self.get_attribute_path()',
       '',
     ].join('\n');
     await writeFile(join(root, 'pkg/models.py'), models);
@@ -298,6 +301,31 @@ for (const kind of ['ty', 'pyright'] as const)
         assert.equal(hover?.definitions[0].module.name, name);
         if (line === 11) assert.equal(hover.definitions[0].symbol.kind, 2);
       }
+      for (const [line, word, binding] of [
+        [4, 'get_response', true],
+        [8, 'count', false],
+      ] as const) {
+        const hover = await callPython('python.hover', {
+          sessionId: session.id,
+          path: 'pkg/models.py',
+          position: { line, character: models.split('\n')[line].indexOf(word) + 1 },
+        });
+        assert.equal(Boolean(hover?.definitions[0]?.binding), binding && kind === 'ty', word);
+      }
+      const field = await callPython('python.hover', {
+        sessionId: session.id,
+        path: 'pkg/models.py',
+        position: { line: 16, character: 15 },
+      });
+      assert.ok(
+        field?.definitions.some(
+          ({ symbol }) =>
+            symbol.range?.start.line === 16 &&
+            symbol.range.start.character <= 13 &&
+            symbol.range.end.line === 16 &&
+            symbol.range.end.character === 27,
+        ),
+      );
       const input = {
         sessionId: session.id,
         path: 'main.py',

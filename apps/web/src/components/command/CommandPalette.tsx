@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
 import { Command, ArrowUpRight } from 'lucide-react';
 import type { Session } from '@superfluid/contracts';
-import { useApp, showSurface } from '~/state/workspaceStore';
+import { useApp, showSurface, openPalette } from '~/state/workspaceStore';
 import { runAction } from '~/commands/runProjectAction';
 import { openRepositoryMenu } from '~/commands/gitBatch';
 import { checkForAppUpdates } from '~/commands/updateApp';
@@ -10,11 +10,17 @@ import { SearchDialog } from '~/components/search/SearchDialog';
 
 export default function CommandPalette() {
   const mode = useApp((a) => a.palette);
+  const initialQuery = useApp((a) => a.paletteQuery ?? '');
   const session = useApp((a) => a.sessions.find((s) => s.id === a.sessionId));
   if (!mode) return null;
   if (mode !== 'commands')
     return session ? (
-      <SearchDialog key={`${session.id}:${mode}`} session={session} mode={mode} />
+      <SearchDialog
+        key={`${session.id}:${mode}:${initialQuery}`}
+        session={session}
+        mode={mode}
+        initialQuery={initialQuery}
+      />
     ) : null;
   return <Commands session={session} />;
 }
@@ -28,9 +34,9 @@ function Commands({ session }: { session?: Session }) {
     selected.current?.scrollIntoView({ block: 'nearest' });
   }, [index]);
   const commands = [
-    { name: 'Find a file', run: () => useApp.setState({ palette: 'files' }) },
-    { name: 'Search worktree', run: () => useApp.setState({ palette: 'search' }) },
-    { name: 'Go to symbol in worktree', run: () => useApp.setState({ palette: 'symbols' }) },
+    { name: 'Find a file', run: () => openPalette('files') },
+    { name: 'Search worktree', run: () => openPalette('search') },
+    { name: 'Go to symbol in worktree', run: () => openPalette('symbols') },
     { name: 'Check for app updates', run: checkForAppUpdates },
     {
       name: 'Settings: About',
