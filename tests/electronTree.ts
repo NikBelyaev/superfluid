@@ -325,6 +325,12 @@ try {
   await expect(entry('main.py')).toBeFocused();
   await page.keyboard.press('ArrowUp');
   await expect(entry('src/models/model_159.py')).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(entry('empty')).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(entry('main.py')).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await expect(entry('src/models/model_159.py')).toBeFocused();
   assert.ok((await page.locator('.tree-row').count()) < 80);
   await page.screenshot({ path: 'test-results/project-tree-sticky.png' });
   await page.keyboard.press('ArrowLeft');
