@@ -32,7 +32,14 @@ jobs:
           node-version: '26'
       - run: npm install --global pnpm@12.14.0
       - id: cache
-        run: echo "electron=$(node -p 'require("./package.json").devDependencies.electron')" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "pnpm-store=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+          echo "electron=$(node -p 'require("./package.json").devDependencies.electron')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.cache.outputs.pnpm-store }}
+          key: pnpm-${{ runner.os }}-${{ runner.arch }}-node26-pnpm12.14.0-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-${{ runner.arch }}-node26-pnpm12.14.0-
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: node_modules/.cache/electron
