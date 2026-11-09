@@ -3,6 +3,7 @@ import { chmod } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { installTy } from './ty.mjs';
+import { copyZoekt } from './zoekt.mjs';
 const require = createRequire(import.meta.url);
 const install = spawnSync(process.execPath, [require.resolve('electron/install.js')], {
   stdio: 'inherit',
@@ -16,3 +17,4 @@ if (process.platform !== 'win32') {
   );
 }
 await installTy();
+await copyZoekt();

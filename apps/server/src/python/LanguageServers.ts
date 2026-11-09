@@ -1,11 +1,12 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { createRequire } from 'node:module';
 import type { Session, AppEvent } from '@superfluid/contracts';
 import type { Store } from '../persistence/Store';
 import { inspectInterpreter, languageServerFor } from './interpreter';
+import { searchExcludes } from '../files/searchPaths';
 
 const require = createRequire(import.meta.url);
 
@@ -63,6 +64,7 @@ export class LanguageServers {
 }
 
 class Server {
+  private symbolServer?: Server;
   private child?: ChildProcessWithoutNullStreams;
   private buffer = Buffer.alloc(0);
   private serial = 0;
@@ -97,7 +99,10 @@ class Server {
     return this.kind === 'ty'
       ? {
           ty: {
-            configuration: { environment: { python: this.executable } },
+            configuration: {
+              environment: { python: this.executable },
+              src: { exclude: searchExcludes },
+            },
             diagnosticMode: 'openFilesOnly',
             completions: { autoImport: false },
           },
@@ -118,7 +123,8 @@ class Server {
     private session: Session,
     readonly generation: number,
     private notify: (event: AppEvent) => void,
-    drafts: () => ReturnType<Store['drafts']>,
+    private drafts: () => ReturnType<Store['drafts']>,
+    private role: 'editor' | 'symbols' = 'editor',
   ) {
     this.status('starting', 'Checking Python interpreter…');
     this.ready = this.start(drafts);
@@ -128,11 +134,11 @@ class Server {
     const interpreter = await inspectInterpreter(this.session.python, this.session.path);
     if (this.released) throw new Error('Python server session released.');
     this.executable = interpreter.executable;
-    this.kind = languageServerFor(interpreter.version);
+    this.kind = this.role === 'symbols' ? 'ty' : languageServerFor(interpreter.version);
     try {
       await this.launch(drafts);
     } catch (error) {
-      if (this.kind !== 'ty' || this.released) throw error;
+      if (this.kind !== 'ty' || this.released || this.role === 'symbols') throw error;
       this.child?.kill();
       this.child = undefined;
       this.closed = false;
@@ -221,7 +227,8 @@ class Server {
     if (this.released) throw new Error('Python server session released.');
     this.send('initialized', {});
     this.send('workspace/didChangeConfiguration', { settings: this.configuration() });
-    for (const d of drafts()) this.openRaw(d.path, d.text, d.version);
+    for (const d of drafts())
+      if (this.role === 'editor' || /\.pyi?$/.test(d.path)) this.openRaw(d.path, d.text, d.version);
     this.status('ready', `${this.kind === 'ty' ? 'ty' : 'Pyright'} ready${this.fallback}`);
   }
   private write(message: unknown) {
@@ -365,7 +372,43 @@ class Server {
   async request(method: string, params: unknown, signal?: AbortSignal) {
     signal?.throwIfAborted();
     await this.ready;
+    if (method === 'workspace/symbol' && this.kind === 'pyright') {
+      // Pyright only searches analyzed files; ty supplies the workspace symbol index without changing older-Python diagnostics.
+      if (!this.symbolServer?.available)
+        this.symbolServer = new Server(
+          this.session,
+          this.generation,
+          () => {},
+          this.drafts,
+          'symbols',
+        );
+      await this.symbolServer.ready;
+      const drafts = this.drafts().filter((draft) => /\.pyi?$/.test(draft.path));
+      const uris = new Set(
+        drafts.map((draft) => pathToFileURL(join(this.session.path, draft.path)).href),
+      );
+      for (const uri of this.symbolServer.documents.keys())
+        if (!uris.has(uri))
+          await this.symbolServer.documentClose(relative(this.session.path, fileURLToPath(uri)));
+      for (const draft of drafts)
+        await this.symbolServer.open(draft.path, draft.text, draft.version);
+      const value = await this.symbolServer.requestRaw(method, params, signal);
+      this.symbolServer.assertCurrent();
+      this.assertCurrent();
+      return value;
+    }
     const result = await this.requestRaw(method, params, signal);
+    this.assertCurrent();
+    return result;
+  }
+  async symbolOutline(uri: string, signal?: AbortSignal) {
+    const server = this.kind === 'pyright' ? this.symbolServer : this;
+    if (!server?.available) throw new Error('Python symbol server changed. Try again.');
+    const result = await server.request(
+      'textDocument/documentSymbol',
+      { textDocument: { uri } },
+      signal,
+    );
     this.assertCurrent();
     return result;
   }
@@ -385,6 +428,7 @@ class Server {
     this.send('workspace/didChangeWatchedFiles', {
       changes: [{ uri: pathToFileURL(file).href, type }],
     });
+    await this.symbolServer?.changed(path, event);
   }
   private fail(error: Error) {
     for (const task of this.pending.values()) {
@@ -396,9 +440,11 @@ class Server {
       this.closed = true;
       this.status('error', error.message);
       this.child?.kill();
+      this.symbolServer?.close();
     }
   }
   close() {
+    this.symbolServer?.close();
     this.released = true;
     this.closed = true;
     this.fail(new Error('Python server session released.'));

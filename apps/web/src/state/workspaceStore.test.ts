@@ -333,3 +333,17 @@ test('reopening layouts moves legacy terminals below the editor and drops stale 
     useApp.setState(initial, true);
   }
 });
+
+test('search filters restore per mode and malformed saved choices fall back safely', () => {
+  const searchFilters = {
+    search: { types: ['class', 'document'], excluded: ['nested-repository'] },
+    files: { types: [], excluded: [] },
+  };
+  assert.deepEqual(restoreView({ searchFilters }).searchFilters, searchFilters);
+  for (const searchFilters of [
+    null,
+    { search: { types: ['unknown'], excluded: [] } },
+    { files: { types: ['file'], excluded: [42] } },
+  ])
+    assert.equal(restoreView({ searchFilters }).searchFilters, undefined);
+});

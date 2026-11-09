@@ -33,6 +33,10 @@ export class WorkspaceClient {
         ...process.env,
         PATH: `${process.env.PATH || '/usr/bin:/bin'}:/opt/homebrew/bin:/usr/local/bin`,
         SF_NODE_EXEC_PATH: process.execPath,
+        SF_ZOEKT_PATH: join(
+          dirname(entrypoint),
+          `zoekt${process.platform === 'win32' ? '.exe' : ''}`,
+        ).replace('app.asar/', 'app.asar.unpacked/'),
         SF_TY_PATH: join(
           dirname(entrypoint),
           `ty${process.platform === 'win32' ? '.exe' : ''}`,

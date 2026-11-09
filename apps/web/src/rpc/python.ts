@@ -44,7 +44,9 @@ export async function syncPythonDocument(doc: Doc) {
   return entry.pending;
 }
 
-export async function callPython<M extends 'lsp.request' | 'python.hover' | 'python.source'>(
+export async function callPython<
+  M extends 'lsp.request' | 'python.hover' | 'python.source' | 'python.symbols',
+>(
   method: M,
   input: Input<M>,
   token?: CancellationToken | AbortSignal,

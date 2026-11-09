@@ -2,6 +2,7 @@ export * from './project';
 export * from './hosting';
 
 export * from './files';
+export * from './search';
 
 export * from './vcs';
 

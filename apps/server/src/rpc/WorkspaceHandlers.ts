@@ -23,6 +23,7 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     actions,
     terminals,
     python,
+    search,
     pullRequests,
   } = workspace;
   const session = (id: string) => projects.session(id);
@@ -48,15 +49,32 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     'session.interpreter': (input) => projects.setInterpreter(session(input.sessionId), input),
     'files.list': (input) => documents.list(session(input.sessionId), input.path),
     'files.read': (input) => documents.read(session(input.sessionId), input),
-    'files.save': (input) =>
-      files.save(session(input.sessionId), input.path, input.text, input.hash),
+    'files.save': async (input) => {
+      const result = await files.save(session(input.sessionId), input.path, input.text, input.hash);
+      search.changed(input.sessionId, input.path);
+      return result;
+    },
     'files.create': async (input) => {
       await files.create(session(input.sessionId), input.path, input.directory);
+      search.changed(input.sessionId, input.path);
       return null;
     },
-    'files.rename': (input) => documents.rename(session(input.sessionId), input.path, input.target),
+    'files.rename': async (input) => {
+      await documents.rename(session(input.sessionId), input.path, input.target);
+      search.changed(input.sessionId, input.path);
+      search.changed(input.sessionId, input.target);
+      return null;
+    },
     'files.resolve': (input) => documents.resolve(session(input.sessionId), input.path),
-    'files.search': (input) => files.search(session(input.sessionId), input.query, input.content),
+    'files.search': (input) =>
+      input.content
+        ? search.text(session(input.sessionId), input.query, input.requestId)
+        : search.files(session(input.sessionId), input.query, input.requestId),
+    'files.cancel': (input) => search.cancel(session(input.sessionId).id, input.requestId),
+    'search.query': (input) => workspace.codeSearch.query(session(input.sessionId), input),
+    'search.cancel': (input) =>
+      workspace.codeSearch.cancel(session(input.sessionId), input.requestId),
+    'search.preview': (input) => workspace.codeSearch.preview(session(input.sessionId), input),
     'draft.put': (input) => documents.putDraft(session(input.sessionId), input),
     'draft.drop': (input) => {
       store.dropDraft(session(input.sessionId).id, input.path, input.version);
@@ -80,6 +98,7 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     'lsp.cancel': (input) => python.cancel(session(input.sessionId), input.requestId),
     'lsp.request': (input) => python.request(session(input.sessionId), input),
     'python.format': (input) => python.format(session(input.sessionId), input.text),
+    'python.symbols': (input) => python.symbols(session(input.sessionId), input),
     'python.hover': (input) => python.hover(session(input.sessionId), input),
     'python.source': (input) => python.source(session(input.sessionId), input),
     'pr.read': async (input) => pullRequests.read(await repository(input), input),

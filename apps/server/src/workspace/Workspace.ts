@@ -14,6 +14,8 @@ import { SourceControlService } from '../vcs/SourceControlService';
 import { ProjectService } from '../project/ProjectService';
 import { LanguageServers } from '../python/LanguageServers';
 import { PythonService } from '../python/PythonService';
+import { SearchService } from '../search/SearchService';
+import { CodeSearchService } from '../search/CodeSearchService';
 import { TerminalManager } from '../terminal/TerminalManager';
 import { ProjectActionService } from '../terminal/ProjectActionService';
 import { PullRequestService } from '../pullRequest/PullRequestService';
@@ -33,6 +35,8 @@ export class Workspace {
   readonly sourceControl: SourceControlService;
   readonly actions: ProjectActionService;
   readonly python: PythonService;
+  readonly search: SearchService;
+  readonly codeSearch: CodeSearchService;
   readonly pullRequests: PullRequestService;
   readonly hosting: HostingService;
   readonly sourceControlDiscovery: SourceControlDiscovery;
@@ -44,6 +48,7 @@ export class Workspace {
     options: { terminalWorker?: URL } = {},
   ) {
     this.store = new Store(directory);
+    this.search = new SearchService(this.store, this.files);
     this.sourceControlDiscovery = new SourceControlDiscovery(directory);
     this.hosting = new HostingService(this.store, undefined, this.sourceControlDiscovery);
     this.git = new GitService(
@@ -61,6 +66,12 @@ export class Workspace {
     this.sourceControl = new SourceControlService(this.git, this.projects, this.store);
     this.actions = new ProjectActionService(this.store, this.terminals);
     this.python = new PythonService(this.lsp, this.watcher, this.files, this.documents);
+    this.codeSearch = new CodeSearchService(
+      this.search,
+      this.python,
+      this.sourceControl.repositories,
+      this.documents,
+    );
     this.pullRequests = new PullRequestService(this.hosting, (sessionId, ref) =>
       emit({ type: 'pr.changed', sessionId, ref }),
     );
@@ -72,8 +83,10 @@ export class Workspace {
     return this.handlers[method](input);
   }
   async close() {
+    this.codeSearch.close();
     this.watcher.close();
     this.lsp.close();
+    await this.search.close();
     await this.terminals.close();
     this.store.close();
   }
