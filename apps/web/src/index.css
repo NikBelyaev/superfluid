@@ -674,35 +674,11 @@ kbd {
 .git-letter.new {
   color: var(--success-foreground);
 }
-.tree-row[data-git-status='added'] .file-label,
-.tree-row[data-git-status='added'] .git-letter,
-.tree-row[data-git-status='untracked'] .file-label,
-.tree-row[data-git-status='untracked'] .git-letter {
-  color: light-dark(#16a994, #00cab1);
-}
-.tree-row[data-git-status='modified'] .file-label,
-.tree-row[data-git-status='modified'] .git-letter {
-  color: light-dark(#1ca1c7, #08c0ef);
-}
-.tree-row[data-git-status='deleted'] .file-label,
-.tree-row[data-git-status='conflict'] .file-label,
-.tree-row[data-git-status='deleted'] .git-letter,
-.tree-row[data-git-status='conflict'] .git-letter {
-  color: light-dark(#ff2e3f, #ff6762);
-}
-.tree-row[data-git-status='renamed'] .file-label,
-.tree-row[data-git-status='renamed'] .git-letter {
-  color: light-dark(#d5a910, #ffd452);
-}
-.tree-row[data-git-status='ignored'] .file-label {
-  color: var(--muted-foreground);
-}
 .tree-git-dot {
   flex: none;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: light-dark(#1ca1c7, #08c0ef);
   opacity: 0.5;
 }
 .tree-row-end {
@@ -786,12 +762,15 @@ kbd {
 }
 .editor-header,
 .surface-header {
+  position: relative;
+  z-index: 1;
   height: 40px;
   display: flex;
   align-items: center;
   flex: none;
-  border-bottom: 1px solid var(--border);
-  background: var(--background);
+  background: color-mix(in srgb, var(--background) 90%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--background) 70%, transparent);
 }
 .tab-tools {
   display: flex;
@@ -898,7 +877,7 @@ kbd {
   flex-direction: column;
   overflow: hidden;
 }
-.breadcrumb {
+.editor-notice {
   background: var(--background);
   height: 28px;
   flex: none;
@@ -912,20 +891,13 @@ kbd {
   white-space: nowrap;
   line-height: 16px;
 }
-.editor-header:has(+ .surface-panel > .editor-pane),
-.surface-header:has(+ .surface-panel > .editor-pane) {
-  border-bottom: none;
-}
-.breadcrumb > span:last-of-type {
-  color: var(--muted-foreground);
-}
 .editor-host {
   flex: 1;
   min-height: 0;
 }
 .editor-empty {
   position: absolute;
-  inset: 28px 0 0;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -958,7 +930,7 @@ kbd {
 }
 .editor-message {
   position: absolute;
-  inset: 28px 0 0;
+  inset: 0;
   background: var(--card);
   display: flex;
   align-items: center;
@@ -985,8 +957,9 @@ kbd {
 .statusbar {
   height: var(--statusbar-height);
   flex: none;
-  border-top: 1px solid var(--border);
-  background: var(--sidebar);
+  background: color-mix(in srgb, var(--background) 90%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 -4px 10px color-mix(in srgb, var(--background) 70%, transparent);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1381,10 +1354,6 @@ kbd {
 .lineage-row:hover .lineage-remove,
 .lineage-row:focus-within .lineage-remove {
   visibility: visible;
-}
-.lineage-row:hover small,
-.lineage-row:focus-within small {
-  display: none;
 }
 .lineage-remove:hover {
   color: var(--foreground);

@@ -1,18 +1,17 @@
 import { desktop } from '~/rpc/desktop';
 import { useState, useEffect } from 'react';
-import { currentSession, useApp } from '~/state/workspaceStore';
+import { useApp } from '~/state/workspaceStore';
 import type { Results } from '@superfluid/contracts';
 import { Form } from '~/components/dialogs/DialogForm';
 
-export function GitReviewDialog({ id }: { id: string }) {
-  const [s] = useState(() => currentSession()!),
-    [inspection, setInspection] = useState<Results['git.inspect'] | null>(null),
+export function GitReviewDialog({ id, sessionId }: { id: string; sessionId: string }) {
+  const [inspection, setInspection] = useState<Results['git.inspect'] | null>(null),
     [checked, setChecked] = useState(false),
     [error, setError] = useState('');
   useEffect(() => {
     let cancelled = false;
     void desktop
-      .call('git.inspect', { sessionId: s.id, operationId: id })
+      .call('git.inspect', { sessionId, operationId: id })
       .then((value) => {
         if (!cancelled) setInspection(value);
       })
@@ -22,7 +21,7 @@ export function GitReviewDialog({ id }: { id: string }) {
     return () => {
       cancelled = true;
     };
-  }, [s.id, id]);
+  }, [sessionId, id]);
   return (
     <Form
       label="Allow a new Git operation"
@@ -30,7 +29,7 @@ export function GitReviewDialog({ id }: { id: string }) {
         if (!checked || !inspection)
           throw new Error('Inspect the local log and remote before acknowledging this attempt.');
         const operation = await desktop.call('git.acknowledge', {
-          sessionId: s.id,
+          sessionId,
           operationId: id,
         });
         useApp.setState((a) => ({
@@ -39,8 +38,8 @@ export function GitReviewDialog({ id }: { id: string }) {
       }}
     >
       <p className="modal-description">
-        An earlier operation stopped with an uncertain result. Acknowledging it does not retry or
-        undo any Git command.
+        We couldn’t confirm how your last Git action finished. Check the result below to continue.
+        This won’t retry or undo the action.
       </p>
       {error && <p className="form-error">{error}</p>}
       {inspection ? (

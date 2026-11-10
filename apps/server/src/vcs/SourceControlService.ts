@@ -44,7 +44,12 @@ export class SourceControlService {
     return this.git.diff(target, path, input.mode, input.base);
   }
   async status(session: Session, repositoryId?: string) {
-    return this.git.status(await this.repositories.target(session, repositoryId));
+    const target = await this.repositories.target(session, repositoryId);
+    await this.git.recover(
+      target,
+      target.path === (await realpath(session.path)) ? undefined : repositoryId,
+    );
+    return this.git.status(target);
   }
   async act(session: Session, input: ParsedInput<'git.act'>) {
     const target = await this.repositories.target(session, input.repositoryId);

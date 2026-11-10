@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { ArrowRightLeft, GitBranch, LoaderCircle, Plus } from 'lucide-react';
 import type { Session } from '@superfluid/contracts';
 import { createRepositoryWorktree, runGitBatch } from '~/commands/gitBatch';
-import { selectedRepositories, repositoryBranch } from '~/state/repositories';
+import { gitOperationToReview, selectedRepositories, repositoryBranch } from '~/state/repositories';
+import { openGitReview } from '~/state/dialogs';
 import { useApp } from '~/state/workspaceStore';
 import { RepositoryBranchPicker, RepositoryCreationPicker } from './RepositoryBranchPicker';
 import { RepositoryNotice } from './RepositoryNotice';
@@ -22,7 +23,9 @@ export function RepositoryGraph({
   const errors = useApp((s) => s.repositoryErrors[session.id]);
   const batch = useApp((s) => s.gitBatches[session.id]);
   const creatingWorktree = useApp((s) => s.repositoryWorktrees[session.id]);
+  const operations = useApp((s) => s.operations);
   const group = selectedRepositories(repositories, ids);
+  const review = gitOperationToReview(session.id, group, operations);
   const [action, setAction] = useState<'create-branch' | 'checkout' | null>(initialAction || null);
   const [base, setBase] = useState(''),
     [branch, setBranch] = useState(''),
@@ -98,7 +101,7 @@ export function RepositoryGraph({
     return () => clearInterval(timer);
   }, [pending]);
   const submit = async () => {
-    if (!action || problem || running) return;
+    if (!action || problem || running || review) return;
     setPending(true);
     setSeconds(0);
     setFailure('');
@@ -199,28 +202,41 @@ export function RepositoryGraph({
             </div>
           </div>
         </div>
-        {(failure || (action && problem)) && (
-          <RepositoryNotice tone={failure ? 'error' : 'warning'}>
-            {failure || problem}
-            {!failure && action === 'create-branch' && branchExists && !invalidName && (
-              <button
-                type="button"
-                className="repository-graph-switch"
-                onClick={() => selectExistingBranch(branch.trim())}
-              >
-                Switch
-              </button>
-            )}
+        {review ? (
+          <RepositoryNotice tone="warning">
+            We couldn’t confirm how your last Git action finished. Review the result to continue.
+            <button
+              type="button"
+              className="repository-graph-switch"
+              onClick={() => openGitReview(review)}
+            >
+              Review
+            </button>
           </RepositoryNotice>
+        ) : (
+          (failure || (action && problem)) && (
+            <RepositoryNotice tone={failure ? 'error' : 'warning'}>
+              {failure || problem}
+              {!failure && action === 'create-branch' && branchExists && !invalidName && (
+                <button
+                  type="button"
+                  className="repository-graph-switch"
+                  onClick={() => selectExistingBranch(branch.trim())}
+                >
+                  Switch
+                </button>
+              )}
+            </RepositoryNotice>
+          )
         )}
-        {action && !problem && !failure && !(action === 'create-branch' && worktree) && (
+        {action && !problem && !failure && !review && !(action === 'create-branch' && worktree) && (
           <RepositoryNotice tone="info">
             Your uncommitted changes will move with you to the selected branch.
           </RepositoryNotice>
         )}
         <button
           className="button primary repository-graph-submit"
-          disabled={!action || !!problem || running}
+          disabled={!action || !!problem || running || !!review}
           aria-live="polite"
           aria-busy={running}
         >

@@ -13,7 +13,7 @@ export default function ProjectDetailsPanel({ session }: { session: Session }) {
   const setCollapsed = (islandCollapsed: boolean) =>
     useApp.getState().setView({ islandCollapsed }, session.id);
   return (
-    <div className="island-stack absolute top-[92px] right-[18px] z-15 flex max-h-[calc(100%_-_112px)] w-[var(--island-width)] max-w-[calc(100%_-_24px)] flex-col gap-2 [@container_editor_(max-width:560px)]:hidden [@media(max-width:1200px)]:right-3">
+    <div className="island-stack absolute top-[52px] right-[18px] z-15 flex max-h-[calc(100%_-_72px)] w-[var(--island-width)] max-w-[calc(100%_-_24px)] flex-col gap-2 [@container_editor_(max-width:560px)]:hidden [@media(max-width:1200px)]:right-3">
       <div
         className={`island relative min-h-0 ${collapsed ? 'collapsed' : ''}`}
         aria-label="Project actions"

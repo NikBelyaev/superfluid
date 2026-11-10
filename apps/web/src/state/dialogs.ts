@@ -1,8 +1,15 @@
-import type { Action } from '@superfluid/contracts';
+import type { Action, Operation } from '@superfluid/contracts';
 import { useApp } from '~/state/workspaceStore';
 import type { TabGroup } from './workspaceView';
 
 export const closeDialog = () => useApp.setState({ modal: null });
+
+export const openGitReview = (operation: Operation) =>
+  useApp.setState({
+    modal: { kind: 'git-review', id: operation.id, sessionId: operation.sessionId },
+    repositoryMenu: null,
+    palette: null,
+  });
 
 export type Modal =
   | { kind: 'settings'; section?: 'appearance' | 'hosting' | 'agents' | 'about' }
@@ -14,7 +21,7 @@ export type Modal =
       sessionId?: string;
       repositoryId?: string;
     }
-  | { kind: 'git-review'; id: string }
+  | { kind: 'git-review'; id: string; sessionId: string }
   | { kind: 'terminal-name'; id: string; name: string }
   | { kind: 'clone' }
   | { kind: 'interpreter' }

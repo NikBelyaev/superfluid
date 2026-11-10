@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { Columns2, X } from 'lucide-react';
+import { SquareMenu, X } from 'lucide-react';
 import { useDroppable } from '@dnd-kit/core';
 import { horizontalListSortingStrategy, SortableContext } from '@dnd-kit/sortable';
 import { useApp, showSurface, closeTabs, surfaceKey } from '~/state/workspaceStore';
@@ -11,12 +11,15 @@ import { WorkspaceTab, surfaceIcons } from './WorkspaceTab';
 import { NewSurfaceMenu } from '~/components/surfaces/NewSurfaceMenu';
 import { ChainTabMenu } from './ChainTabMenu';
 import { surfacePaths } from '~/state/fileChains';
+import { useFileGitStatus } from '~/hooks/useFileGitStatus';
+import { fileLabelClassName } from '~/components/vcs/fileLabels';
 import type { Session } from '@superfluid/contracts';
 
 export function EditorTabs({ session, group = 'main' }: { session: Session; group?: TabGroup }) {
   const view = useApp((a) => a.views[session.id]),
     runs = useApp((a) => a.runs),
     island = useApp((a) => a.island);
+  const getGitStatus = useFileGitStatus(session.id);
   const { tabs, active } = tabGroup(view, group);
   const tabStrip = useActiveTab(
     session.id + ':' + group + ':' + (active ? surfaceKey(active) : ''),
@@ -67,6 +70,12 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
               last = chain?.entries.at(-1);
             const root = first ? documentPath(first.path).split('/').at(-1) : null;
             const lastTitle = last ? documentPath(last.path).split('/').at(-1)! : title(tab);
+            const rootStatus = first ? getGitStatus(first.path) : undefined;
+            const lastStatus =
+              tab.kind === 'file' ? getGitStatus(last?.path ?? tab.path) : undefined;
+            const currentPath = selected && active?.kind === 'file' ? active.path : undefined;
+            const rootSelected = !!first && first.path === currentPath;
+            const lastSelected = selected && (!last || last.path === currentPath);
             return (
               <WorkspaceTab
                 key={key}
@@ -92,9 +101,9 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
                 {first && (
                   <>
                     <button
-                      className="chain-root-link"
+                      className="chain-root-link group/file-link"
                       aria-label={`First file: ${root}`}
-                      aria-current={selected && chain?.index === 0 ? 'location' : undefined}
+                      aria-current={rootSelected ? 'location' : undefined}
                       tabIndex={selected ? 0 : -1}
                       title={`${documentPath(first.path)}:${first.line}`}
                       onClick={() =>
@@ -106,7 +115,12 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
                       }
                     >
                       <Icon size={13} />
-                      <span className="chain-root">{root}</span>
+                      <span
+                        className={`chain-root tab-label ${fileLabelClassName(rootStatus, rootSelected ? 'default' : 'inactive')}`}
+                        data-git-status={rootStatus}
+                      >
+                        {root}
+                      </span>
                     </button>
                     <span className="chain-divider" aria-hidden="true">
                       ›
@@ -114,14 +128,10 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
                   </>
                 )}
                 <button
-                  className={last ? 'chain-last-link' : undefined}
+                  className={last ? 'chain-last-link group/file-link' : undefined}
                   role="tab"
                   aria-selected={selected}
-                  aria-current={
-                    selected && chain && chain.index === chain.entries.length - 1
-                      ? 'location'
-                      : undefined
-                  }
+                  aria-current={chain && lastSelected ? 'location' : undefined}
                   tabIndex={selected ? 0 : -1}
                   aria-controls={
                     group === 'main' ? 'primary-editor-panel' : group + '-surface-panel'
@@ -155,11 +165,21 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
                       }
                     />
                   )}
-                  <span>{lastTitle}</span>
+                  <span
+                    className={`tab-label ${fileLabelClassName(lastStatus, lastSelected ? 'default' : 'inactive')}`}
+                    data-git-status={lastStatus}
+                  >
+                    {lastTitle}
+                  </span>
                   {dirty && <i className="dirty-dot" />}
                 </button>
                 {tab.kind === 'file' && tab.chain && (
-                  <ChainTabMenu sessionId={session.id} group={group} tab={tab} />
+                  <ChainTabMenu
+                    sessionId={session.id}
+                    group={group}
+                    tab={tab}
+                    getGitStatus={getGitStatus}
+                  />
                 )}
                 <button
                   className="tab-close"
@@ -184,7 +204,7 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
               aria-pressed={island}
               onClick={() => useApp.setState({ island: !island })}
             >
-              <Columns2 size={14} />
+              <SquareMenu size={14} />
             </button>
           </div>
         )}

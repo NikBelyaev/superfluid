@@ -80,6 +80,8 @@ jobs:
             app: release/mac/Superfluid.app/Contents/MacOS/Superfluid
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
+    env:
+      electron_config_cache: ${{ github.workspace }}/node_modules/.cache/electron
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -88,6 +90,30 @@ jobs:
         with:
           node-version: '26'
       - run: npm install --global pnpm@12.14.0
+      - id: cache
+        run: |
+          echo "pnpm-store=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+          echo "electron=$(node -p 'require("./package.json").devDependencies.electron')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.cache.outputs.pnpm-store }}
+          key: pnpm-${{ runner.os }}-${{ runner.arch }}-node26-pnpm12.14.0-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-${{ runner.arch }}-node26-pnpm12.14.0-
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: node_modules/.cache/electron
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ steps.cache.outputs.electron }}
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: node_modules/.cache/superfluid/ty-*
+          key: ty-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/ty.mjs') }}
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: node_modules/.cache/superfluid/zoekt
+          key: zoekt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/zoekt.mjs') }}-electron-${{ hashFiles('packages/zoekt/go.mod', 'packages/zoekt/go.sum', 'packages/zoekt/*.go') }}
+          restore-keys: |
+            zoekt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/zoekt.mjs') }}-electron-
+            zoekt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/zoekt.mjs') }}-
       - run: pnpm install --frozen-lockfile
       - run: node scripts/release.ts stamp "$RELEASE_VERSION"
         env:
@@ -109,6 +135,7 @@ jobs:
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: desktop-${{ matrix.arch }}
+          compression-level: 0
           path: |
             release/*.dmg
             release/*.zip
