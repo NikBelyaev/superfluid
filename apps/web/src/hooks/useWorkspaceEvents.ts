@@ -6,7 +6,22 @@ export function useWorkspaceEvents() {
   useEffect(() => {
     void useApp.getState().bootstrap();
     return desktop.onEvent((e) => {
-      if (e.type === 'runs') useApp.setState({ runs: e.runs });
+      if (e.type === 't3') useApp.setState({ t3: e.integration, t3Agents: e.agents });
+      else if (e.type === 't3.agent')
+        useApp.setState((app) => ({
+          t3Agents: [...app.t3Agents.filter((agent) => agent.id !== e.agent.id), e.agent].slice(
+            -128,
+          ),
+        }));
+      else if (e.type === 'codex') useApp.setState({ codex: e.integration, codexAgents: e.agents });
+      else if (e.type === 'codex.agent')
+        useApp.setState((app) => ({
+          codexAgents: [
+            ...app.codexAgents.filter((agent) => agent.id !== e.agent.id),
+            e.agent,
+          ].slice(-128),
+        }));
+      else if (e.type === 'runs') useApp.setState({ runs: e.runs });
       else if (e.type === 'project')
         useApp.setState((app) => ({
           projects: app.projects.map((project) =>

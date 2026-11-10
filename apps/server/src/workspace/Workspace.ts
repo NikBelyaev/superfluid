@@ -23,6 +23,8 @@ import { HostingService } from '../hosting/HostingService';
 import { SourceControlDiscovery } from '../hosting/SourceControlDiscovery';
 import { WorkspaceWatcher } from './WorkspaceWatcher';
 import { createWorkspaceHandlers, type WorkspaceHandlers } from '../rpc/WorkspaceHandlers';
+import { CodexService } from '../agents/codex/CodexService';
+import { T3Service } from '../agents/t3/T3Service';
 
 export class Workspace {
   readonly store: Store;
@@ -40,14 +42,18 @@ export class Workspace {
   readonly pullRequests: PullRequestService;
   readonly hosting: HostingService;
   readonly sourceControlDiscovery: SourceControlDiscovery;
+  readonly codex: CodexService;
+  readonly t3: T3Service;
   private watcher: WorkspaceWatcher;
   private handlers: WorkspaceHandlers;
   constructor(
     directory: string,
     emit: (event: AppEvent) => void,
-    options: { terminalWorker?: URL } = {},
+    options: { terminalWorker?: URL; codex?: { home?: string; executable?: string } } = {},
   ) {
     this.store = new Store(directory);
+    this.codex = new CodexService(directory, () => this.store.all('sessions'), emit, options.codex);
+    this.t3 = new T3Service(directory, () => this.store.all('sessions'), emit);
     this.search = new SearchService(this.store, this.files);
     this.sourceControlDiscovery = new SourceControlDiscovery(directory);
     this.hosting = new HostingService(this.store, undefined, this.sourceControlDiscovery);
@@ -83,6 +89,8 @@ export class Workspace {
     return this.handlers[method](input);
   }
   async close() {
+    await this.codex.close();
+    await this.t3.close();
     this.codeSearch.close();
     this.watcher.close();
     this.lsp.close();

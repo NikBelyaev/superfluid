@@ -12,7 +12,7 @@ export const openGitReview = (operation: Operation) =>
   });
 
 export type Modal =
-  | { kind: 'settings'; section?: 'appearance' | 'hosting' | 'about' }
+  | { kind: 'settings'; section?: 'appearance' | 'hosting' | 'agents' | 'about' }
   | { kind: 'action'; action?: Action }
   | { kind: 'worktree' }
   | {
