@@ -5,7 +5,7 @@ import type { TabGroup } from './workspaceView';
 export const closeDialog = () => useApp.setState({ modal: null });
 
 export type Modal =
-  | { kind: 'settings'; section?: 'appearance' | 'hosting' | 'about' }
+  | { kind: 'settings'; section?: 'appearance' | 'hosting' | 'agents' | 'about' }
   | { kind: 'action'; action?: Action }
   | { kind: 'worktree' }
   | {

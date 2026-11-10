@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
-import { Palette, GitPullRequest, Info, X } from 'lucide-react';
+import { Palette, GitPullRequest, Bot, Info, X } from 'lucide-react';
 import { SourceControlSettings } from './SourceControlSettings';
 import { AboutSettings } from './AboutSettings';
 import { useUpdates } from '~/state/updates';
+import { AgentSettings } from './AgentSettings';
 
 export function SettingsLayout({
   children,
@@ -11,8 +12,8 @@ export function SettingsLayout({
   onSectionChange,
 }: {
   children: ReactNode;
-  section?: 'appearance' | 'hosting' | 'about';
-  onSectionChange: (section: 'appearance' | 'hosting' | 'about') => void;
+  section?: 'appearance' | 'hosting' | 'agents' | 'about';
+  onSectionChange: (section: 'appearance' | 'hosting' | 'agents' | 'about') => void;
 }) {
   const updateAvailable = useUpdates((s) => Boolean(s.state?.availableVersion));
   return (
@@ -28,7 +29,7 @@ export function SettingsLayout({
           className="w-52 shrink-0 border-r border-border bg-sidebar px-3 py-6 max-[900px]:w-44 max-[600px]:w-auto max-[600px]:border-r-0 max-[600px]:border-b max-[600px]:px-4 max-[600px]:py-2"
           aria-label="Settings"
         >
-          {(['appearance', 'hosting', 'about'] as const).map((item) => (
+          {(['appearance', 'hosting', 'agents', 'about'] as const).map((item) => (
             <button
               key={item}
               className={`settings-nav-item ${section === item ? 'active' : ''}`}
@@ -42,6 +43,8 @@ export function SettingsLayout({
                 <Palette size={17} />
               ) : item === 'hosting' ? (
                 <GitPullRequest size={17} />
+              ) : item === 'agents' ? (
+                <Bot size={17} />
               ) : (
                 <Info size={17} />
               )}
@@ -49,7 +52,9 @@ export function SettingsLayout({
                 ? 'Appearance'
                 : item === 'hosting'
                   ? 'Source Control'
-                  : 'About'}
+                  : item === 'agents'
+                    ? 'Agents'
+                    : 'About'}
               {item === 'about' && updateAvailable && (
                 <span
                   aria-hidden="true"
@@ -66,6 +71,8 @@ export function SettingsLayout({
           <div className="mx-auto max-w-[848px]">
             {section === 'hosting' ? (
               <SourceControlSettings />
+            ) : section === 'agents' ? (
+              <AgentSettings />
             ) : section === 'about' ? (
               <AboutSettings />
             ) : (

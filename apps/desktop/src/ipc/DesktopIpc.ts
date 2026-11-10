@@ -18,7 +18,7 @@ import type { DesktopUpdates } from '../updates/DesktopUpdates';
 import { WorkspaceClient } from '../backend/WorkspaceClient';
 import { BrowserView } from '../preview/BrowserView';
 import { chooseProject, chooseDirectory, exportText } from '../shell/nativeFiles';
-import { httpUrl } from '../shell/urls';
+import { externalUrl } from '../shell/urls';
 
 function trusted(event: IpcMainInvokeEvent, window: BrowserWindow, devUrl: string | undefined) {
   const url = event.senderFrame?.url ?? '';
@@ -77,7 +77,7 @@ export function installDesktopIpc(
   });
   ipcMain.handle('external', async (event, url: string) => {
     trusted(event, window, devUrl);
-    await shell.openExternal(httpUrl(url));
+    await shell.openExternal(externalUrl(url));
   });
   ipcMain.handle('browser', (event, input: Parameters<Bridge['browser']>[0]) => {
     trusted(event, window, devUrl);

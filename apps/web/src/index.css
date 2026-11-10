@@ -1016,27 +1016,15 @@ kbd {
   background: var(--success-foreground);
 }
 .island {
-  position: absolute;
-  top: 92px;
-  right: 18px;
-  width: var(--island-width);
   border: 1px solid var(--border);
   border-radius: var(--floating-radius);
-  z-index: 15;
   background: var(--card);
   box-shadow: none;
   overflow: hidden;
   font-size: var(--text-detail);
-  max-width: calc(100% - 24px);
-  max-height: calc(100% - 112px);
   display: flex;
   flex-direction: column;
   scrollbar-width: thin;
-}
-@container editor (max-width: 560px) {
-  .island {
-    display: none;
-  }
 }
 .island-heading {
   height: 40px;
@@ -2193,9 +2181,6 @@ kbd {
     max-width: 220px;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-  .island {
-    right: 12px;
   }
   .welcome-main {
     padding-left: 28px;

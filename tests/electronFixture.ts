@@ -201,6 +201,7 @@ export async function createElectronFixture() {
   );
 
   launchEnv.SF_DATA_DIR = join(temp, 'data');
+  launchEnv.CODEX_HOME = join(temp, 'codex-home');
 
   launchEnv.SF_TEST = '1';
 

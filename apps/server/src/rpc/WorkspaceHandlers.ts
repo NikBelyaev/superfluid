@@ -30,20 +30,49 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
   const repository = (input: { sessionId: string; repositoryId?: string }) =>
     sourceControl.repositories.target(session(input.sessionId), input.repositoryId);
   return {
+    't3.status': () => workspace.t3.status(),
+    't3.connect': (input) => workspace.t3.connect(input.pairingLink),
+    't3.disconnect': () => workspace.t3.disconnect(),
+    't3.queue': (input) => {
+      session(input.sessionId);
+      return workspace.t3.queue(input);
+    },
+    't3.respond': (input) => {
+      session(input.sessionId);
+      return workspace.t3.respond(input);
+    },
     'sourceControl.discovery': () => workspace.sourceControlDiscovery.scan(),
     'sourceControl.repository': async (input) =>
       workspace.hosting.repository(await repository(input)),
-    bootstrap: () => ({
+    'codex.status': () => workspace.codex.status(),
+    'codex.configure': (input) => workspace.codex.configure(input.enabled),
+    'codex.queue': (input) => {
+      session(input.sessionId);
+      return workspace.codex.queue(input);
+    },
+    'codex.respond': (input) => {
+      session(input.sessionId);
+      return workspace.codex.respond(input);
+    },
+    bootstrap: async () => ({
       projects: store.all<Project>('projects').sort((a, b) => b.lastOpened - a.lastOpened),
       actions: store.all<Action>('actions'),
       runs: terminals.runs,
       operations: store.all<Operation>('operations'),
+      codex: await workspace.codex.status(),
+      codexAgents: workspace.codex.list(),
+      t3: await workspace.t3.status(),
+      t3Agents: workspace.t3.list(),
     }),
     'project.add': (input) => projects.add(input.path),
     'project.remote': async (input) =>
       projects.setRemote(session(input.sessionId), input, await repository(input)),
     'project.clone': (input) => projects.clone(input),
-    'session.list': (input) => projects.sessions(input.projectId),
+    'session.list': async (input) => {
+      const sessions = await projects.sessions(input.projectId);
+      await workspace.t3.refresh();
+      return sessions;
+    },
     'session.create': (input) => projects.createWorktree(session(input.sessionId), input),
     'session.state': (input) => projects.saveState(session(input.sessionId), input),
     'session.interpreter': (input) => projects.setInterpreter(session(input.sessionId), input),
