@@ -537,10 +537,8 @@ try {
   await expect(page.locator('.main-editor').getByRole('tab')).toHaveCount(1);
   await page.getByRole('button', { name: 'First file: main.py', exact: true }).click();
   await expect(selected('main.py')).toHaveAttribute('aria-selected', 'true');
-  await expect(page.locator('.chain-last-link')).toHaveText('main.py');
+  await expect(page.locator('.chain-last-link')).toHaveText('models.py');
   await page.locator('.chain-last-link').click();
-  await expect(selected('main.py')).toHaveAttribute('aria-selected', 'true');
-  await visit('models.py');
   await expect(selected('models.py')).toHaveAttribute('aria-selected', 'true');
   await expect(
     page.locator('.main-editor').getByRole('textbox', { name: 'Editor content', exact: true }),

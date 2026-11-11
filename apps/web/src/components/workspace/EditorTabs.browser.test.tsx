@@ -121,7 +121,20 @@ test('chain tabs follow the selected location across groups, tabs and restored w
     await current.click();
     await expect(current).toHaveAttribute('title', 'models.py:12');
     await panel.getByRole('button', { name: 'First file: main.py' }).click();
-    await expect(current).toHaveText('main.py');
+    await expect(current).toHaveText('models.py');
+    await expect(current).not.toHaveAttribute('aria-current', 'location');
+    await expect(panel.getByRole('button', { name: 'First file: main.py' })).toHaveAttribute(
+      'aria-current',
+      'location',
+    );
+    await page.getByRole('button', { name: 'two', exact: true }).click();
+    await expect(current).toHaveText('utils.py');
+    await page.getByRole('button', { name: 'one', exact: true }).click();
+    await page.getByRole('button', { name: 'Restore', exact: true }).click();
+    await expect(current).toHaveText('models.py');
+    await current.click();
+    await expect(current).toHaveAttribute('aria-current', 'location');
+    await expect(current).toHaveAttribute('title', 'models.py:12');
     await visit('utils.py');
     await expect(current).toHaveText('utils.py');
     await visit('models.py');

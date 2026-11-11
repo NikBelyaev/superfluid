@@ -67,7 +67,7 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
             );
             const chain = tab.kind === 'file' ? tab.chain : undefined;
             const first = chain?.entries[0],
-              current = chain?.entries[chain.index];
+              current = chain?.entries[chain.targetIndex];
             const root = first ? documentPath(first.path).split('/').at(-1) : null;
             const currentTitle = current
               ? documentPath(current.path).split('/').at(-1)!
