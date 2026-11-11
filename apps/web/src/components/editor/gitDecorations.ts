@@ -42,15 +42,15 @@ export function installGitDecorations(
     const toolbar = document.createElement('div');
     toolbar.className = 'git-inline-toolbar';
     const full = document.createElement('button');
-    full.className = 'git-inline-action';
-    full.textContent = 'Open file diff';
+    full.className = 'icon-button';
+    full.setAttribute('aria-label', 'Open file diff');
+    full.title = 'Open file diff';
     full.onclick = () => {
       close();
       openFileDiff();
     };
     const rollback = document.createElement('button');
-    rollback.className = 'git-inline-action';
-    rollback.textContent = 'Rollback';
+    rollback.className = 'icon-button';
     rollback.setAttribute('aria-label', 'Rollback change');
     rollback.disabled = file.additionLines.join('') !== model.getValue(undefined, true);
     rollback.title = rollback.disabled
@@ -75,13 +75,23 @@ export function installGitDecorations(
     };
     const dismiss = document.createElement('button');
     dismiss.className = 'icon-button';
-    dismiss.textContent = '×';
     dismiss.setAttribute('aria-label', 'Close inline diff');
+    dismiss.title = 'Close inline diff (Esc)';
     dismiss.onclick = () => {
       close();
       editor.focus();
     };
-    toolbar.append(full, rollback, dismiss);
+    for (const [button, name] of [
+      [full, 'diff'],
+      [rollback, 'discard'],
+      [dismiss, 'close'],
+    ] as const) {
+      const icon = document.createElement('span');
+      icon.className = `codicon codicon-${name}`;
+      icon.setAttribute('aria-hidden', 'true');
+      button.append(icon);
+      toolbar.append(button);
+    }
     const content = document.createElement('div');
     content.className = 'git-inline-content';
     root.append(toolbar, content);
