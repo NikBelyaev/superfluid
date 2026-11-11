@@ -259,3 +259,53 @@ test('batch trash preflights buffers and drafts, binds the session, and retains 
   );
   assert.deepEqual(errors, []);
 });
+
+test('file mutations release tree actions while Git status is still refreshing', async () => {
+  await using fixture = await setup();
+  const { page, errors } = fixture;
+  const create = page.getByRole('button', { name: 'New file', exact: true });
+  const input = page.getByRole('textbox', { name: 'New file name', exact: true });
+  const row = (path: string) => page.locator(`[data-path="${path}"]`);
+  await page.evaluate(() => {
+    const f = window.treeFixture;
+    f.gitPause = f.signal();
+    f.gitEntered = f.signal();
+  });
+  await create.click();
+  await input.fill('first.py');
+  await input.press('Enter');
+  await row('first.py').waitFor();
+  await page.evaluate(() => window.treeFixture.gitEntered.promise);
+  await expect(create).toBeEnabled();
+  await create.click();
+  await input.fill('second.py');
+  await page.evaluate(() => {
+    const f = window.treeFixture;
+    f.gitPause!.resolve();
+    f.gitPause = null;
+  });
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue('second.py');
+  await input.press('Enter');
+  await row('second.py').waitFor();
+  await expect(create).toBeEnabled();
+  await page.evaluate(() => {
+    const f = window.treeFixture;
+    f.gitPause = f.signal();
+    f.gitEntered = f.signal();
+  });
+  await row('first.py').click();
+  await row('second.py').click({ modifiers: ['ControlOrMeta'] });
+  await row('first.py').click({ button: 'right' });
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
+  await page.evaluate(() => window.treeFixture.gitEntered.promise);
+  await expect(row('first.py')).toHaveCount(0);
+  await expect(row('second.py')).toHaveCount(0);
+  await expect(create).toBeEnabled();
+  await create.click();
+  await page.evaluate(() => window.treeFixture.gitPause!.resolve());
+  await expect(input).toBeFocused();
+  await input.press('Escape');
+  assert.deepEqual(errors, []);
+});

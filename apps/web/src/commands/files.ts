@@ -69,7 +69,7 @@ export async function trashFiles(sessionId: string, paths: string[]) {
       useApp.setState((state) => ({ revision: state.revision + 1 }));
     }
   } finally {
-    await useApp.getState().refreshGit(sessionId);
+    void useApp.getState().refreshGit(sessionId);
   }
   return true;
 }

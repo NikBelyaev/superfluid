@@ -36,6 +36,8 @@ const fixture = {
   signal,
   pause: null as ReturnType<typeof signal> | null,
   entered: signal(),
+  gitPause: null as ReturnType<typeof signal> | null,
+  gitEntered: signal(),
   dirty(path: string) {
     documents.items.set(`source:${path}`, { session, path, dirty: true } as Doc);
   },
@@ -90,7 +92,10 @@ useApp.setState({
   sessions: [session, other],
   sessionId: session.id,
   views: { [session.id]: emptyView(), [other.id]: emptyView() },
-  refreshGit: async () => {},
+  refreshGit: async () => {
+    fixture.gitEntered.resolve();
+    await fixture.gitPause?.promise;
+  },
   openFile: async (path) => {
     const active = { kind: 'file', path } as const;
     useApp.getState().setView({ active, tabs: [active] }, session.id);

@@ -348,7 +348,7 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
       tree.getItemInstance(path).setFocused();
       if (created) {
         useApp.setState((state) => ({ revision: state.revision + 1 }));
-        await useApp.getState().refreshGit(session.id);
+        void useApp.getState().refreshGit(session.id);
       }
       if (
         created &&
