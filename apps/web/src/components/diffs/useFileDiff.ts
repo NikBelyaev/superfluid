@@ -15,6 +15,7 @@ export function useFileDiff(session: Session, path?: string, refresh = 0) {
   const key = `${session.id}:${path}`;
   const worker = useRef<Worker | null>(null);
   const generation = useRef(0);
+  const comparedVersion = useRef<number | undefined>(undefined);
   const [source, setSource] = useState<{
     key: string;
     base: string;
@@ -26,6 +27,7 @@ export function useFileDiff(session: Session, path?: string, refresh = 0) {
     files?: FileDiffMetadata[];
     error?: string;
     unsupported?: boolean;
+    version?: number;
   }>();
   useEffect(() => {
     if (!path || path.startsWith('file://') || path.endsWith('/')) return;
@@ -35,7 +37,12 @@ export function useFileDiff(session: Session, path?: string, refresh = 0) {
       event: MessageEvent<{ id: number; files?: FileDiffMetadata[]; error?: string }>,
     ) => {
       if (event.data.id === generation.current)
-        setResult({ key, files: event.data.files, error: event.data.error });
+        setResult({
+          key,
+          files: event.data.files,
+          error: event.data.error,
+          version: comparedVersion.current,
+        });
     };
     instance.onerror = () => {
       setResult({ key, error: 'Could not compare this file with the Git index.' });
@@ -54,6 +61,7 @@ export function useFileDiff(session: Session, path?: string, refresh = 0) {
       clearTimeout(timer);
       timer = setTimeout(() => {
         if (doc?.model.isDisposed()) return;
+        comparedVersion.current = doc?.model.getVersionId();
         worker.current?.postMessage({
           id,
           oldFile: { name: path, contents: source.base },

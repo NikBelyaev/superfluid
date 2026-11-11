@@ -1,8 +1,13 @@
 .git-line-added,
 .git-line-modified {
+  cursor: pointer;
   margin-left: 6px;
   width: 3px !important;
   background: var(--color-git-added);
+}
+
+.git-line-deleted {
+  cursor: pointer;
 }
 
 .git-line-modified {
@@ -22,4 +27,60 @@
 .git-line-before::after {
   top: -4px;
   bottom: auto;
+}
+
+.git-inline-diff {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid var(--color-git-modified);
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.git-inline-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 32px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--popover);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+}
+
+.git-inline-action {
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.git-inline-diff .monaco-editor,
+.git-inline-diff .monaco-diff-editor {
+  --vscode-diffEditor-insertedLineBackground: color-mix(
+    in srgb,
+    var(--color-git-added) 14%,
+    transparent
+  );
+  --vscode-diffEditor-insertedTextBackground: color-mix(
+    in srgb,
+    var(--color-git-added) 30%,
+    transparent
+  );
+  --vscode-diffEditor-removedLineBackground: color-mix(
+    in srgb,
+    var(--color-git-deleted) 14%,
+    transparent
+  );
+  --vscode-diffEditor-removedTextBackground: color-mix(
+    in srgb,
+    var(--color-git-deleted) 30%,
+    transparent
+  );
+  --vscode-diffEditorGutter-insertedLineBackground: var(--vscode-diffEditor-insertedLineBackground);
+  --vscode-diffEditorGutter-removedLineBackground: var(--vscode-diffEditor-removedLineBackground);
+  --vscode-editorGutter-addedBackground: var(--color-git-added);
+  --vscode-editorGutter-modifiedBackground: var(--color-git-modified);
+  --vscode-editorGutter-deletedBackground: var(--color-git-deleted);
 }

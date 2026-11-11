@@ -4,8 +4,7 @@ import { AlertCircle } from 'lucide-react';
 import { documents, monaco, subscribe, getRevision, type Doc } from '~/state/editor/Documents';
 import { showSurface, useApp } from '~/state/workspaceStore';
 import { useFileDiff } from '~/components/diffs/useFileDiff';
-import { lineMarkers } from '~/components/diffs/lineMarkers';
-import './gitDecorations.css';
+import { installGitDecorations } from './gitDecorations';
 import { editorTheme, useAppearance, useSystemDark } from '~/state/appearance';
 import type { Session } from '@superfluid/contracts';
 import './theme';
@@ -45,20 +44,19 @@ export default function Editor({
   const diff = useFileDiff(session, doc?.path === path && !doc.readOnly ? path : undefined);
   useEffect(() => {
     const instance = editor.current;
-    if (!instance || !doc || instance.getModel() !== doc.model) return;
-    const decorations = instance.createDecorationsCollection(
-      (diff?.files ?? []).flatMap(lineMarkers).map((marker) => ({
-        range: new monaco.Range(marker.start, 1, marker.end, 1),
-        options: {
-          isWholeLine: true,
-          linesDecorationsClassName: `git-line-${marker.kind}${marker.before ? ' git-line-before' : ''}`,
-          linesDecorationsTooltip: `${marker.kind === 'added' ? 'Added' : marker.kind === 'modified' ? 'Modified' : 'Deleted'} lines compared with the Git index`,
-          stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
-        },
-      })),
+    const file = diff?.files?.[0];
+    if (
+      !instance ||
+      !doc ||
+      !file ||
+      diff.version === undefined ||
+      instance.getModel() !== doc.model
+    )
+      return;
+    return installGitDecorations(instance, file, diff.version, () =>
+      showSurface({ kind: 'diff', path: doc.path }, doc.session.id),
     );
-    return () => decorations.clear();
-  }, [doc, diff?.files]);
+  }, [doc, diff?.files, diff?.version]);
   const theme = editorTheme(useAppearance(), useSystemDark());
   useEffect(() => monaco.editor.setTheme(theme), [theme]);
   useSyncExternalStore(subscribe, getRevision);

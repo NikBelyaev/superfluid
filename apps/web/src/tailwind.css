@@ -27,9 +27,9 @@
   --color-sidebar: var(--sidebar);
   --color-diff-addition-foreground: var(--success-foreground);
   --color-diff-deletion-foreground: var(--error-foreground);
-  --color-git-added: light-dark(#16a994, #00cab1);
-  --color-git-modified: light-dark(#1ca1c7, #08c0ef);
-  --color-git-deleted: light-dark(#ff2e3f, #ff6762);
+  --color-git-added: var(--success-foreground);
+  --color-git-modified: var(--primary);
+  --color-git-deleted: var(--error-foreground);
   --color-git-renamed: light-dark(#d5a910, #ffd452);
 }
 
