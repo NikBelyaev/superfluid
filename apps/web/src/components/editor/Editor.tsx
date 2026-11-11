@@ -69,7 +69,7 @@ export default function Editor({
     });
     editor.current = instance;
     const removeHoverNavigation = installDefinitionHover(host.current);
-    const removeDefinitionLinks = installDefinitionLinks(instance, host.current);
+    const removeDefinitionLinks = installDefinitionLinks(instance);
     const removeSymbolActions = installSymbolActions(instance, host.current);
     const remember = () => {
       const d = bound.current;
