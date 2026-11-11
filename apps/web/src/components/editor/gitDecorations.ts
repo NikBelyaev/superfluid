@@ -111,8 +111,8 @@ export function installGitDecorations(
     // Monaco hides view zones from assistive technology; keep the interactive view in an overlay.
     const viewZone: monaco.editor.IViewZone = {
       domNode: document.createElement('div'),
-      afterLineNumber: change.before ? 0 : line,
-      heightInPx: height + 35,
+      afterLineNumber: change.before ? 0 : change.end,
+      heightInPx: height + 34,
       showInHiddenAreas: true,
       onDomNodeTop: (top) => {
         root.style.top = `${top}px`;
@@ -154,7 +154,7 @@ export function installGitDecorations(
       if (height !== contentHeight) {
         height = contentHeight;
         content.style.height = `${height}px`;
-        viewZone.heightInPx = height + 35;
+        viewZone.heightInPx = height + 34;
         editor.changeViewZones((accessor) => accessor.layoutZone(zone));
       }
     };

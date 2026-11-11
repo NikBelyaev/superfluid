@@ -32,11 +32,6 @@
 .git-inline-diff {
   position: absolute;
   box-sizing: border-box;
-  border: 1px solid var(--border);
-  border-radius: var(--control-radius);
-  overflow: hidden;
-  box-shadow: var(--shadow-popover);
-  background: var(--popover);
   color: var(--foreground);
 }
 
@@ -47,6 +42,10 @@
   width: max-content;
   height: 32px;
   padding: 0 4px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: var(--control-radius) var(--control-radius) 0 0;
+  box-shadow: var(--shadow-popover);
   background: var(--popover);
   font-family: var(--font-sans);
   font-size: var(--text-xs);
@@ -54,7 +53,10 @@
 
 .git-inline-content {
   box-sizing: content-box;
-  border-top: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: 0 var(--control-radius) var(--control-radius) var(--control-radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-popover);
 }
 
 .git-inline-line-modified {
