@@ -53,6 +53,7 @@
 }
 
 .git-inline-content {
+  box-sizing: content-box;
   border-top: 1px solid var(--border);
 }
 
