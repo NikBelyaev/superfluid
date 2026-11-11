@@ -141,13 +141,15 @@ try {
       copied = text;
     };
     return {
-      read: () => copied,
-      deny: () => {
+      read() {
+        return copied;
+      },
+      deny() {
         clipboard.writeText = async () => {
           throw new Error('Clipboard denied by fixture');
         };
       },
-      restore: () => {
+      restore() {
         clipboard.writeText = original;
       },
     };

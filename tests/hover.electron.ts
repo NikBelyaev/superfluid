@@ -142,7 +142,7 @@ try {
     };
     return {
       copied,
-      restore: () => {
+      restore() {
         clipboard.writeText = original;
       },
     };
