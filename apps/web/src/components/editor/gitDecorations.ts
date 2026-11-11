@@ -1,7 +1,7 @@
 import type { FileDiffMetadata } from '@pierre/diffs';
 import { monaco } from './monaco';
 import { lineMarkers } from '~/components/diffs/lineMarkers';
-import { inlineHunk } from '~/components/diffs/inlineHunk';
+import { inlineHunk, rollbackEdit } from '~/components/diffs/inlineHunk';
 import type { inlineRanges } from '~/components/diffs/inlineRanges';
 import DiffWorker from '~/components/diffs/diff.worker?worker';
 import './gitDecorations.css';
@@ -48,6 +48,31 @@ export function installGitDecorations(
       close();
       openFileDiff();
     };
+    const rollback = document.createElement('button');
+    rollback.className = 'git-inline-action';
+    rollback.textContent = 'Rollback';
+    rollback.setAttribute('aria-label', 'Rollback change');
+    rollback.disabled = file.additionLines.join('') !== model.getValue(undefined, true);
+    rollback.title = rollback.disabled
+      ? 'This file is missing on disk. Restore the file before rolling back individual changes.'
+      : 'Restore this change from the Git index (Undo available)';
+    rollback.onclick = () => {
+      if (model.getVersionId() !== version || editor.getModel() !== model) return;
+      const edit = rollbackEdit(file, change);
+      const bom = model.getValue(undefined, true).length - model.getValueLength();
+      editor.pushUndoStop();
+      editor.executeEdits('git.rollbackHunk', [
+        {
+          range: monaco.Range.fromPositions(
+            model.getPositionAt(Math.max(0, edit.start - bom)),
+            model.getPositionAt(Math.max(0, edit.end - bom)),
+          ),
+          text: bom && edit.start === 0 ? edit.text.replace(/^\uFEFF/, '') : edit.text,
+        },
+      ]);
+      editor.pushUndoStop();
+      editor.focus();
+    };
     const dismiss = document.createElement('button');
     dismiss.className = 'icon-button';
     dismiss.textContent = '×';
@@ -56,7 +81,7 @@ export function installGitDecorations(
       close();
       editor.focus();
     };
-    toolbar.append(full, dismiss);
+    toolbar.append(full, rollback, dismiss);
     const content = document.createElement('div');
     content.className = 'git-inline-content';
     root.append(toolbar, content);
@@ -64,15 +89,9 @@ export function installGitDecorations(
     const lineHeight = editor.getOption(monaco.editor.EditorOption.lineHeight);
     const previous = change.kind !== 'added';
     const text = (previous ? change.original : change.modified).replace(/(?:\r\n|\r|\n)$/, '');
-    const height = Math.min(320, text.split(/\r\n|\r|\n/).length * lineHeight + 8);
+    let height = Math.min(320, text.split(/\r\n|\r|\n/).length * lineHeight + 8);
     content.style.height = `${height}px`;
-    const layout = () => {
-      const info = editor.getLayoutInfo();
-      root.style.left = `${info.contentLeft}px`;
-      root.style.width = `${info.contentWidth}px`;
-    };
-    layout();
-    const resized = editor.onDidLayoutChange(layout);
+    root.style.width = `${editor.getLayoutInfo().contentWidth}px`;
     const widget: monaco.editor.IOverlayWidget = {
       getId: () => 'superfluid.gitInlineDiff',
       getDomNode: () => root,
@@ -80,16 +99,17 @@ export function installGitDecorations(
     };
     editor.addOverlayWidget(widget);
     // Monaco hides view zones from assistive technology; keep the interactive view in an overlay.
+    const viewZone: monaco.editor.IViewZone = {
+      domNode: document.createElement('div'),
+      afterLineNumber: change.before ? 0 : line,
+      heightInPx: height + 35,
+      showInHiddenAreas: true,
+      onDomNodeTop: (top) => {
+        root.style.top = `${top}px`;
+      },
+    };
     editor.changeViewZones((accessor) => {
-      zone = accessor.addZone({
-        domNode: document.createElement('div'),
-        afterLineNumber: change.before ? 0 : line,
-        heightInPx: height + 34,
-        showInHiddenAreas: true,
-        onDomNodeTop: (top) => {
-          root.style.top = `${top}px`;
-        },
-      });
+      zone = accessor.addZone(viewZone);
     });
     const previewModel = monaco.editor.createModel(text, model.getLanguageId());
     const preview = monaco.editor.create(content, {
@@ -99,6 +119,7 @@ export function installGitDecorations(
       ariaLabel: previous ? 'Previous version (read only)' : 'Added lines (read only)',
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
+      scrollBeyondLastColumn: 2,
       automaticLayout: true,
       lineHeight,
       fontFamily: editor.getOption(monaco.editor.EditorOption.fontFamily),
@@ -111,6 +132,25 @@ export function installGitDecorations(
       stickyScroll: { enabled: false },
       padding: { top: 4, bottom: 4 },
     });
+    const layout = () => {
+      const info = editor.getLayoutInfo();
+      const width = Math.max(
+        toolbar.offsetWidth,
+        preview.getContentWidth() + preview.getLayoutInfo().contentLeft,
+      );
+      root.style.left = `${info.contentLeft}px`;
+      root.style.width = `${Math.min(info.contentWidth, width + 2)}px`;
+      const contentHeight = Math.min(320, preview.getContentHeight());
+      if (height !== contentHeight) {
+        height = contentHeight;
+        content.style.height = `${height}px`;
+        viewZone.heightInPx = height + 35;
+        editor.changeViewZones((accessor) => accessor.layoutZone(zone));
+      }
+    };
+    const resized = editor.onDidLayoutChange(layout);
+    const measured = preview.onDidContentSizeChange(layout);
+    layout();
     const previewLine = {
       range: previewModel.getFullModelRange(),
       options: { isWholeLine: true, className: `git-inline-line-${change.kind}` },
@@ -174,6 +214,7 @@ export function installGitDecorations(
       editor.changeViewZones((accessor) => accessor.removeZone(zone));
       editor.removeOverlayWidget(widget);
       resized.dispose();
+      measured.dispose();
       close = () => {};
     };
     root.onkeydown = (event) => {

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { watch } from 'node:fs';
 import { join } from 'node:path';
 import { expect } from 'playwright/test';
@@ -32,11 +32,16 @@ try {
     'added_value = 42\n';
   const parameters =
     'def GraphQLFetch(query, parameters, result_path):\n    return parameters\n\ndef fetch(query, result_path):\n    return GraphQLFetch(query, parameters={}, result_path=result_path)\n';
+  const long = `message = "${'old '.repeat(100)}"\n`;
+  await writeFile(join(fixture.project, 'long.py'), long);
   await writeFile(join(fixture.project, 'main.py'), original);
   await writeFile(join(fixture.project, 'parameters.py'), parameters);
-  await git(fixture.project, ['add', 'main.py', 'parameters.py']);
+  await git(fixture.project, ['add', 'main.py', 'parameters.py', 'long.py']);
   await git(fixture.project, ['commit', '-m', 'Prepare diff fixture']);
   await writeFile(join(fixture.project, 'main.py'), current);
+  await writeFile(join(fixture.project, 'long.py'), long.replaceAll('old ', 'new '));
+  await writeFile(join(fixture.project, 'bom.py'), '\ufeffvalue = 2\r\n');
+  await writeFile(join(fixture.project, 'untracked.py'), 'new_value = 42\n');
   await writeFile(
     join(fixture.project, 'parameters.py'),
     parameters.replace('parameters={}', "parameters='test'"),
@@ -53,7 +58,13 @@ try {
       sessionId: session.id,
       state: {
         layoutVersion: 1,
-        tabs: [file, { kind: 'file', path: 'models.py' }, { kind: 'file', path: 'parameters.py' }],
+        tabs: [
+          file,
+          ...['models.py', 'parameters.py', 'long.py', 'bom.py', 'untracked.py'].map((path) => ({
+            kind: 'file' as const,
+            path,
+          })),
+        ],
         active: file,
         rightTabs: [file, diff],
         surface: diff,
@@ -117,8 +128,13 @@ try {
       await page.screenshot({
         path: join(evidence, `inline-${await surface.getAttribute('data-group')}.png`),
       });
-      await inline.getByRole('button', { name: 'Close inline diff' }).click();
+      await inline.getByRole('button', { name: 'Rollback change', exact: true }).click();
       await expect(inline).toHaveCount(0);
+      await expect(surface.locator('.git-line-modified')).toHaveCount(0);
+      await expect(surface.locator('.view-lines').first()).toContainText('value_1 = 1');
+      await page.keyboard.press('Meta+z');
+      await expect(surface.locator('.git-line-modified')).toHaveCount(1);
+      await expect(surface.locator('.view-lines').first()).toContainText('value_1 = 100');
     }
     await main.locator('.git-line-modified').click();
     await page.screenshot({ path: join(evidence, 'inline-modified.png') });
@@ -126,14 +142,21 @@ try {
     await expect(main.getByRole('region', { name: 'Inline Git diff' })).toHaveCount(0);
     await main.locator('.git-line-deleted').click();
     await expect(main.getByRole('region', { name: 'Inline Git diff' })).toContainText('value_18');
-    await main.getByRole('button', { name: 'Close inline diff' }).click();
+    await main.getByRole('button', { name: 'Rollback change', exact: true }).click();
+    await expect(main.locator('.git-line-deleted')).toHaveCount(0);
+    await expect(main.locator('.view-lines').first()).toContainText('value_18 = 18');
+    await page.keyboard.press('Meta+z');
+    await expect(main.locator('.git-line-deleted')).toHaveCount(1);
     await main.getByRole('textbox', { name: 'Editor content', exact: true }).focus();
     await page.keyboard.press('Meta+ArrowDown');
     await main.locator('.git-line-added').click();
     await expect(main.getByRole('region', { name: 'Inline Git diff' })).toContainText(
       'added_value',
     );
-    await main.getByRole('button', { name: 'Close inline diff' }).click();
+    await main.getByRole('button', { name: 'Rollback change', exact: true }).click();
+    await expect(main.locator('.git-line-added')).toHaveCount(0);
+    await page.keyboard.press('Meta+z');
+    await expect(main.locator('.git-line-added')).toHaveCount(1);
     await page.keyboard.press('Meta+ArrowUp');
     await main.locator('.git-line-modified').click();
     await main.getByRole('textbox', { name: 'Editor content', exact: true }).focus();
@@ -190,6 +213,32 @@ try {
       .toBe("'test'");
     await page.screenshot({ path: join(evidence, 'inline-parameters.png') });
     await main.getByRole('button', { name: 'Close inline diff' }).click();
+    await unlink(join(fixture.project, 'parameters.py'));
+    await main.locator('.git-line-deleted').click();
+    await expect(main.getByRole('button', { name: 'Rollback change', exact: true })).toBeDisabled();
+    await expect(main.locator('.view-lines').first()).toContainText("parameters='test'");
+    await main.getByRole('button', { name: 'Close inline diff' }).click();
+    await main.getByRole('tab', { name: 'long.py', exact: true }).click();
+    await main.locator('.git-line-modified').click();
+    await expect(main.locator('.git-inline-word-deleted')).not.toHaveCount(0);
+    await expect
+      .poll(async () => (await main.locator('.git-inline-diff').boundingBox())!.width)
+      .toBeGreaterThan((await main.boundingBox())!.width * 0.8);
+    await page.screenshot({ path: join(evidence, 'inline-long.png') });
+    await main.getByRole('button', { name: 'Close inline diff' }).click();
+    for (const [path, kind, expected] of [
+      ['bom.py', 'modified', '\ufeffvalue = 1\r\n'],
+      ['untracked.py', 'added', ''],
+    ] as const) {
+      await main.getByRole('tab', { name: path, exact: true }).click();
+      await main.locator(`.git-line-${kind}`).click();
+      await main.getByRole('button', { name: 'Rollback change', exact: true }).click();
+      await expect(main.locator(`[class*="git-line-"]`)).toHaveCount(0);
+      await page.keyboard.press('Meta+S');
+      await expect.poll(() => readFile(join(fixture.project, path), 'utf8')).toBe(expected);
+      await page.keyboard.press('Meta+z');
+      await expect(main.locator(`.git-line-${kind}`)).toHaveCount(1);
+    }
     console.log(
       'Inline hunks: main/right/bottom, deletion/addition, edits, staging, file/worktree switching and staged diff passed.',
       session.id,

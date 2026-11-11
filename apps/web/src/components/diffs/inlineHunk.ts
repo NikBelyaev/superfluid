@@ -23,3 +23,11 @@ export function inlineHunk(file: FileDiffMetadata, line: number) {
     }
   }
 }
+
+export function rollbackEdit(
+  file: FileDiffMetadata,
+  change: NonNullable<ReturnType<typeof inlineHunk>>,
+) {
+  const start = file.additionLines.slice(0, change.modifiedLine - 1).join('').length;
+  return { start, end: start + change.modified.length, text: change.original };
+}
