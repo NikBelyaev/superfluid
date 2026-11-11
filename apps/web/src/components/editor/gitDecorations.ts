@@ -2,6 +2,8 @@ import type { FileDiffMetadata } from '@pierre/diffs';
 import { monaco } from './monaco';
 import { lineMarkers } from '~/components/diffs/lineMarkers';
 import { inlineHunk } from '~/components/diffs/inlineHunk';
+import type { inlineRanges } from '~/components/diffs/inlineRanges';
+import DiffWorker from '~/components/diffs/diff.worker?worker';
 import './gitDecorations.css';
 
 export function installGitDecorations(
@@ -39,8 +41,6 @@ export function installGitDecorations(
     root.setAttribute('aria-label', 'Inline Git diff');
     const toolbar = document.createElement('div');
     toolbar.className = 'git-inline-toolbar';
-    const label = document.createElement('span');
-    label.textContent = 'Index − / Working buffer +';
     const full = document.createElement('button');
     full.className = 'git-inline-action';
     full.textContent = 'Open file diff';
@@ -56,16 +56,15 @@ export function installGitDecorations(
       close();
       editor.focus();
     };
-    toolbar.append(label, full, dismiss);
+    toolbar.append(full, dismiss);
     const content = document.createElement('div');
     content.className = 'git-inline-content';
     root.append(toolbar, content);
     let zone = '';
     const lineHeight = editor.getOption(monaco.editor.EditorOption.lineHeight);
-    const height = Math.min(
-      320,
-      (change.original.split('\n').length + change.modified.split('\n').length) * lineHeight + 12,
-    );
+    const previous = change.kind !== 'added';
+    const text = (previous ? change.original : change.modified).replace(/(?:\r\n|\r|\n)$/, '');
+    const height = Math.min(320, text.split(/\r\n|\r|\n/).length * lineHeight + 8);
     content.style.height = `${height}px`;
     const layout = () => {
       const info = editor.getLayoutInfo();
@@ -92,47 +91,86 @@ export function installGitDecorations(
         },
       });
     });
-    const original = monaco.editor.createModel(change.original, model.getLanguageId());
-    const modified = monaco.editor.createModel(change.modified, model.getLanguageId());
-    const diff = monaco.editor.createDiffEditor(content, {
+    const previewModel = monaco.editor.createModel(text, model.getLanguageId());
+    const preview = monaco.editor.create(content, {
+      model: previewModel,
       readOnly: true,
       domReadOnly: true,
-      originalEditable: false,
-      renderSideBySide: false,
-      renderOverviewRuler: false,
-      renderMarginRevertIcon: false,
-      renderGutterMenu: false,
+      ariaLabel: previous ? 'Previous version (read only)' : 'Added lines (read only)',
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
       automaticLayout: true,
       lineHeight,
       fontFamily: editor.getOption(monaco.editor.EditorOption.fontFamily),
       fontSize: editor.getOption(monaco.editor.EditorOption.fontSize),
-      lineNumbersMinChars: 3,
+      lineNumbers: 'off',
+      lineDecorationsWidth: 8,
+      overviewRulerLanes: 0,
+      renderLineHighlight: 'none',
       folding: false,
       stickyScroll: { enabled: false },
       padding: { top: 4, bottom: 4 },
-      diffAlgorithm: 'advanced',
-      ignoreTrimWhitespace: false,
-      originalAriaLabel: 'Index fragment (read only)',
-      modifiedAriaLabel: 'Working buffer fragment (read only)',
     });
-    const viewModel = diff.createViewModel({ original, modified });
-    diff.setModel(viewModel);
+    const previewLine = {
+      range: previewModel.getFullModelRange(),
+      options: { isWholeLine: true, className: `git-inline-line-${change.kind}` },
+    };
+    const currentLines = change.modified
+      ? [
+          {
+            range: new monaco.Range(change.start, 1, change.end, 1),
+            options: { isWholeLine: true, className: `git-inline-line-${change.kind}` },
+          },
+        ]
+      : [];
+    const previewHighlights = preview.createDecorationsCollection([previewLine]);
+    const currentHighlights = editor.createDecorationsCollection(currentLines);
+    const worker = new DiffWorker();
+    let closed = false;
+    const word = (range: monaco.IRange, kind: 'added' | 'deleted', offset = 0) => {
+      const empty =
+        range.startLineNumber === range.endLineNumber && range.startColumn === range.endColumn;
+      return {
+        range: new monaco.Range(
+          range.startLineNumber + offset,
+          range.startColumn,
+          range.endLineNumber + offset,
+          range.endColumn,
+        ),
+        options: {
+          inlineClassName: `git-inline-word-${kind}`,
+          before: empty
+            ? {
+                content: '\u200b',
+                inlineClassName: `git-inline-word-${kind} git-inline-word-empty`,
+              }
+            : undefined,
+        },
+      };
+    };
+    worker.onmessage = (event: MessageEvent<{ ranges?: ReturnType<typeof inlineRanges> }>) => {
+      if (closed || !event.data.ranges || model.getVersionId() !== version) return;
+      const ranges = event.data.ranges;
+      previewHighlights.set([
+        previewLine,
+        ...ranges.map((range) =>
+          word(previous ? range.original : range.modified, previous ? 'deleted' : 'added'),
+        ),
+      ]);
+      currentHighlights.set([
+        ...currentLines,
+        ...ranges.map((range) => word(range.modified, 'added', change.modifiedLine - 1)),
+      ]);
+    };
+    worker.postMessage({ inline: { original: change.original, modified: change.modified } });
     editor.revealLineInCenter(line, monaco.editor.ScrollType.Immediate);
-    diff
-      .getOriginalEditor()
-      .updateOptions({ lineNumbers: (line) => String(change.originalLine + line - 1) });
-    diff
-      .getModifiedEditor()
-      .updateOptions({ lineNumbers: (line) => String(change.modifiedLine + line - 1) });
     close = () => {
       selected = undefined;
-      diff.setModel(null);
-      viewModel.dispose();
-      diff.dispose();
-      original.dispose();
-      modified.dispose();
+      closed = true;
+      worker.terminate();
+      currentHighlights.clear();
+      preview.dispose();
+      previewModel.dispose();
       editor.changeViewZones((accessor) => accessor.removeZone(zone));
       editor.removeOverlayWidget(widget);
       resized.dispose();

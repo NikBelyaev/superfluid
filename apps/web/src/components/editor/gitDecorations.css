@@ -32,7 +32,10 @@
 .git-inline-diff {
   position: absolute;
   box-sizing: border-box;
-  border: 1px solid var(--color-git-modified);
+  border: 1px solid var(--border);
+  border-radius: var(--control-radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-popover);
   background: var(--background);
   color: var(--foreground);
 }
@@ -56,31 +59,26 @@
   cursor: pointer;
 }
 
-.git-inline-diff .monaco-editor,
-.git-inline-diff .monaco-diff-editor {
-  --vscode-diffEditor-insertedLineBackground: color-mix(
-    in srgb,
-    var(--color-git-added) 14%,
-    transparent
-  );
-  --vscode-diffEditor-insertedTextBackground: color-mix(
-    in srgb,
-    var(--color-git-added) 30%,
-    transparent
-  );
-  --vscode-diffEditor-removedLineBackground: color-mix(
-    in srgb,
-    var(--color-git-deleted) 14%,
-    transparent
-  );
-  --vscode-diffEditor-removedTextBackground: color-mix(
-    in srgb,
-    var(--color-git-deleted) 30%,
-    transparent
-  );
-  --vscode-diffEditorGutter-insertedLineBackground: var(--vscode-diffEditor-insertedLineBackground);
-  --vscode-diffEditorGutter-removedLineBackground: var(--vscode-diffEditor-removedLineBackground);
-  --vscode-editorGutter-addedBackground: var(--color-git-added);
-  --vscode-editorGutter-modifiedBackground: var(--color-git-modified);
-  --vscode-editorGutter-deletedBackground: var(--color-git-deleted);
+.git-inline-line-modified {
+  background: color-mix(in srgb, var(--color-git-modified) 14%, transparent);
+}
+
+.git-inline-line-added {
+  background: color-mix(in srgb, var(--color-git-added) 14%, transparent);
+}
+
+.git-inline-line-deleted {
+  background: color-mix(in srgb, var(--color-git-deleted) 14%, transparent);
+}
+
+.git-inline-word-added {
+  background: color-mix(in srgb, var(--color-git-added) 30%, transparent);
+}
+
+.git-inline-word-deleted {
+  background: color-mix(in srgb, var(--color-git-deleted) 30%, transparent);
+}
+
+.git-inline-word-empty {
+  border-left: 2px solid var(--color-git-modified);
 }

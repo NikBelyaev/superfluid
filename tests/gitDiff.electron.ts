@@ -30,10 +30,17 @@ try {
   const current =
     original.replace('value_1 = 1\n', 'value_1 = 100\n').replace('value_18 = 18\n', '') +
     'added_value = 42\n';
+  const parameters =
+    'def GraphQLFetch(query, parameters, result_path):\n    return parameters\n\ndef fetch(query, result_path):\n    return GraphQLFetch(query, parameters={}, result_path=result_path)\n';
   await writeFile(join(fixture.project, 'main.py'), original);
-  await git(fixture.project, ['add', 'main.py']);
+  await writeFile(join(fixture.project, 'parameters.py'), parameters);
+  await git(fixture.project, ['add', 'main.py', 'parameters.py']);
   await git(fixture.project, ['commit', '-m', 'Prepare diff fixture']);
   await writeFile(join(fixture.project, 'main.py'), current);
+  await writeFile(
+    join(fixture.project, 'parameters.py'),
+    parameters.replace('parameters={}', "parameters='test'"),
+  );
   const page = await fixture.firstWindow();
   const session = await page.evaluate(async () => {
     const data = await window.superfluid.call('bootstrap', {});
@@ -46,7 +53,7 @@ try {
       sessionId: session.id,
       state: {
         layoutVersion: 1,
-        tabs: [file, { kind: 'file', path: 'models.py' }],
+        tabs: [file, { kind: 'file', path: 'models.py' }, { kind: 'file', path: 'parameters.py' }],
         active: file,
         rightTabs: [file, diff],
         surface: diff,
@@ -102,8 +109,10 @@ try {
       await surface.locator('.git-line-modified').click();
       const inline = surface.getByRole('region', { name: 'Inline Git diff' });
       await expect(inline).toBeVisible();
-      await expect(inline).toContainText('Index');
-      await expect(inline.locator('.char-insert')).not.toHaveCount(0);
+      await expect(inline.locator('.view-line')).toHaveCount(1);
+      await expect(inline).toContainText('value_1 = 1');
+      await expect(inline).not.toContainText('value_1 = 100');
+      await expect(surface.locator('.git-inline-word-added')).not.toHaveCount(0);
       assert.equal(await inline.getByText('Commit this change').count(), 0);
       await page.screenshot({
         path: join(evidence, `inline-${await surface.getAttribute('data-group')}.png`),
@@ -152,7 +161,7 @@ try {
     await expect(main.getByRole('region', { name: 'Inline Git diff' })).toHaveCount(0);
     await main.getByRole('tab', { name: 'main.py', exact: true }).click();
     await main.locator('.git-line-modified').click();
-    await expect(main.getByRole('region', { name: 'Inline Git diff' })).toContainText('102');
+    await expect(main.getByRole('region', { name: 'Inline Git diff' })).toContainText('101');
     await page.getByRole('button', { name: 'New worktree', exact: true }).click();
     await page.getByLabel('Branch name').fill('inline-other');
     await page.getByLabel('Start from').fill('HEAD');
@@ -166,6 +175,20 @@ try {
     await expect(main.locator('.view-lines').first()).toContainText('value_1 = 102');
     await main.locator('.git-line-modified').click();
     await expect(main.getByRole('region', { name: 'Inline Git diff' })).toContainText('101');
+    await main.getByRole('button', { name: 'Close inline diff' }).click();
+    await main.getByRole('tab', { name: 'parameters.py', exact: true }).click();
+    await main.locator('.git-line-modified').click();
+    const parametersPreview = main.getByRole('region', { name: 'Inline Git diff' });
+    await expect(parametersPreview.locator('.view-line')).toHaveCount(1);
+    await expect
+      .poll(async () =>
+        (await parametersPreview.locator('.git-inline-word-deleted').allTextContents()).join(''),
+      )
+      .toBe('{}');
+    await expect
+      .poll(async () => (await main.locator('.git-inline-word-added').allTextContents()).join(''))
+      .toBe("'test'");
+    await page.screenshot({ path: join(evidence, 'inline-parameters.png') });
     await main.getByRole('button', { name: 'Close inline diff' }).click();
     console.log(
       'Inline hunks: main/right/bottom, deletion/addition, edits, staging, file/worktree switching and staged diff passed.',

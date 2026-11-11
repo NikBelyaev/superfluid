@@ -1,12 +1,21 @@
 import { parseDiffFromFile, parsePatchFiles, type FileContents } from '@pierre/diffs';
 import { fileDiffOptions } from './diffOptions';
+import { inlineRanges } from './inlineRanges';
 
 self.onmessage = (
-  event: MessageEvent<string | { id: number; oldFile: FileContents; newFile: FileContents }>,
+  event: MessageEvent<
+    | string
+    | { id: number; oldFile: FileContents; newFile: FileContents }
+    | { inline: { original: string; modified: string } }
+  >,
 ) => {
   const input = event.data;
-  const id = typeof input === 'string' ? undefined : input.id;
+  const id = typeof input === 'string' || 'inline' in input ? undefined : input.id;
   try {
+    if (typeof input !== 'string' && 'inline' in input) {
+      self.postMessage({ ranges: inlineRanges(input.inline.original, input.inline.modified) });
+      return;
+    }
     self.postMessage({
       id,
       files:
