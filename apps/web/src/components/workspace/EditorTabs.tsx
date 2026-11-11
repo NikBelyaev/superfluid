@@ -67,22 +67,24 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
             );
             const chain = tab.kind === 'file' ? tab.chain : undefined;
             const first = chain?.entries[0],
-              last = chain?.entries.at(-1);
+              current = chain?.entries[chain.index];
             const root = first ? documentPath(first.path).split('/').at(-1) : null;
-            const lastTitle = last ? documentPath(last.path).split('/').at(-1)! : title(tab);
+            const currentTitle = current
+              ? documentPath(current.path).split('/').at(-1)!
+              : title(tab);
             const rootStatus = first ? getGitStatus(first.path) : undefined;
-            const lastStatus =
-              tab.kind === 'file' ? getGitStatus(last?.path ?? tab.path) : undefined;
+            const currentStatus =
+              tab.kind === 'file' ? getGitStatus(current?.path ?? tab.path) : undefined;
             const currentPath = selected && active?.kind === 'file' ? active.path : undefined;
             const rootSelected = !!first && first.path === currentPath;
-            const lastSelected = selected && (!last || last.path === currentPath);
+            const currentSelected = selected && (!current || current.path === currentPath);
             return (
               <WorkspaceTab
                 key={key}
                 sessionId={session.id}
                 group={group}
                 tab={tab}
-                label={root ? `${root} › ${lastTitle}` : title(tab)}
+                label={root ? `${root} › ${currentTitle}` : title(tab)}
                 selected={selected}
                 index={index}
                 count={tabs.length}
@@ -128,17 +130,17 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
                   </>
                 )}
                 <button
-                  className={last ? 'chain-last-link group/file-link' : undefined}
+                  className={current ? 'chain-last-link group/file-link' : undefined}
                   role="tab"
                   aria-selected={selected}
-                  aria-current={chain && lastSelected ? 'location' : undefined}
+                  aria-current={chain && currentSelected ? 'location' : undefined}
                   tabIndex={selected ? 0 : -1}
                   aria-controls={
                     group === 'main' ? 'primary-editor-panel' : group + '-surface-panel'
                   }
                   title={
-                    last
-                      ? `${documentPath(last.path)}:${last.line}`
+                    current
+                      ? `${documentPath(current.path)}:${current.line}`
                       : tab.kind === 'file'
                         ? documentPath(tab.path)
                         : title(tab)
@@ -146,10 +148,12 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
                   aria-label={title(tab)}
                   aria-description={root ? `Navigation chain from ${root}` : undefined}
                   onClick={() =>
-                    last
+                    current
                       ? void useApp
                           .getState()
-                          .openFile(last.path, last.line, last.column, true, group, { tabKey: key })
+                          .openFile(current.path, current.line, current.column, true, group, {
+                            tabKey: key,
+                          })
                       : tab.kind === 'file'
                         ? void useApp
                             .getState()
@@ -166,10 +170,10 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
                     />
                   )}
                   <span
-                    className={`tab-label ${fileLabelClassName(lastStatus, lastSelected ? 'default' : 'inactive')}`}
-                    data-git-status={lastStatus}
+                    className={`tab-label ${fileLabelClassName(currentStatus, currentSelected ? 'default' : 'inactive')}`}
+                    data-git-status={currentStatus}
                   >
-                    {lastTitle}
+                    {currentTitle}
                   </span>
                   {dirty && <i className="dirty-dot" />}
                 </button>
