@@ -33,29 +33,44 @@ export async function renameFile(sessionId: string, path: string, target: string
   await useApp.getState().refreshGit(sessionId);
 }
 
-export async function trashFile(sessionId: string, path: string) {
-  if (!confirm(`Move ${path} to the Trash?`)) return false;
+export async function trashFiles(sessionId: string, paths: string[]) {
+  const selected = new Set(paths);
+  const roots = [...selected].sort().filter((path) => {
+    for (let end = path.lastIndexOf('/'); end > 0; end = path.lastIndexOf('/', end - 1))
+      if (selected.has(path.slice(0, end))) return false;
+    return true;
+  });
+  if (!roots.length) return false;
+  if (!confirm(`Move ${roots.length === 1 ? roots[0] : `${roots.length} items`} to the Trash?`))
+    return false;
   const { documents } = await import('~/state/editor/Documents');
-  documents.assertClean(sessionId, path);
-  await desktop.trash(sessionId, path);
-  documents.removePaths(sessionId, path);
-  const app = useApp.getState();
-  const view = app.views[sessionId];
-  const matches = (value: string) => value === path || value.startsWith(path + '/');
-  app.setView(
-    {
-      ...mapViewFiles(view, (value) => (matches(value) ? null : value)),
-      expanded: view.expanded.filter((value) => !matches(value)),
-      editorViews: Object.fromEntries(
-        Object.entries(view.editorViews ?? {}).filter(
-          ([key]) => !matches(key.slice(key.indexOf(':') + 1)),
-        ),
-      ),
-    },
-    sessionId,
-  );
-  useApp.setState((state) => ({ revision: state.revision + 1 }));
-  await useApp.getState().refreshGit(sessionId);
+  for (const path of roots) documents.assertClean(sessionId, path);
+  for (const path of roots) await desktop.call('files.resolve', { sessionId, path });
+  try {
+    for (const path of roots) {
+      documents.assertClean(sessionId, path);
+      await desktop.trash(sessionId, path);
+      documents.removePaths(sessionId, path);
+      const app = useApp.getState();
+      const view = app.views[sessionId];
+      const matches = (value: string) => value === path || value.startsWith(path + '/');
+      app.setView(
+        {
+          ...mapViewFiles(view, (value) => (matches(value) ? null : value)),
+          expanded: view.expanded.filter((value) => !matches(value)),
+          editorViews: Object.fromEntries(
+            Object.entries(view.editorViews ?? {}).filter(
+              ([key]) => !matches(key.slice(key.indexOf(':') + 1)),
+            ),
+          ),
+        },
+        sessionId,
+      );
+      useApp.setState((state) => ({ revision: state.revision + 1 }));
+    }
+  } finally {
+    await useApp.getState().refreshGit(sessionId);
+  }
   return true;
 }
 

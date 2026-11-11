@@ -27,7 +27,7 @@ import type { FileEntry, Session } from '@superfluid/contracts';
 import { useApp, showSurface } from '~/state/workspaceStore';
 import { TREE_ROW_HEIGHT, stickyTree } from './stickyTree';
 import { activeFile } from '~/state/workspaceView';
-import { moveFiles, renameFile } from '~/commands/files';
+import { moveFiles, renameFile, trashFiles } from '~/commands/files';
 import { treeGit } from './treeGit';
 import { TreeMenu } from './TreeMenu';
 import { fileLabelClassName } from '~/components/vcs/fileLabels';
@@ -164,6 +164,11 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
       },
       selectAll: { hotkey: 'MetaOrControl+KeyA' },
       toggleSelectedItem: { hotkey: 'MetaOrControl+Space' },
+      customDelete: {
+        hotkey: 'Delete',
+        preventDefault: true,
+        handler: () => remove(tree.getState().selectedItems),
+      },
     },
     canRename: () => !saving.current,
     features: [
@@ -360,6 +365,31 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
   const startCreate = (parent: string, directory: boolean) => {
     void create(parent, directory).catch(useApp.getState().fail);
   };
+  const remove = (paths: string[]) => {
+    if (saving.current || tree.isRenamingItem()) return;
+    saving.current = true;
+    setSubmitting(true);
+    void trashFiles(session.id, paths)
+      .finally(async () => {
+        try {
+          if (mounted.current) {
+            await refresh();
+            if (mounted.current) {
+              const existing = new Set(
+                [...loaded.current].flatMap((path) => tree.retrieveChildrenIds(path)),
+              );
+              tree.setSelectedItems(
+                tree.getState().selectedItems.filter((path) => existing.has(path)),
+              );
+            }
+          }
+        } finally {
+          saving.current = false;
+          if (mounted.current) setSubmitting(false);
+        }
+      })
+      .catch(useApp.getState().fail);
+  };
   const saveScroll = useCallback(() => {
     if (!restoredScroll.current) return;
     const current = useApp.getState();
@@ -518,6 +548,7 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
                 onContextMenu={(event) => {
                   if (item.isRenaming()) return;
                   event.preventDefault();
+                  if (!item.isSelected()) tree.setSelectedItems([entry.path]);
                   item.setFocused();
                   fileMenu.open(triggerId);
                 }}
@@ -592,6 +623,10 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
                       className="tree-actions"
                       onClick={(event) => event.stopPropagation()}
                       onPointerDown={(event) => event.stopPropagation()}
+                      onMouseDown={(event) => {
+                        // Blurring a draft moves the clicked action before mouseup.
+                        if (tree.isRenamingItem()) event.preventDefault();
+                      }}
                       onDragStart={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
@@ -683,6 +718,8 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
         create={startCreate}
         rename={startRename}
         submitting={submitting}
+        selectedPaths={tree.getState().selectedItems}
+        remove={remove}
       />
     </section>
   );
