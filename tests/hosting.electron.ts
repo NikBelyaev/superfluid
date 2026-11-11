@@ -134,25 +134,41 @@ try {
       '--web',
     ),
   );
-  await page.evaluate(`Object.defineProperty(navigator, 'clipboard', {
-    configurable: true,
-    value: { writeText: async text => { document.documentElement.dataset.copiedCommand = text; } }
-  })`);
-  const copyInstall = githubSettings.getByRole('button', {
-    name: 'Copy gh install command',
-    exact: true,
+  const copiedCommand = await fixture.app.evaluateHandle(({ clipboard }) => {
+    const original = clipboard.writeText;
+    let copied = '';
+    clipboard.writeText = async (text) => {
+      copied = text;
+    };
+    return {
+      read: () => copied,
+      deny: () => {
+        clipboard.writeText = async () => {
+          throw new Error('Clipboard denied by fixture');
+        };
+      },
+      restore: () => {
+        clipboard.writeText = original;
+      },
+    };
   });
-  await copyInstall.click();
-  await githubSettings.getByRole('button', { name: 'Copied', exact: true }).waitFor();
-  assert.equal(await page.locator('html').getAttribute('data-copied-command'), 'choco install gh');
-  await page.evaluate(
-    `navigator.clipboard.writeText = async () => { throw new Error('Clipboard denied by fixture'); }`,
-  );
-  await githubSettings.getByRole('button', { name: 'Copy gh login command', exact: true }).click();
-  await githubSettings.getByRole('button', { name: 'Could not copy', exact: true }).waitFor();
-  await page.evaluate(
-    'delete navigator.clipboard; delete document.documentElement.dataset.copiedCommand',
-  );
+  try {
+    const copyInstall = githubSettings.getByRole('button', {
+      name: 'Copy gh install command',
+      exact: true,
+    });
+    await copyInstall.click();
+    await githubSettings.getByRole('button', { name: 'Copied', exact: true }).waitFor();
+    assert.equal(await copiedCommand.evaluate((state) => state.read()), 'choco install gh');
+    await copiedCommand.evaluate((state) => state.deny());
+    await githubSettings
+      .getByRole('button', { name: 'Copy gh login command', exact: true })
+      .click();
+    await githubSettings.getByRole('button', { name: 'Could not copy', exact: true }).waitFor();
+  } finally {
+    await copiedCommand.evaluate((state) => state.restore());
+    await copiedCommand.dispose();
+  }
   await gitlabSettings.getByRole('row', { name: 'Pipeline Read', exact: true }).waitFor();
   await gitlabSettings.getByRole('row', { name: 'Job Read', exact: true }).waitFor();
   await gitlabSettings.getByRole('checkbox', { name: 'Git over HTTPS', exact: true }).check();

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Tooltip } from './Tooltip';
+import { desktop } from '~/rpc/desktop';
 import './copyButton.css';
 
 export function CopyButton({ value, label = 'Copy' }: { value: string; label?: string }) {
@@ -32,7 +33,7 @@ export function CopyButton({ value, label = 'Copy' }: { value: string; label?: s
             setPending(true);
             let copied = false;
             try {
-              await navigator.clipboard.writeText(value);
+              await desktop.copyText(value);
               copied = true;
             } catch {}
             if (id !== request.current) return;
