@@ -3,3 +3,5 @@ export const diffOptions = {
   diffStyle: 'unified' as const,
   overflow: 'scroll' as const,
 };
+
+export const fileDiffOptions = { stripTrailingCr: true };

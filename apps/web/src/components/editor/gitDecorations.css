@@ -1,0 +1,25 @@
+.git-line-added,
+.git-line-modified {
+  margin-left: 6px;
+  width: 3px !important;
+  background: var(--color-git-added);
+}
+
+.git-line-modified {
+  background: var(--color-git-modified);
+}
+
+.git-line-deleted::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 4px;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid var(--color-git-deleted);
+}
+
+.git-line-before::after {
+  top: -4px;
+  bottom: auto;
+}

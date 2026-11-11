@@ -58,6 +58,7 @@ export const vcsRequests = {
   'git.repositories': z.object({ sessionId: id, refresh: z.boolean().default(false) }),
   'git.status': z.object({ sessionId: id, repositoryId: id.optional() }),
   'git.init': z.object({ sessionId: id }),
+  'git.index': z.object({ sessionId: id, repositoryId: id.optional(), path }),
   'git.diff': z.object({
     sessionId: id,
     repositoryId: id.optional(),
@@ -103,6 +104,7 @@ export interface VcsResults {
   'git.repositories': GitRepository[];
   'git.status': GitStatus;
   'git.init': Session[];
+  'git.index': string | null;
   'git.diff': string;
   'git.act': Operation;
   'git.inspect': { operation: Operation; log: string; remote: string };

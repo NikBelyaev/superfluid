@@ -69,7 +69,12 @@ export class Workspace {
     );
     this.watcher = new WorkspaceWatcher(this.lsp, emit);
     this.documents = new DocumentService(this.files, this.store, this.watcher);
-    this.sourceControl = new SourceControlService(this.git, this.projects, this.store);
+    this.sourceControl = new SourceControlService(
+      this.git,
+      this.projects,
+      this.store,
+      this.watcher,
+    );
     this.actions = new ProjectActionService(this.store, this.terminals);
     this.python = new PythonService(this.lsp, this.watcher, this.files, this.documents);
     this.codeSearch = new CodeSearchService(

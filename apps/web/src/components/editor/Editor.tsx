@@ -2,7 +2,10 @@ import { desktop } from '~/rpc/desktop';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { documents, monaco, subscribe, getRevision, type Doc } from '~/state/editor/Documents';
-import { useApp } from '~/state/workspaceStore';
+import { showSurface, useApp } from '~/state/workspaceStore';
+import { useFileDiff } from '~/components/diffs/useFileDiff';
+import { lineMarkers } from '~/components/diffs/lineMarkers';
+import './gitDecorations.css';
 import { editorTheme, useAppearance, useSystemDark } from '~/state/appearance';
 import type { Session } from '@superfluid/contracts';
 import './theme';
@@ -39,6 +42,23 @@ export default function Editor({
     [loading, setLoading] = useState(false),
     [error, setError] = useState('');
   const revision = useApp((a) => a.revision);
+  const diff = useFileDiff(session, doc?.path === path && !doc.readOnly ? path : undefined);
+  useEffect(() => {
+    const instance = editor.current;
+    if (!instance || !doc || instance.getModel() !== doc.model) return;
+    const decorations = instance.createDecorationsCollection(
+      (diff?.files ?? []).flatMap(lineMarkers).map((marker) => ({
+        range: new monaco.Range(marker.start, 1, marker.end, 1),
+        options: {
+          isWholeLine: true,
+          linesDecorationsClassName: `git-line-${marker.kind}${marker.before ? ' git-line-before' : ''}`,
+          linesDecorationsTooltip: `${marker.kind === 'added' ? 'Added' : marker.kind === 'modified' ? 'Modified' : 'Deleted'} lines compared with the Git index`,
+          stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+        },
+      })),
+    );
+    return () => decorations.clear();
+  }, [doc, diff?.files]);
   const theme = editorTheme(useAppearance(), useSystemDark());
   useEffect(() => monaco.editor.setTheme(theme), [theme]);
   useSyncExternalStore(subscribe, getRevision);
@@ -145,6 +165,15 @@ export default function Editor({
         if (d) return documents.save(d).catch(useApp.getState().fail);
       },
     });
+    const openDiff = instance.addAction({
+      id: 'superfluid.diff',
+      label: 'Open file diff (Index → Buffer)',
+      contextMenuGroupId: 'navigation',
+      run: () => {
+        const d = bound.current;
+        if (d && !d.readOnly) showSurface({ kind: 'diff', path: d.path }, d.session.id);
+      },
+    });
     const rename = instance.addAction({
       id: 'superfluid.rename',
       label: 'Rename symbol…',
@@ -222,6 +251,7 @@ export default function Editor({
       unregister();
       capture.current = () => {};
       save.dispose();
+      openDiff.dispose();
       rename.dispose();
       format.dispose();
       opener.dispose();

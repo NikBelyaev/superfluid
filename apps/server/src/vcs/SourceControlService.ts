@@ -9,6 +9,7 @@ import { relative } from 'node:path';
 import { RepositoryService } from './RepositoryService';
 import { realpath } from 'node:fs/promises';
 import { RepositoryWorktreeService } from './RepositoryWorktreeService';
+import type { WorkspaceWatcher } from '../workspace/WorkspaceWatcher';
 
 export class SourceControlService {
   readonly repositories = new RepositoryService();
@@ -17,6 +18,7 @@ export class SourceControlService {
     private git: GitService,
     private projects: ProjectService,
     private store: Store,
+    private watcher?: WorkspaceWatcher,
   ) {
     this.worktrees = new RepositoryWorktreeService(this.repositories, projects, store);
   }
@@ -29,7 +31,7 @@ export class SourceControlService {
     await this.repositories.list(session, true);
     return this.projects.sessions(session.projectId);
   }
-  async diff(session: Session, input: ParsedInput<'git.diff'>) {
+  private async fileTarget(session: Session, input: { repositoryId?: string; path?: string }) {
     let repositoryId = input.repositoryId;
     let path = input.path;
     if (!repositoryId && path) {
@@ -40,11 +42,21 @@ export class SourceControlService {
       if (repository?.path) path = path.slice(repository.path.length + 1);
     }
     const target = await this.repositories.target(session, repositoryId);
+    await this.watcher?.observeGit(session, target.gitDir);
     if (path) await within(target.path, path, true);
+    return { target, path };
+  }
+  async diff(session: Session, input: ParsedInput<'git.diff'>) {
+    const { target, path } = await this.fileTarget(session, input);
     return this.git.diff(target, path, input.mode, input.base);
+  }
+  async index(session: Session, input: ParsedInput<'git.index'>) {
+    const { target, path } = await this.fileTarget(session, input);
+    return this.git.index(target, path!);
   }
   async status(session: Session, repositoryId?: string) {
     const target = await this.repositories.target(session, repositoryId);
+    await this.watcher?.observeGit(session, target.gitDir);
     await this.git.recover(
       target,
       target.path === (await realpath(session.path)) ? undefined : repositoryId,

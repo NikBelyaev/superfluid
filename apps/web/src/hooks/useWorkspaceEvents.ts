@@ -37,7 +37,7 @@ export function useWorkspaceEvents() {
         void import('~/state/editor/Documents')
           .then(({ documents }) => documents.refreshSession(e.sessionId))
           .catch(useApp.getState().fail);
-        if (e.sessionId === useApp.getState().sessionId)
+        if (useApp.getState().sessions.some((s) => s.id === e.sessionId))
           void useApp.getState().refreshGit(e.sessionId);
       }
     });
