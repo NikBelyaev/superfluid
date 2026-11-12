@@ -105,6 +105,8 @@ try {
     const box = (await marker.boundingBox())!;
     const clip = { x: Math.max(0, box.x - 12), y: Math.max(0, box.y - 4), width: 280, height: 52 };
     await page.screenshot({ path: join(evidence, `${name}-rest.png`), clip });
+    await page.mouse.move(box.x - 4, box.y + 4);
+    await page.screenshot({ path: join(evidence, `${name}-near-hover.png`), clip });
     await marker.hover();
     await page.screenshot({ path: join(evidence, `${name}-hover.png`), clip });
   };
@@ -141,7 +143,7 @@ try {
         surface.locator('.git-line-modified'),
         `git-marker-${await surface.getAttribute('data-group')}`,
       );
-      await surface.locator('.git-line-modified').click();
+      await surface.locator('.git-line-modified').click({ position: { x: -4, y: 4 }, force: true });
       const inline = surface.getByRole('region', { name: 'Inline Git diff' });
       await expect(inline).toBeVisible();
       await expect(inline.locator('.view-line')).toHaveCount(1);
@@ -175,7 +177,7 @@ try {
     await main.getByRole('textbox', { name: 'Editor content', exact: true }).focus();
     await page.keyboard.press('Meta+ArrowDown');
     await captureMarker(main.locator('.git-line-added'), 'git-marker-added');
-    await main.locator('.git-line-added').click();
+    await main.locator('.git-line-added').click({ position: { x: -4, y: 4 }, force: true });
     await expect(
       main.getByRole('region', { name: 'Inline Git diff' }).locator('.monaco-editor'),
     ).toHaveCount(0);
