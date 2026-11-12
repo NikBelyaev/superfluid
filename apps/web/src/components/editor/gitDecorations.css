@@ -14,6 +14,11 @@
   background: var(--color-git-modified);
 }
 
+.git-line-added:hover,
+.git-line-modified:hover {
+  width: 6px !important;
+}
+
 .git-line-deleted::after {
   content: '';
   position: absolute;
@@ -27,6 +32,12 @@
 .git-line-before::after {
   top: -4px;
   bottom: auto;
+}
+
+.git-line-deleted:hover::after {
+  border-top-width: 5px;
+  border-bottom-width: 5px;
+  border-left-width: 9px;
 }
 
 .git-inline-diff {
@@ -43,6 +54,7 @@
   box-sizing: content-box;
   height: 28px;
   border: 1px solid var(--border);
+  border-radius: var(--control-radius);
   background: var(--card);
   pointer-events: auto;
 }

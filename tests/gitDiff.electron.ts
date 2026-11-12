@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { watch } from 'node:fs';
 import { join } from 'node:path';
-import { expect } from 'playwright/test';
+import { expect, type Locator } from 'playwright/test';
 import { createElectronFixture } from './electronFixture';
 import { git } from '../apps/server/src/vcs/gitCommand';
 
@@ -99,6 +99,15 @@ try {
   const main = page.locator('[data-group="main"]');
   const right = page.locator('[data-group="right"]');
   const bottom = page.locator('[data-group="bottom"]');
+  const captureMarker = async (marker: Locator, name: string) => {
+    await marker.waitFor({ state: 'visible' });
+    await page.mouse.move(0, 0);
+    const box = (await marker.boundingBox())!;
+    const clip = { x: Math.max(0, box.x - 12), y: Math.max(0, box.y - 4), width: 280, height: 52 };
+    await page.screenshot({ path: join(evidence, `${name}-rest.png`), clip });
+    await marker.hover();
+    await page.screenshot({ path: join(evidence, `${name}-hover.png`), clip });
+  };
   await expect(main.locator('.git-line-modified')).toHaveCount(1);
   await expect(page.locator('.diff-files')).toContainText('value_1 = 100');
   const choose = (name: string) =>
@@ -128,6 +137,10 @@ try {
   if (!before) {
     await right.getByRole('tab', { name: 'main.py', exact: true }).click();
     for (const surface of [main, right, bottom]) {
+      await captureMarker(
+        surface.locator('.git-line-modified'),
+        `git-marker-${await surface.getAttribute('data-group')}`,
+      );
       await surface.locator('.git-line-modified').click();
       const inline = surface.getByRole('region', { name: 'Inline Git diff' });
       await expect(inline).toBeVisible();
@@ -151,6 +164,7 @@ try {
     await page.screenshot({ path: join(evidence, 'inline-modified.png') });
     await page.keyboard.press('Escape');
     await expect(main.getByRole('region', { name: 'Inline Git diff' })).toHaveCount(0);
+    await captureMarker(main.locator('.git-line-deleted'), 'git-marker-deleted');
     await main.locator('.git-line-deleted').click();
     await expect(main.getByRole('region', { name: 'Inline Git diff' })).toContainText('value_18');
     await main.getByRole('button', { name: 'Rollback change', exact: true }).click();
@@ -160,6 +174,7 @@ try {
     await expect(main.locator('.git-line-deleted')).toHaveCount(1);
     await main.getByRole('textbox', { name: 'Editor content', exact: true }).focus();
     await page.keyboard.press('Meta+ArrowDown');
+    await captureMarker(main.locator('.git-line-added'), 'git-marker-added');
     await main.locator('.git-line-added').click();
     await expect(
       main.getByRole('region', { name: 'Inline Git diff' }).locator('.monaco-editor'),
@@ -320,7 +335,7 @@ try {
     const editorTop = (await main.locator('.monaco-editor').first().boundingBox())!.y;
     await expect
       .poll(async () => Math.round((await actions.boundingBox())!.y))
-      .toBe(Math.round(editorTop));
+      .toBe(Math.round(editorTop + 8));
     await page.mouse.move(0, 0);
     await expect(actions).toHaveCSS('opacity', '0.6');
     await page.screenshot({ path: join(evidence, 'inline-many.png') });

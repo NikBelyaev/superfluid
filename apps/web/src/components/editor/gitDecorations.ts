@@ -180,7 +180,10 @@ export function installGitDecorations(
         }
         const toolbarHeight = toolbar.offsetHeight;
         const preferredTop = start - toolbarHeight - 4;
-        const top = Math.max(0, Math.min(viewportHeight - toolbarHeight, preferredTop));
+        const top = Math.max(
+          0,
+          Math.min(viewportHeight - toolbarHeight, Math.max(8, preferredTop)),
+        );
         toolbar.style.left = '16px';
         toolbar.style.top = `${top}px`;
         const end = change.modified
