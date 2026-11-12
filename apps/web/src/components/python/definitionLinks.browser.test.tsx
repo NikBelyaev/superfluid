@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import { build } from 'esbuild';
 import { chromium } from 'playwright';
 import { expect } from 'playwright/test';
+import type { openDefinition } from './definitionPreview';
 
 test('definition click uses the mouse symbol without first focusing its caret', async () => {
   const bundle = await build({
@@ -100,7 +101,7 @@ test('definition click uses the mouse symbol without first focusing its caret', 
       const page = await browser.newPage();
       await page.goto(`http://127.0.0.1:${address.port}`);
       await expect(page.locator('.view-lines')).toContainText('target');
-      const point = await page.evaluate(`(() => {
+      const point = await page.evaluate<{ x: number; y: number }>(`(() => {
       const p = fixture.editor.getScrolledVisiblePosition({ lineNumber: 3, column: 12 });
       const box = document.getElementById('editor').getBoundingClientRect();
       return { x: box.x + p.left, y: box.y + p.top + p.height / 2 };
@@ -110,19 +111,28 @@ test('definition click uses the mouse symbol without first focusing its caret', 
         ['Meta', false],
         ['Control', true],
       ] as const) {
+        await page.reload();
+        await expect(page.locator('.view-lines')).toContainText('target');
         await page.evaluate('fixture.editor.setPosition({ lineNumber: 1, column: 1 })');
         if (outside) await page.locator('#outside').focus();
         else await page.evaluate('fixture.editor.focus()');
-        const before = await page.evaluate('window.opened.length');
+        const before = await page.evaluate<number>('window.opened.length');
         await page.keyboard.down(modifier);
         await page.mouse.click(point.x, point.y);
         await page.keyboard.up(modifier);
         await expect.poll(() => page.evaluate('window.opened.length')).toBe(before + 1);
-        const request = await page.evaluate('window.requests.at(-1)');
+        const request = await page.evaluate<{
+          sessionId: string;
+          params: {
+            textDocument: { uri: string };
+            position: { line: number; character: number };
+          };
+        }>('window.requests.at(-1)');
         assert.equal(request.sessionId, 'clicked-worktree');
         assert.equal(request.params.textDocument.uri, 'file:///clicked-worktree/main.py');
         assert.deepEqual(request.params.position, { line: 2, character: 11 });
-        const opened = await page.evaluate('window.opened.at(-1)');
+        const opened =
+          await page.evaluate<Parameters<typeof openDefinition>>('window.opened.at(-1)');
         assert.deepEqual(opened.slice(1, 3), [7, { line: 2, character: 11 }]);
         assert.equal(opened[3].uri, 'file:///clicked-worktree/definition.py');
       }

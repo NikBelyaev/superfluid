@@ -146,7 +146,9 @@ export function installDefinitionLinks(editor: monaco.editor.IStandaloneCodeEdit
     }),
     // Monaco can replace the pressed token while moving the caret, suppressing DOM click.
     editor.onMouseUp((event) => click(event)),
-    editor.onMouseDrag(reset),
+    editor.onDidChangeCursorSelection(({ selection }) => {
+      if (!selection.isEmpty()) pressed = '';
+    }),
     editor.onMouseLeave(reset),
     editor.onDidChangeModel(reset),
     editor.onDidChangeModelContent(reset),
