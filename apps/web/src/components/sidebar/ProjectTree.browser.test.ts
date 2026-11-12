@@ -309,3 +309,83 @@ test('file mutations release tree actions while Git status is still refreshing',
   await input.press('Escape');
   assert.deepEqual(errors, []);
 });
+
+test('file names report sibling duplicates before submission and clear errors as they change', async () => {
+  await using fixture = await setup();
+  const { page, errors } = fixture;
+  const row = (path: string) => page.locator(`[data-path="${path}"]`);
+  const alert = page.locator('.project-tree').getByRole('alert');
+  await page.getByRole('button', { name: 'New file', exact: true }).click();
+  const input = page.getByRole('textbox', { name: 'New file name', exact: true });
+  await input.fill('src');
+  await expect(input).toHaveAttribute('aria-invalid', 'true');
+  await expect(alert).toContainText('already exists');
+  await input.press('Enter');
+  await expect(input).toBeFocused();
+  assert.deepEqual(
+    await page.evaluate(() => window.treeFixture.files.get('source')!.map((entry) => entry.path)),
+    ['src', 'src-other'],
+  );
+  await input.fill('src.py');
+  await expect(input).toHaveAttribute('aria-invalid', 'false');
+  await expect(alert).toHaveCount(0);
+  await input.press('Enter');
+  await row('src.py').waitFor();
+  await expect(page.getByRole('button', { name: 'New file', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'New folder', exact: true }).click();
+  const folder = page.getByRole('textbox', { name: 'New folder name', exact: true });
+  await folder.fill('src.py');
+  await expect(folder).toHaveAttribute('aria-invalid', 'true');
+  await folder.press('Escape');
+  await row('src.py').focus();
+  await row('src.py').press('F2');
+  const rename = page.getByRole('textbox', { name: 'File name', exact: true });
+  await expect(rename).toHaveValue('src.py');
+  await expect(rename).toHaveAttribute('aria-invalid', 'false');
+  await rename.fill('src-other');
+  await expect(rename).toHaveAttribute('aria-invalid', 'true');
+  await rename.fill('different.py');
+  await expect(rename).toHaveAttribute('aria-invalid', 'false');
+  await rename.press('Escape');
+  await row('src').getByRole('button', { name: 'New file in src', exact: true }).click();
+  await input.fill('src.py');
+  await expect(input).toHaveAttribute('aria-invalid', 'false');
+  await page.evaluate(() => {
+    const f = window.treeFixture;
+    f.files
+      .get('source')!
+      .push({ name: 'src.py', path: 'src/src.py', directory: false, symlink: false });
+    f.changed();
+  });
+  await expect(input).toHaveAttribute('aria-invalid', 'true');
+  await input.fill('available.py');
+  await expect(alert).toHaveCount(0);
+  await input.press('Escape');
+  await page.evaluate(() => {
+    const f = window.treeFixture;
+    f.useApp.setState({
+      git: {
+        source: {
+          files: [{ path: 'src.py', index: '?', worktree: '?' }],
+          branch: 'main',
+          head: '',
+          upstream: '',
+          branches: [],
+          ahead: 0,
+          behind: 0,
+          repo: true,
+          changes: { insertions: 0, deletions: 0 },
+        },
+      },
+    });
+    f.useApp.getState().setView({ changes: true }, 'source');
+  });
+  await page.getByRole('tree', { name: 'Changed files', exact: true }).waitFor();
+  await row('src.py').focus();
+  await row('src.py').press('F2');
+  await rename.fill('src');
+  await expect(rename).toHaveAttribute('aria-invalid', 'true');
+  await expect(alert).toContainText('already exists');
+  await rename.press('Escape');
+  assert.deepEqual(errors, []);
+});

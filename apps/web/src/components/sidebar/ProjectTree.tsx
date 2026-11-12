@@ -13,6 +13,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ChevronDown,
   ChevronRight,
+  CornerDownLeft,
   FileCode2,
   FileText,
   FilePlusCorner,
@@ -43,8 +44,13 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
   const view = useApp((a) => a.views[session.id]);
   const status = useApp((a) => a.git[session.id]);
   const [error, setError] = useState('');
+  const [changedSiblings, setChangedSiblings] = useState<{
+    parent: string;
+    paths: string[];
+  } | null>(null);
   const [fileMenu] = useState(() => Menu.createHandle<FileEntry>());
   const menuId = useId();
+  const errorId = `${menuId}-error`;
   const loaded = useRef(new Set<string>());
   const mounted = useRef(true);
   const draft = useRef<(FileEntry & { parent: string }) | null>(null);
@@ -171,6 +177,7 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
       },
     },
     canRename: () => !saving.current,
+    onRename: () => void completeEditing().catch(useApp.getState().fail),
     features: [
       asyncDataLoaderFeature,
       selectionFeature,
@@ -205,7 +212,10 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
             tree.setSelectedItems(focused ? [focused.getId()] : []);
             if (inputFocused) (focused?.getElement() ?? tree.getElement())?.focus();
           },
-          completeRenaming: () => void completeEditing().catch(useApp.getState().fail),
+          completeRenaming: ({ tree }) => {
+            const item = tree.getRenamingItem();
+            if (item) tree.getConfig().onRename?.(item, tree.getRenamingValue());
+          },
         },
       },
       {
@@ -225,6 +235,35 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
       },
     ],
   });
+  const editingPath = tree.getState().renamingItem;
+  const editingParent = editingPath
+    ? (draft.current?.parent ?? editingPath.slice(0, Math.max(0, editingPath.lastIndexOf('/'))))
+    : null;
+  const siblingPaths = changes
+    ? changedSiblings?.parent === editingParent
+      ? changedSiblings.paths
+      : []
+    : tree.retrieveChildrenIds(editingParent ?? '');
+  const target = [editingParent, tree.getRenamingValue()].filter(Boolean).join('/');
+  const duplicateName =
+    !!editingPath && !submitting && target !== editingPath && siblingPaths.includes(target);
+  const message = duplicateName ? 'A file or folder with that name already exists.' : error;
+  useEffect(() => {
+    if (!changes || editingParent === null) return;
+    let cancelled = false;
+    void desktop
+      .call('files.list', { sessionId: session.id, path: editingParent })
+      .then((entries) => {
+        if (!cancelled)
+          setChangedSiblings({ parent: editingParent, paths: entries.map((entry) => entry.path) });
+      })
+      .catch((error) => {
+        if (!cancelled) setError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [changes, editingParent, session.id, status?.files]);
   const renameInput = useCallback(
     (input: HTMLInputElement | null) => {
       if (!input) return;
@@ -308,7 +347,7 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
   const completeEditing = async () => {
     const created = !!draft.current;
     const entry = draft.current ?? tree.getRenamingItem()?.getItemData();
-    if (!entry || saving.current) return;
+    if (!entry || saving.current || duplicateName) return;
     const name = tree.getRenamingValue();
     if (!name.trim() || name === '.' || name === '..' || /[/\\\0]/.test(name)) {
       setError('Enter a file or folder name without path separators.');
@@ -484,9 +523,9 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
           <span className="tree-git-dot" role="img" aria-label="Contains Git changes" />
         )}
       </div>
-      {error && (
-        <p className="inline-error" role="alert">
-          {error}
+      {message && (
+        <p className="inline-error" role="alert" id={errorId}>
+          {message}
         </p>
       )}
       <div
@@ -578,23 +617,35 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
                   <FileText size={13} />
                 )}
                 {item.isRenaming() ? (
-                  <input
-                    {...item.getRenameInputProps()}
-                    ref={renameInput}
-                    className="tree-name-input"
-                    aria-label={
-                      draft.current?.path === entry.path
-                        ? entry.directory
-                          ? 'New folder name'
-                          : 'New file name'
-                        : entry.directory
-                          ? 'Folder name'
-                          : 'File name'
-                    }
-                    placeholder={entry.directory ? 'Folder name' : 'File name'}
-                    readOnly={submitting}
-                    onClick={(event) => event.stopPropagation()}
-                  />
+                  <div className="tree-name-field">
+                    <input
+                      {...item.getRenameInputProps()}
+                      ref={renameInput}
+                      className="tree-name-input"
+                      aria-label={
+                        draft.current?.path === entry.path
+                          ? entry.directory
+                            ? 'New folder name'
+                            : 'New file name'
+                          : entry.directory
+                            ? 'Folder name'
+                            : 'File name'
+                      }
+                      placeholder={entry.directory ? 'Folder name' : 'File name'}
+                      aria-invalid={!!message}
+                      aria-describedby={message ? errorId : undefined}
+                      aria-keyshortcuts="Enter"
+                      readOnly={submitting}
+                      onChange={(event) => {
+                        tree.applySubStateUpdate('renamingValue', event.target.value);
+                        setError('');
+                      }}
+                      onClick={(event) => event.stopPropagation()}
+                    />
+                    <kbd className="tree-name-enter" aria-hidden="true">
+                      <CornerDownLeft size={11} />
+                    </kbd>
+                  </div>
                 ) : (
                   <span className={`file-label ${fileLabelClassName(change)}`}>
                     {changes ? entry.path : entry.name}

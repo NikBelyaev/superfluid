@@ -38,6 +38,9 @@ const fixture = {
   entered: signal(),
   gitPause: null as ReturnType<typeof signal> | null,
   gitEntered: signal(),
+  changed() {
+    for (const listener of listeners) listener({ type: 'files.changed', sessionId: session.id });
+  },
   dirty(path: string) {
     documents.items.set(`source:${path}`, { session, path, dirty: true } as Doc);
   },
