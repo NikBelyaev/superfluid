@@ -111,7 +111,7 @@ export const shellItem = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('synchronized') }),
 ]);
 export const turnItem = z.object({
-  id,
+  id: text.min(1),
   runId: id.nullable(),
   type: text,
   status: text,
