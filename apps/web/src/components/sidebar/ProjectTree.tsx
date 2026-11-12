@@ -620,11 +620,11 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
                   <FileText size={13} />
                 )}
                 {item.isRenaming() ? (
-                  <div className="tree-name-field">
+                  <div className="relative flex min-w-0 flex-1">
                     <input
                       {...item.getRenameInputProps()}
                       ref={renameInput}
-                      className="tree-name-input"
+                      className="tree-name-input h-[22px] w-0 min-w-0 flex-1 rounded-[3px] border border-ring bg-background py-0 pr-7 pl-1 text-foreground outline-none focus-visible:outline-none aria-invalid:border-error-foreground"
                       aria-label={
                         draft.current?.path === entry.path
                           ? entry.directory
@@ -646,7 +646,10 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
                       onClick={(event) => event.stopPropagation()}
                     />
                     {canConfirmName && (
-                      <kbd className="tree-name-enter" aria-hidden="true">
+                      <kbd
+                        className="tree-name-enter pointer-events-none absolute top-0.75 right-1 inline-flex h-4 min-w-4.5 items-center justify-center rounded border border-input bg-foreground/7 p-0 text-(--control-muted-foreground)"
+                        aria-hidden="true"
+                      >
                         <CornerDownLeft size={11} />
                       </kbd>
                     )}
