@@ -2,7 +2,9 @@ import { desktop } from '~/rpc/desktop';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { documents, monaco, subscribe, getRevision, type Doc } from '~/state/editor/Documents';
-import { useApp } from '~/state/workspaceStore';
+import { showSurface, useApp } from '~/state/workspaceStore';
+import { useFileDiff } from '~/components/diffs/useFileDiff';
+import { installGitDecorations } from './gitDecorations';
 import { editorTheme, useAppearance, useSystemDark } from '~/state/appearance';
 import type { Session } from '@superfluid/contracts';
 import './theme';
@@ -39,6 +41,22 @@ export default function Editor({
     [loading, setLoading] = useState(false),
     [error, setError] = useState('');
   const revision = useApp((a) => a.revision);
+  const diff = useFileDiff(session, doc?.path === path && !doc.readOnly ? path : undefined);
+  useEffect(() => {
+    const instance = editor.current;
+    const file = diff?.files?.[0];
+    if (
+      !instance ||
+      !doc ||
+      !file ||
+      diff.version === undefined ||
+      instance.getModel() !== doc.model
+    )
+      return;
+    return installGitDecorations(instance, file, diff.version, () =>
+      showSurface({ kind: 'diff', path: doc.path }, doc.session.id),
+    );
+  }, [doc, diff?.files, diff?.version]);
   const theme = editorTheme(useAppearance(), useSystemDark());
   useEffect(() => monaco.editor.setTheme(theme), [theme]);
   useSyncExternalStore(subscribe, getRevision);
@@ -145,6 +163,15 @@ export default function Editor({
         if (d) return documents.save(d).catch(useApp.getState().fail);
       },
     });
+    const openDiff = instance.addAction({
+      id: 'superfluid.diff',
+      label: 'Open file diff (Index → Buffer)',
+      contextMenuGroupId: 'navigation',
+      run: () => {
+        const d = bound.current;
+        if (d && !d.readOnly) showSurface({ kind: 'diff', path: d.path }, d.session.id);
+      },
+    });
     const rename = instance.addAction({
       id: 'superfluid.rename',
       label: 'Rename symbol…',
@@ -222,6 +249,7 @@ export default function Editor({
       unregister();
       capture.current = () => {};
       save.dispose();
+      openDiff.dispose();
       rename.dispose();
       format.dispose();
       opener.dispose();

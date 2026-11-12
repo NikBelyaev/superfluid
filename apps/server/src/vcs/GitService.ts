@@ -242,6 +242,35 @@ export class GitService {
     this.statuses.set(key, work);
     return work;
   }
+  async index(s: Session, path: string) {
+    if (!s.gitDir) return null;
+    return this.reads.run(async () => {
+      const entry = await git(s.path, [
+        '--literal-pathspecs',
+        'ls-files',
+        '--stage',
+        '-z',
+        '--',
+        path,
+      ]);
+      if (!entry) {
+        const ignored = await git(s.path, ['check-ignore', '--quiet', '--', path]).then(
+          () => true,
+          (error: unknown) => {
+            if (error instanceof ProcessError && error.code === 1) return false;
+            throw error;
+          },
+        );
+        return ignored ? null : '';
+      }
+      const staged = entry.match(/^(\d+) ([0-9a-f]+) 0\t/);
+      if (!staged)
+        throw new Error('Resolve Git conflicts before comparing this file with the index.');
+      if (!/^100/.test(staged[1])) return null;
+      const text = await git(s.path, ['cat-file', 'blob', staged[2]]);
+      return text.includes('\0') ? null : text;
+    });
+  }
   async diff(s: Session, path: string | undefined, mode: string, base: string) {
     return this.reads.run(async () => {
       if (mode === 'branch') safeRef(base);

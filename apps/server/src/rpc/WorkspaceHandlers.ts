@@ -116,6 +116,7 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     'git.status': (input) => sourceControl.status(session(input.sessionId), input.repositoryId),
     'git.init': (input) => sourceControl.initialize(session(input.sessionId)),
     'git.diff': (input) => sourceControl.diff(session(input.sessionId), input),
+    'git.index': (input) => sourceControl.index(session(input.sessionId), input),
     'git.act': (input) => sourceControl.act(session(input.sessionId), input),
     'git.inspect': (input) => sourceControl.inspect(session(input.sessionId), input.operationId),
     'git.acknowledge': (input) => git.acknowledge(session(input.sessionId), input.operationId),

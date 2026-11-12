@@ -326,6 +326,57 @@ test('repository status, diffs, commits and pushes stay in their destination ses
   }
 });
 
+test('editor Git bases use the destination repository index, including untracked and linked worktrees', async () => {
+  const f = await fixture();
+  try {
+    const base = (path: string, repositoryId?: string) =>
+      f.service.index(f.s, { sessionId: f.s.id, path, repositoryId });
+    assert.equal(await base('apps/first/main.py'), 'print("initial")\n');
+    await writeFile(join(f.first, 'main.py'), 'staged\n');
+    await git(f.first, ['add', 'main.py']);
+    await writeFile(join(f.first, 'main.py'), 'unstaged\n');
+    assert.equal(await base('apps/first/main.py'), 'staged\n');
+    assert.equal(await base('main.py', f.secondId), 'print("initial")\n');
+    await writeFile(join(f.first, 'new[1].py'), 'new\n');
+    assert.equal(await base('apps/first/new[1].py'), '');
+    await git(f.first, ['add', '--', 'new[1].py']);
+    assert.equal(await base('apps/first/new[1].py'), 'new\n');
+    await git(f.first, ['mv', 'new[1].py', 'renamed.py']);
+    assert.equal(await base('apps/first/renamed.py'), 'new\n');
+    assert.equal(await base('apps/first/new[1].py'), '');
+    await writeFile(join(f.first, '.gitignore'), 'ignored.py\n');
+    await writeFile(join(f.first, 'ignored.py'), 'ignored\n');
+    assert.equal(await base('apps/first/ignored.py'), null);
+    await writeFile(join(f.first, 'binary'), Buffer.from([0, 1, 2]));
+    await git(f.first, ['add', 'binary']);
+    assert.equal(await base('apps/first/binary'), null);
+    const unborn = await temp();
+    await git(unborn, ['init', '-b', 'main']);
+    await writeFile(join(unborn, 'first.py'), 'before first commit\n');
+    await git(unborn, ['add', 'first.py']);
+    assert.equal(
+      await f.service.index(session(unborn), { sessionId: 'test', path: 'first.py' }),
+      'before first commit\n',
+    );
+    const linked = await temp();
+    await git(f.first, ['worktree', 'add', '-b', 'editor-base', linked]);
+    await writeFile(join(linked, 'main.py'), 'linked index\n');
+    await git(linked, ['add', 'main.py']);
+    const destination = session(linked);
+    assert.equal(
+      await f.service.index(destination, { sessionId: destination.id, path: 'main.py' }),
+      'linked index\n',
+    );
+    assert.equal(await base('apps/first/main.py'), 'staged\n');
+    await git(f.first, ['reset', '--', 'main.py']);
+    assert.equal(await base('apps/first/main.py'), 'print("initial")\n');
+    await assert.rejects(() => base('../outside.py'), /outside the worktree/);
+    await assert.rejects(() => base('main.py', 'outside'), /does not belong/);
+  } finally {
+    f.store.close();
+  }
+});
+
 test('branch operations carry dirty files, preserve drafts, and replay without switching again', async () => {
   const f = await fixture();
   try {
