@@ -244,10 +244,14 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
       ? changedSiblings.paths
       : []
     : tree.retrieveChildrenIds(editingParent ?? '');
-  const target = [editingParent, tree.getRenamingValue()].filter(Boolean).join('/');
+  const name = tree.getRenamingValue();
+  const validName = !!name.trim() && name !== '.' && name !== '..' && !/[/\\\0]/.test(name);
+  const target = [editingParent, name].filter(Boolean).join('/');
   const duplicateName =
     !!editingPath && !submitting && target !== editingPath && siblingPaths.includes(target);
   const message = duplicateName ? 'A file or folder with that name already exists.' : error;
+  const canConfirmName =
+    validName && !message && !submitting && (!changes || changedSiblings?.parent === editingParent);
   useEffect(() => {
     if (!changes || editingParent === null) return;
     let cancelled = false;
@@ -348,8 +352,7 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
     const created = !!draft.current;
     const entry = draft.current ?? tree.getRenamingItem()?.getItemData();
     if (!entry || saving.current || duplicateName) return;
-    const name = tree.getRenamingValue();
-    if (!name.trim() || name === '.' || name === '..' || /[/\\\0]/.test(name)) {
+    if (!validName) {
       setError('Enter a file or folder name without path separators.');
       return;
     }
@@ -642,9 +645,11 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
                       }}
                       onClick={(event) => event.stopPropagation()}
                     />
-                    <kbd className="tree-name-enter" aria-hidden="true">
-                      <CornerDownLeft size={11} />
-                    </kbd>
+                    {canConfirmName && (
+                      <kbd className="tree-name-enter" aria-hidden="true">
+                        <CornerDownLeft size={11} />
+                      </kbd>
+                    )}
                   </div>
                 ) : (
                   <span className={`file-label ${fileLabelClassName(change)}`}>

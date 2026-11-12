@@ -317,7 +317,15 @@ test('file names report sibling duplicates before submission and clear errors as
   const alert = page.locator('.project-tree').getByRole('alert');
   await page.getByRole('button', { name: 'New file', exact: true }).click();
   const input = page.getByRole('textbox', { name: 'New file name', exact: true });
+  const enterHint = page.locator('.tree-name-enter');
+  for (const name of ['', ' ', '.', '..', 'folder/name', 'folder\\name']) {
+    await input.fill(name);
+    await expect(enterHint).toHaveCount(0);
+  }
+  await input.fill('a');
+  await expect(enterHint).toHaveCount(1);
   await input.fill('src');
+  await expect(enterHint).toHaveCount(0);
   await expect(input).toHaveAttribute('aria-invalid', 'true');
   await expect(alert).toContainText('already exists');
   await input.press('Enter');
@@ -327,6 +335,7 @@ test('file names report sibling duplicates before submission and clear errors as
     ['src', 'src-other'],
   );
   await input.fill('src.py');
+  await expect(enterHint).toHaveCount(1);
   await expect(input).toHaveAttribute('aria-invalid', 'false');
   await expect(alert).toHaveCount(0);
   await input.press('Enter');
