@@ -150,7 +150,7 @@ export function installGitDecorations(
     const anchor = Math.min(model.getLineCount(), change.modifiedLine);
     let layingOut = false;
     const layout = () => {
-      // Measuring Monaco positions can synchronously emit another layout event.
+      // Monaco layout can synchronously emit another layout event.
       if (layingOut) return;
       layingOut = true;
       try {
@@ -183,28 +183,10 @@ export function installGitDecorations(
         const top = Math.max(0, Math.min(viewportHeight - toolbarHeight, preferredTop));
         toolbar.style.left = '16px';
         toolbar.style.top = `${top}px`;
-        let overlaps = top !== preferredTop;
-        for (
-          let line = Math.max(1, anchor - Math.ceil((toolbarHeight + 4) / lineHeight));
-          !overlaps && line < anchor;
-          line++
-        ) {
-          const column = model.getLineFirstNonWhitespaceColumn(line);
-          if (!column) continue;
-          const beginning = editor.getScrolledVisiblePosition({ lineNumber: line, column });
-          const end = editor.getScrolledVisiblePosition({
-            lineNumber: line,
-            column: model.getLineMaxColumn(line),
-          });
-          overlaps =
-            !!beginning &&
-            !!end &&
-            beginning.top < top + toolbarHeight &&
-            beginning.top + beginning.height > top &&
-            beginning.left < info.contentLeft + toolbar.offsetWidth &&
-            end.left > info.contentLeft;
-        }
-        toolbar.dataset.overlap = String(overlaps);
+        const end = change.modified
+          ? editor.getTopForLineNumber(change.end) + lineHeight - editor.getScrollTop()
+          : start + height;
+        toolbar.dataset.overlap = String(start < top + toolbarHeight && end > top);
       } finally {
         layingOut = false;
       }

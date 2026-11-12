@@ -32,8 +32,7 @@ try {
     'added_value = 42\n';
   const parameters =
     'def GraphQLFetch(query, parameters, result_path):\n    return parameters\n\ndef fetch(query, result_path):\n    return GraphQLFetch(query, parameters={}, result_path=result_path)\n';
-  const manyPrefix =
-    Array.from({ length: 30 }, (_, i) => `before_${i} = ${i}`).join('\n') + '\n\n\n';
+  const manyPrefix = Array.from({ length: 30 }, (_, i) => `before_${i} = ${i}`).join('\n') + '\n';
   const manySuffix = Array.from({ length: 80 }, (_, i) => `keep_${i} = ${i}`).join('\n') + '\n';
   const many =
     manyPrefix +
@@ -286,7 +285,7 @@ try {
     await main.getByRole('tab', { name: 'many.py', exact: true }).click();
     await expect(main.locator('.view-lines').first()).toContainText('before_0');
     await main.getByRole('textbox', { name: 'Editor content', exact: true }).focus();
-    for (let line = 0; line < 32; line++) await page.keyboard.press('ArrowDown');
+    for (let line = 0; line < 30; line++) await page.keyboard.press('ArrowDown');
     await main.locator('.git-line-modified').click();
     const manyPreview = main.getByRole('region', { name: 'Inline Git diff' });
     await expect(manyPreview).toContainText('old_value_0');
@@ -306,13 +305,14 @@ try {
     await page.keyboard.press('Meta+ArrowUp');
     await expect(actions).toBeVisible();
     await expect(manyPreview.locator('.git-inline-content')).not.toBeVisible();
+    await expect(actions).toHaveCSS('opacity', '1');
     const editorBox = (await main.locator('.monaco-editor').first().boundingBox())!;
     const actionHeight = (await actions.boundingBox())!.height;
     await expect
       .poll(async () => Math.round((await actions.boundingBox())!.y))
       .toBe(Math.round(editorBox.y + editorBox.height - actionHeight));
     await page.screenshot({ path: join(evidence, 'inline-actions-bottom.png') });
-    for (let line = 0; line < 32; line++) await page.keyboard.press('ArrowDown');
+    for (let line = 0; line < 30; line++) await page.keyboard.press('ArrowDown');
     await expect(manyPreview).toContainText('old_value_199');
     await expect(main.locator('.view-lines').first()).toContainText('new_value = 1');
     await expect.poll(() => manyPreview.locator('.view-line').count()).toBeLessThan(50);
@@ -322,7 +322,7 @@ try {
       .poll(async () => Math.round((await actions.boundingBox())!.y))
       .toBe(Math.round(editorTop));
     await page.mouse.move(0, 0);
-    await expect(actions).toHaveCSS('opacity', '0.2');
+    await expect(actions).toHaveCSS('opacity', '0.6');
     await page.screenshot({ path: join(evidence, 'inline-many.png') });
     await actions.hover();
     await expect(actions).toHaveCSS('opacity', '1');
@@ -334,6 +334,7 @@ try {
     await page.keyboard.press('Meta+ArrowDown');
     await expect(manyPreview.locator('.git-inline-content')).not.toBeVisible();
     await expect(actions).toBeVisible();
+    await expect(actions).toHaveCSS('opacity', '1');
     await actions.getByRole('button', { name: 'Open file diff', exact: true }).focus();
     await page.mouse.move(0, 0);
     await expect(actions).toHaveCSS('opacity', '1');
