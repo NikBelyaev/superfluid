@@ -1,0 +1,29 @@
+.markdown-table {
+  margin: 16px 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.markdown .markdown-table table {
+  display: table;
+  width: max-content;
+  min-width: 100%;
+  overflow: visible;
+  overflow-wrap: normal;
+}
+.markdown .markdown-table th,
+.markdown .markdown-table td {
+  min-width: 12ch;
+  max-width: 28ch;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px 12px 0;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: break-word;
+}
+.markdown .markdown-table th {
+  color: var(--foreground);
+  font-weight: 500;
+}

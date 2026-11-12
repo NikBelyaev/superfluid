@@ -82,6 +82,7 @@ export default function RightPanel({
             <Editor
               session={session}
               path={active.path}
+              preview={active.preview}
               group={group}
               tabKey={surfaceKey(active)}
             />

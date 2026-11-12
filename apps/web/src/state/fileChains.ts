@@ -5,6 +5,7 @@ export type FileLocation = Omit<Location, 'group' | 'tab'>;
 export interface FileSurface {
   kind: 'file';
   path: string;
+  preview?: boolean;
   chain?: { id: string; entries: FileLocation[]; index: number; targetIndex: number };
 }
 
@@ -137,8 +138,16 @@ export function mapSurfaceFiles(
   };
 }
 
-export function restoreFileSurface(value: { path: string; chain?: unknown }): FileSurface {
-  const file: FileSurface = { kind: 'file', path: value.path };
+export function restoreFileSurface(value: {
+  path: string;
+  preview?: boolean;
+  chain?: unknown;
+}): FileSurface {
+  const file: FileSurface = {
+    kind: 'file',
+    path: value.path,
+    ...(value.preview === undefined ? {} : { preview: value.preview }),
+  };
   const chain = value.chain;
   if (
     !chain ||
