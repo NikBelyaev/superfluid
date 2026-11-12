@@ -27,7 +27,7 @@ export function installGitDecorations(
       },
     })),
   );
-  const open = (line: number) => {
+  const open = (line: number, focusActions = false) => {
     if (model.getVersionId() !== version || editor.getModel() !== model) return;
     const change = inlineHunk(file, line);
     if (!change) return;
@@ -94,7 +94,7 @@ export function installGitDecorations(
     }
     const content = document.createElement('div');
     content.className = 'git-inline-content';
-    content.onwheel = (event) => {
+    root.onwheel = (event) => {
       const scrollable = editor.getDomNode()?.querySelector('.monaco-scrollable-element');
       if (!scrollable) return;
       const forwarded = new WheelEvent('wheel', event);
@@ -146,51 +146,68 @@ export function installGitDecorations(
       getMinContentWidthInPx: () => preview?.getContentWidth() ?? 0,
     };
     editor.addOverlayWidget(widget);
-    preview?.updateOptions({
-      scrollBeyondLastColumn: Math.ceil(
-        (toolbar.offsetWidth + 12) /
-          editor.getOption(monaco.editor.EditorOption.fontInfo).typicalHalfwidthCharacterWidth,
-      ),
-    });
     let zone = '';
-    let zoneTop = 0;
+    const anchor = Math.min(model.getLineCount(), change.modifiedLine);
+    let layingOut = false;
     const layout = () => {
-      const info = editor.getLayoutInfo();
-      const left = info.contentLeft - 16;
-      const width = info.contentWidth + 16;
-      root.style.left = `${left}px`;
-      root.style.width = `${width}px`;
-      let end: number | undefined;
-      if (preview && previewModel) {
-        const clipped = Math.max(0, -zoneTop);
-        const top = Math.max(0, zoneTop);
-        const visible = Math.max(0, Math.min(height - clipped, info.height - top));
-        root.style.top = `${top}px`;
-        root.style.height = `${visible}px`;
-        root.style.display = visible ? '' : 'none';
-        content.style.height = `${visible}px`;
-        // Only render the visible part of a removed block; the parent editor owns scrolling.
-        preview.layout({ width, height: Math.max(1, visible) });
-        preview.setScrollPosition({ scrollTop: clipped, scrollLeft: editor.getScrollLeft() });
-        end = preview.getScrolledVisiblePosition({
-          lineNumber: 1,
-          column: previewModel.getLineMaxColumn(1),
-        })?.left;
-        toolbar.style.top = `${-clipped + (lineHeight - 28) / 2}px`;
-        toolbar.style.display = clipped >= lineHeight ? 'none' : '';
-      } else {
-        const position = editor.getScrolledVisiblePosition({
-          lineNumber: change.start,
-          column: model.getLineMaxColumn(change.start),
-        });
-        root.style.top = `${position?.top ?? 0}px`;
-        root.style.height = '28px';
-        root.style.display =
-          position && position.top >= 0 && position.top < info.height ? '' : 'none';
-        end = position ? position.left - left : undefined;
-        toolbar.style.top = `${(lineHeight - 28) / 2}px`;
+      // Measuring Monaco positions can synchronously emit another layout event.
+      if (layingOut) return;
+      layingOut = true;
+      try {
+        const info = editor.getLayoutInfo();
+        const left = info.contentLeft - 16;
+        const width = info.contentWidth + 16;
+        const viewportHeight =
+          info.height -
+          (editor.getScrollWidth() > info.contentWidth ? info.horizontalScrollbarHeight : 0);
+        const start = editor.getTopForLineNumber(anchor) - height - editor.getScrollTop();
+        root.style.left = `${left}px`;
+        root.style.top = '0px';
+        root.style.width = `${width}px`;
+        root.style.height = `${viewportHeight}px`;
+        if (preview) {
+          const clipped = Math.max(0, -start);
+          const top = Math.max(0, start);
+          const visible = Math.max(0, Math.min(height - clipped, viewportHeight - top));
+          content.style.top = `${top}px`;
+          content.style.height = `${visible}px`;
+          content.style.display = visible ? '' : 'none';
+          // Only render the visible part of a removed block; the parent editor owns scrolling.
+          if (visible) {
+            preview.layout({ width, height: visible });
+            preview.setScrollPosition({ scrollTop: clipped, scrollLeft: editor.getScrollLeft() });
+          }
+        }
+        const toolbarHeight = toolbar.offsetHeight;
+        const preferredTop = start - toolbarHeight - 4;
+        const top = Math.max(0, Math.min(viewportHeight - toolbarHeight, preferredTop));
+        toolbar.style.left = '16px';
+        toolbar.style.top = `${top}px`;
+        let overlaps = top !== preferredTop;
+        for (
+          let line = Math.max(1, anchor - Math.ceil((toolbarHeight + 4) / lineHeight));
+          !overlaps && line < anchor;
+          line++
+        ) {
+          const column = model.getLineFirstNonWhitespaceColumn(line);
+          if (!column) continue;
+          const beginning = editor.getScrolledVisiblePosition({ lineNumber: line, column });
+          const end = editor.getScrolledVisiblePosition({
+            lineNumber: line,
+            column: model.getLineMaxColumn(line),
+          });
+          overlaps =
+            !!beginning &&
+            !!end &&
+            beginning.top < top + toolbarHeight &&
+            beginning.top + beginning.height > top &&
+            beginning.left < info.contentLeft + toolbar.offsetWidth &&
+            end.left > info.contentLeft;
+        }
+        toolbar.dataset.overlap = String(overlaps);
+      } finally {
+        layingOut = false;
       }
-      toolbar.style.left = `${Math.max(16, Math.min(width - toolbar.offsetWidth, (end ?? width) + 12))}px`;
     };
     // Monaco hides view zones from assistive technology; keep their content in an accessible overlay.
     const viewZone: monaco.editor.IViewZone = {
@@ -198,8 +215,7 @@ export function installGitDecorations(
       afterLineNumber: change.modifiedLine - 1,
       heightInPx: height,
       showInHiddenAreas: true,
-      onDomNodeTop: (top) => {
-        zoneTop = top;
+      onDomNodeTop: () => {
         if (zone) layout();
       },
     };
@@ -310,7 +326,8 @@ export function installGitDecorations(
         editor.focus();
       }
     };
-    dismiss.focus();
+    if (focusActions) full.focus();
+    else editor.focus();
   };
   const click = editor.onMouseDown((event) => {
     if (
@@ -329,7 +346,7 @@ export function installGitDecorations(
     contextMenuGroupId: 'navigation',
     run: () => {
       const position = editor.getPosition();
-      if (position) open(position.lineNumber);
+      if (position) open(position.lineNumber, true);
     },
   });
   const changed = model.onDidChangeContent(() => {

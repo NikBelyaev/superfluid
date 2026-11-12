@@ -32,7 +32,14 @@ try {
     'added_value = 42\n';
   const parameters =
     'def GraphQLFetch(query, parameters, result_path):\n    return parameters\n\ndef fetch(query, result_path):\n    return GraphQLFetch(query, parameters={}, result_path=result_path)\n';
-  const many = Array.from({ length: 200 }, (_, i) => `old_value_${i} = ${i}`).join('\n') + '\n';
+  const manyPrefix =
+    Array.from({ length: 30 }, (_, i) => `before_${i} = ${i}`).join('\n') + '\n\n\n';
+  const manySuffix = Array.from({ length: 80 }, (_, i) => `keep_${i} = ${i}`).join('\n') + '\n';
+  const many =
+    manyPrefix +
+    Array.from({ length: 200 }, (_, i) => `old_value_${i} = ${i}`).join('\n') +
+    '\n' +
+    manySuffix;
   await writeFile(join(fixture.project, 'many.py'), many);
   const long = `message = "${'old '.repeat(100)}" # old_end\n`;
   await writeFile(join(fixture.project, 'long.py'), long);
@@ -41,7 +48,7 @@ try {
   await git(fixture.project, ['add', 'main.py', 'parameters.py', 'long.py', 'many.py']);
   await git(fixture.project, ['commit', '-m', 'Prepare diff fixture']);
   await writeFile(join(fixture.project, 'main.py'), current);
-  await writeFile(join(fixture.project, 'many.py'), 'new_value = 1\n');
+  await writeFile(join(fixture.project, 'many.py'), manyPrefix + 'new_value = 1\n' + manySuffix);
   await writeFile(join(fixture.project, 'long.py'), 'message = \"new\"\n');
   await writeFile(join(fixture.project, 'bom.py'), '\ufeffvalue = 2\r\n');
   await writeFile(join(fixture.project, 'untracked.py'), 'new_value = 42\n');
@@ -277,10 +284,16 @@ try {
       await expect(main.locator(`.git-line-${kind}`)).toHaveCount(1);
     }
     await main.getByRole('tab', { name: 'many.py', exact: true }).click();
+    await expect(main.locator('.view-lines').first()).toContainText('before_0');
+    await main.getByRole('textbox', { name: 'Editor content', exact: true }).focus();
+    for (let line = 0; line < 32; line++) await page.keyboard.press('ArrowDown');
     await main.locator('.git-line-modified').click();
     const manyPreview = main.getByRole('region', { name: 'Inline Git diff' });
     await expect(manyPreview).toContainText('old_value_0');
     await expect.poll(() => manyPreview.locator('.view-line').count()).toBeLessThan(50);
+    const actions = manyPreview.locator('.git-inline-toolbar');
+    await expect(actions).toHaveCSS('opacity', '1');
+    await page.screenshot({ path: join(evidence, 'inline-actions-above.png') });
     const vertical = main
       .locator('.monaco-scrollable-element')
       .first()
@@ -290,11 +303,41 @@ try {
     await page.mouse.wheel(0, 10000);
     await expect.poll(async () => (await vertical.boundingBox())!.y).toBeGreaterThan(originalTop);
     await main.getByRole('textbox', { name: 'Editor content', exact: true }).focus();
-    await page.keyboard.press('Meta+ArrowDown');
+    await page.keyboard.press('Meta+ArrowUp');
+    await expect(actions).toBeVisible();
+    await expect(manyPreview.locator('.git-inline-content')).not.toBeVisible();
+    const editorBox = (await main.locator('.monaco-editor').first().boundingBox())!;
+    const actionHeight = (await actions.boundingBox())!.height;
+    await expect
+      .poll(async () => Math.round((await actions.boundingBox())!.y))
+      .toBe(Math.round(editorBox.y + editorBox.height - actionHeight));
+    await page.screenshot({ path: join(evidence, 'inline-actions-bottom.png') });
+    for (let line = 0; line < 32; line++) await page.keyboard.press('ArrowDown');
     await expect(manyPreview).toContainText('old_value_199');
     await expect(main.locator('.view-lines').first()).toContainText('new_value = 1');
     await expect.poll(() => manyPreview.locator('.view-line').count()).toBeLessThan(50);
+    await expect(actions).toBeVisible();
+    const editorTop = (await main.locator('.monaco-editor').first().boundingBox())!.y;
+    await expect
+      .poll(async () => Math.round((await actions.boundingBox())!.y))
+      .toBe(Math.round(editorTop));
+    await page.mouse.move(0, 0);
+    await expect(actions).toHaveCSS('opacity', '0.2');
     await page.screenshot({ path: join(evidence, 'inline-many.png') });
+    await actions.hover();
+    await expect(actions).toHaveCSS('opacity', '1');
+    await page.screenshot({ path: join(evidence, 'inline-actions-hover.png') });
+    const hoverTop = (await vertical.boundingBox())!.y;
+    await page.mouse.wheel(0, 10000);
+    await expect.poll(async () => (await vertical.boundingBox())!.y).toBeGreaterThan(hoverTop);
+    await main.getByRole('textbox', { name: 'Editor content', exact: true }).focus();
+    await page.keyboard.press('Meta+ArrowDown');
+    await expect(manyPreview.locator('.git-inline-content')).not.toBeVisible();
+    await expect(actions).toBeVisible();
+    await actions.getByRole('button', { name: 'Open file diff', exact: true }).focus();
+    await page.mouse.move(0, 0);
+    await expect(actions).toHaveCSS('opacity', '1');
+    await main.getByRole('textbox', { name: 'Editor content', exact: true }).focus();
     await page.keyboard.press('Escape');
     await expect(manyPreview).toHaveCount(0);
     console.log(

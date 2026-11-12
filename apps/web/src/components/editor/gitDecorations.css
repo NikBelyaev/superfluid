@@ -40,12 +40,27 @@
   z-index: 20;
   display: flex;
   width: max-content;
+  box-sizing: content-box;
   height: 28px;
-  background: var(--background);
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--popover);
   pointer-events: auto;
 }
 
+.git-inline-toolbar[data-overlap='true'] {
+  opacity: 0.2;
+}
+
+.git-inline-toolbar:hover,
+.git-inline-toolbar:focus-within {
+  opacity: 1;
+}
+
 .git-inline-content {
+  position: absolute;
+  width: 100%;
   pointer-events: auto;
 }
 
