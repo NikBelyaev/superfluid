@@ -94,77 +94,140 @@ export function installGitDecorations(
     }
     const content = document.createElement('div');
     content.className = 'git-inline-content';
-    root.append(toolbar, content);
-    let zone = '';
+    content.onwheel = (event) => {
+      const scrollable = editor.getDomNode()?.querySelector('.monaco-scrollable-element');
+      if (!scrollable) return;
+      const forwarded = new WheelEvent('wheel', event);
+      scrollable.dispatchEvent(forwarded);
+      if (forwarded.defaultPrevented) event.preventDefault();
+      event.stopPropagation();
+    };
+    root.append(content, toolbar);
     const lineHeight = editor.getOption(monaco.editor.EditorOption.lineHeight);
-    const previous = change.kind !== 'added';
-    const text = (previous ? change.original : change.modified).replace(/(?:\r\n|\r|\n)$/, '');
-    let height = Math.min(320, text.split(/\r\n|\r|\n/).length * lineHeight + 8);
-    content.style.height = `${height}px`;
-    root.style.width = `${editor.getLayoutInfo().contentWidth}px`;
+    const text = change.original.replace(/(?:\r\n|\r|\n)$/, '');
+    const height = change.original ? text.split(/\r\n|\r|\n/).length * lineHeight : 0;
+    const previewModel = change.original
+      ? monaco.editor.createModel(text, model.getLanguageId())
+      : undefined;
+    previewModel?.updateOptions({ tabSize: model.getOptions().tabSize });
+    const preview = previewModel
+      ? monaco.editor.create(content, {
+          model: previewModel,
+          readOnly: true,
+          domReadOnly: true,
+          ariaLabel: 'Previous version (read only)',
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
+          scrollBeyondLastColumn: 0,
+          dimension: { width: editor.getLayoutInfo().contentWidth + 16, height: 1 },
+          scrollbar: {
+            vertical: 'hidden',
+            horizontal: 'hidden',
+            verticalScrollbarSize: 0,
+            horizontalScrollbarSize: 0,
+            handleMouseWheel: false,
+          },
+          lineHeight,
+          fontFamily: editor.getOption(monaco.editor.EditorOption.fontFamily),
+          fontSize: editor.getOption(monaco.editor.EditorOption.fontSize),
+          lineNumbers: 'off',
+          lineDecorationsWidth: 16,
+          overviewRulerLanes: 0,
+          renderLineHighlight: 'none',
+          folding: false,
+          stickyScroll: { enabled: false },
+          padding: { top: 0, bottom: 0 },
+        })
+      : undefined;
     const widget: monaco.editor.IOverlayWidget = {
       getId: () => 'superfluid.gitInlineDiff',
       getDomNode: () => root,
       getPosition: () => null,
+      getMinContentWidthInPx: () => preview?.getContentWidth() ?? 0,
     };
     editor.addOverlayWidget(widget);
-    // Monaco hides view zones from assistive technology; keep the interactive view in an overlay.
-    const viewZone: monaco.editor.IViewZone = {
-      domNode: document.createElement('div'),
-      afterLineNumber: change.before ? 0 : change.end,
-      heightInPx: height + 34,
-      showInHiddenAreas: true,
-      onDomNodeTop: (top) => {
-        root.style.top = `${top}px`;
-      },
-    };
-    editor.changeViewZones((accessor) => {
-      zone = accessor.addZone(viewZone);
+    preview?.updateOptions({
+      scrollBeyondLastColumn: Math.ceil(
+        (toolbar.offsetWidth + 12) /
+          editor.getOption(monaco.editor.EditorOption.fontInfo).typicalHalfwidthCharacterWidth,
+      ),
     });
-    const previewModel = monaco.editor.createModel(text, model.getLanguageId());
-    const preview = monaco.editor.create(content, {
-      model: previewModel,
-      readOnly: true,
-      domReadOnly: true,
-      ariaLabel: previous ? 'Previous version (read only)' : 'Added lines (read only)',
-      minimap: { enabled: false },
-      scrollBeyondLastLine: false,
-      scrollBeyondLastColumn: 2,
-      automaticLayout: true,
-      lineHeight,
-      fontFamily: editor.getOption(monaco.editor.EditorOption.fontFamily),
-      fontSize: editor.getOption(monaco.editor.EditorOption.fontSize),
-      lineNumbers: 'off',
-      lineDecorationsWidth: 8,
-      overviewRulerLanes: 0,
-      renderLineHighlight: 'none',
-      folding: false,
-      stickyScroll: { enabled: false },
-      padding: { top: 4, bottom: 4 },
-    });
+    let zone = '';
+    let zoneTop = 0;
     const layout = () => {
       const info = editor.getLayoutInfo();
-      const width = Math.max(
-        toolbar.offsetWidth,
-        preview.getContentWidth() + preview.getLayoutInfo().contentLeft,
-      );
-      root.style.left = `${info.contentLeft}px`;
-      root.style.width = `${Math.min(info.contentWidth, width + 2)}px`;
-      const contentHeight = Math.min(320, preview.getContentHeight());
-      if (height !== contentHeight) {
-        height = contentHeight;
-        content.style.height = `${height}px`;
-        viewZone.heightInPx = height + 34;
-        editor.changeViewZones((accessor) => accessor.layoutZone(zone));
+      const left = info.contentLeft - 16;
+      const width = info.contentWidth + 16;
+      root.style.left = `${left}px`;
+      root.style.width = `${width}px`;
+      let end: number | undefined;
+      if (preview && previewModel) {
+        const clipped = Math.max(0, -zoneTop);
+        const top = Math.max(0, zoneTop);
+        const visible = Math.max(0, Math.min(height - clipped, info.height - top));
+        root.style.top = `${top}px`;
+        root.style.height = `${visible}px`;
+        root.style.display = visible ? '' : 'none';
+        content.style.height = `${visible}px`;
+        // Only render the visible part of a removed block; the parent editor owns scrolling.
+        preview.layout({ width, height: Math.max(1, visible) });
+        preview.setScrollPosition({ scrollTop: clipped, scrollLeft: editor.getScrollLeft() });
+        end = preview.getScrolledVisiblePosition({
+          lineNumber: 1,
+          column: previewModel.getLineMaxColumn(1),
+        })?.left;
+        toolbar.style.top = `${-clipped + (lineHeight - 28) / 2}px`;
+        toolbar.style.display = clipped >= lineHeight ? 'none' : '';
+      } else {
+        const position = editor.getScrolledVisiblePosition({
+          lineNumber: change.start,
+          column: model.getLineMaxColumn(change.start),
+        });
+        root.style.top = `${position?.top ?? 0}px`;
+        root.style.height = '28px';
+        root.style.display =
+          position && position.top >= 0 && position.top < info.height ? '' : 'none';
+        end = position ? position.left - left : undefined;
+        toolbar.style.top = `${(lineHeight - 28) / 2}px`;
       }
+      toolbar.style.left = `${Math.max(16, Math.min(width - toolbar.offsetWidth, (end ?? width) + 12))}px`;
     };
+    // Monaco hides view zones from assistive technology; keep their content in an accessible overlay.
+    const viewZone: monaco.editor.IViewZone = {
+      domNode: document.createElement('div'),
+      afterLineNumber: change.modifiedLine - 1,
+      heightInPx: height,
+      showInHiddenAreas: true,
+      onDomNodeTop: (top) => {
+        zoneTop = top;
+        if (zone) layout();
+      },
+    };
+    if (preview) {
+      editor.changeViewZones((accessor) => {
+        zone = accessor.addZone(viewZone);
+      });
+    }
     const resized = editor.onDidLayoutChange(layout);
-    const measured = preview.onDidContentSizeChange(layout);
+    const scrolled = editor.onDidScrollChange(layout);
+    const measured = preview?.onDidContentSizeChange(() => {
+      editor.layoutOverlayWidget(widget);
+      layout();
+    });
     layout();
-    const previewLine = {
-      range: previewModel.getFullModelRange(),
-      options: { isWholeLine: true, className: `git-inline-line-${change.kind}` },
-    };
+    editor.layoutOverlayWidget(widget);
+    const previewLine = previewModel
+      ? [
+          {
+            range: previewModel.getFullModelRange(),
+            options: {
+              isWholeLine: true,
+              className: 'git-inline-line-deleted',
+              linesDecorationsClassName: 'git-inline-removed',
+            },
+          },
+        ]
+      : [];
     const currentLines = change.modified
       ? [
           {
@@ -173,7 +236,7 @@ export function installGitDecorations(
           },
         ]
       : [];
-    const previewHighlights = preview.createDecorationsCollection([previewLine]);
+    const previewHighlights = preview?.createDecorationsCollection(previewLine);
     const currentHighlights = editor.createDecorationsCollection(currentLines);
     const worker = new DiffWorker();
     let closed = false;
@@ -201,11 +264,9 @@ export function installGitDecorations(
     worker.onmessage = (event: MessageEvent<{ ranges?: ReturnType<typeof inlineRanges> }>) => {
       if (closed || !event.data.ranges || model.getVersionId() !== version) return;
       const ranges = event.data.ranges;
-      previewHighlights.set([
-        previewLine,
-        ...ranges.map((range) =>
-          word(previous ? range.original : range.modified, previous ? 'deleted' : 'added'),
-        ),
+      previewHighlights?.set([
+        ...previewLine,
+        ...ranges.map((range) => word(range.original, 'deleted')),
       ]);
       currentHighlights.set([
         ...currentLines,
@@ -213,18 +274,32 @@ export function installGitDecorations(
       ]);
     };
     worker.postMessage({ inline: { original: change.original, modified: change.modified } });
-    editor.revealLineInCenter(line, monaco.editor.ScrollType.Immediate);
+    if (preview) {
+      const anchor = Math.min(model.getLineCount(), change.modifiedLine);
+      editor.setScrollTop(
+        Math.max(
+          0,
+          editor.getTopForLineNumber(anchor) - height - editor.getLayoutInfo().height / 3,
+        ),
+        monaco.editor.ScrollType.Immediate,
+      );
+    } else editor.revealLineInCenter(line, monaco.editor.ScrollType.Immediate);
     close = () => {
       selected = undefined;
       closed = true;
       worker.terminate();
       currentHighlights.clear();
-      preview.dispose();
-      previewModel.dispose();
-      editor.changeViewZones((accessor) => accessor.removeZone(zone));
-      editor.removeOverlayWidget(widget);
+      measured?.dispose();
       resized.dispose();
-      measured.dispose();
+      scrolled.dispose();
+      if (zone) {
+        const id = zone;
+        zone = '';
+        editor.changeViewZones((accessor) => accessor.removeZone(id));
+      }
+      editor.removeOverlayWidget(widget);
+      preview?.dispose();
+      previewModel?.dispose();
       close = () => {};
     };
     root.onkeydown = (event) => {
@@ -262,6 +337,13 @@ export function installGitDecorations(
     decorations.clear();
   });
   const switched = editor.onDidChangeModel(() => close());
+  const escape = editor.onKeyDown((event) => {
+    if (event.keyCode === monaco.KeyCode.Escape && selected !== undefined) {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+    }
+  });
   return () => {
     close();
     decorations.clear();
@@ -269,5 +351,6 @@ export function installGitDecorations(
     action.dispose();
     changed.dispose();
     switched.dispose();
+    escape.dispose();
   };
 }

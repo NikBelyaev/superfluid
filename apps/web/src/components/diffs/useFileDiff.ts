@@ -24,6 +24,7 @@ export function useFileDiff(session: Session, path?: string, refresh = 0) {
   }>();
   const [result, setResult] = useState<{
     key: string;
+    worker: Worker | null;
     files?: FileDiffMetadata[];
     error?: string;
     unsupported?: boolean;
@@ -39,13 +40,18 @@ export function useFileDiff(session: Session, path?: string, refresh = 0) {
       if (event.data.id === generation.current)
         setResult({
           key,
+          worker: instance,
           files: event.data.files,
           error: event.data.error,
           version: comparedVersion.current,
         });
     };
     instance.onerror = () => {
-      setResult({ key, error: 'Could not compare this file with the Git index.' });
+      setResult({
+        key,
+        worker: instance,
+        error: 'Could not compare this file with the Git index.',
+      });
     };
     return () => {
       generation.current++;
@@ -101,7 +107,7 @@ export function useFileDiff(session: Session, path?: string, refresh = 0) {
         if (cancelled) return;
         if (base === null) {
           setSource(undefined);
-          setResult({ key, unsupported: true });
+          setResult({ key, worker: worker.current, unsupported: true });
           return;
         }
         const deleted = file?.worktree === 'D' || file?.index === 'D';
@@ -131,12 +137,16 @@ export function useFileDiff(session: Session, path?: string, refresh = 0) {
       .catch((error: unknown) => {
         if (!cancelled) {
           setSource(undefined);
-          setResult({ key, error: error instanceof Error ? error.message : String(error) });
+          setResult({
+            key,
+            worker: worker.current,
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
       });
     return () => {
       cancelled = true;
     };
   }, [session.id, path, doc, statuses, repositories, refresh]);
-  return result?.key === key ? result : undefined;
+  return result?.key === key && result.worker === worker.current ? result : undefined;
 }

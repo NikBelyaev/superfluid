@@ -31,32 +31,29 @@
 
 .git-inline-diff {
   position: absolute;
-  box-sizing: border-box;
   color: var(--foreground);
+  pointer-events: none;
 }
 
 .git-inline-toolbar {
+  position: absolute;
+  z-index: 20;
   display: flex;
-  align-items: center;
-  gap: 4px;
   width: max-content;
-  height: 32px;
-  padding: 0 4px;
-  border: 1px solid var(--border);
-  border-bottom: 0;
-  border-radius: var(--control-radius) var(--control-radius) 0 0;
-  box-shadow: var(--shadow-popover);
-  background: var(--popover);
-  font-family: var(--font-sans);
-  font-size: var(--text-xs);
+  height: 28px;
+  background: var(--background);
+  pointer-events: auto;
 }
 
 .git-inline-content {
-  box-sizing: content-box;
-  border: 1px solid var(--border);
-  border-radius: 0 var(--control-radius) var(--control-radius) var(--control-radius);
-  overflow: hidden;
-  box-shadow: var(--shadow-popover);
+  pointer-events: auto;
+}
+
+.git-inline-removed::before {
+  content: '−';
+  display: block;
+  text-align: center;
+  color: var(--color-git-deleted);
 }
 
 .git-inline-line-modified {

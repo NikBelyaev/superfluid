@@ -32,14 +32,17 @@ try {
     'added_value = 42\n';
   const parameters =
     'def GraphQLFetch(query, parameters, result_path):\n    return parameters\n\ndef fetch(query, result_path):\n    return GraphQLFetch(query, parameters={}, result_path=result_path)\n';
-  const long = `message = "${'old '.repeat(100)}"\n`;
+  const many = Array.from({ length: 200 }, (_, i) => `old_value_${i} = ${i}`).join('\n') + '\n';
+  await writeFile(join(fixture.project, 'many.py'), many);
+  const long = `message = "${'old '.repeat(100)}" # old_end\n`;
   await writeFile(join(fixture.project, 'long.py'), long);
   await writeFile(join(fixture.project, 'main.py'), original);
   await writeFile(join(fixture.project, 'parameters.py'), parameters);
-  await git(fixture.project, ['add', 'main.py', 'parameters.py', 'long.py']);
+  await git(fixture.project, ['add', 'main.py', 'parameters.py', 'long.py', 'many.py']);
   await git(fixture.project, ['commit', '-m', 'Prepare diff fixture']);
   await writeFile(join(fixture.project, 'main.py'), current);
-  await writeFile(join(fixture.project, 'long.py'), long.replaceAll('old ', 'new '));
+  await writeFile(join(fixture.project, 'many.py'), 'new_value = 1\n');
+  await writeFile(join(fixture.project, 'long.py'), 'message = \"new\"\n');
   await writeFile(join(fixture.project, 'bom.py'), '\ufeffvalue = 2\r\n');
   await writeFile(join(fixture.project, 'untracked.py'), 'new_value = 42\n');
   await writeFile(
@@ -60,10 +63,12 @@ try {
         layoutVersion: 1,
         tabs: [
           file,
-          ...['models.py', 'parameters.py', 'long.py', 'bom.py', 'untracked.py'].map((path) => ({
-            kind: 'file' as const,
-            path,
-          })),
+          ...['models.py', 'parameters.py', 'long.py', 'bom.py', 'untracked.py', 'many.py'].map(
+            (path) => ({
+              kind: 'file' as const,
+              path,
+            }),
+          ),
         ],
         active: file,
         rightTabs: [file, diff],
@@ -150,9 +155,10 @@ try {
     await main.getByRole('textbox', { name: 'Editor content', exact: true }).focus();
     await page.keyboard.press('Meta+ArrowDown');
     await main.locator('.git-line-added').click();
-    await expect(main.getByRole('region', { name: 'Inline Git diff' })).toContainText(
-      'added_value',
-    );
+    await expect(
+      main.getByRole('region', { name: 'Inline Git diff' }).locator('.monaco-editor'),
+    ).toHaveCount(0);
+    await expect(main.locator('.view-lines').first()).toContainText('added_value');
     await main.getByRole('button', { name: 'Rollback change', exact: true }).click();
     await expect(main.locator('.git-line-added')).toHaveCount(0);
     await page.keyboard.press('Meta+z');
@@ -224,8 +230,39 @@ try {
     await expect
       .poll(async () => (await main.locator('.git-inline-diff').boundingBox())!.width)
       .toBeGreaterThan((await main.boundingBox())!.width * 0.8);
+    const oldEnd = main
+      .getByRole('region', { name: 'Inline Git diff' })
+      .getByText('# old_end', { exact: true });
+    await main.getByRole('button', { name: 'Toggle island', exact: true }).click();
+    await expect(oldEnd).not.toBeInViewport();
+    const originalEnd = (await oldEnd.boundingBox())!.x;
+    await main.locator('.git-inline-content').hover();
+    await page.mouse.wheel(10000, 0);
+    await expect.poll(async () => (await oldEnd.boundingBox())!.x).toBeLessThan(originalEnd);
+    const horizontal = main
+      .locator('.monaco-scrollable-element')
+      .first()
+      .locator('.scrollbar.horizontal');
+    const track = (await horizontal.boundingBox())!;
+    const thumb = (await horizontal.locator('.slider').boundingBox())!;
+    await page.mouse.move(thumb.x + thumb.width / 2, thumb.y + thumb.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(track.x + track.width - 1, thumb.y + thumb.height / 2);
+    await page.mouse.up();
+    await expect(oldEnd).toBeInViewport();
+    await expect
+      .poll(() =>
+        oldEnd.evaluate((node) => {
+          const box = node.getBoundingClientRect();
+          return node.contains(
+            document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2),
+          );
+        }),
+      )
+      .toBe(true);
     await page.screenshot({ path: join(evidence, 'inline-long.png') });
     await main.getByRole('button', { name: 'Close inline diff' }).click();
+    await main.getByRole('button', { name: 'Toggle island', exact: true }).click();
     for (const [path, kind, expected] of [
       ['bom.py', 'modified', '\ufeffvalue = 1\r\n'],
       ['untracked.py', 'added', ''],
@@ -239,6 +276,27 @@ try {
       await page.keyboard.press('Meta+z');
       await expect(main.locator(`.git-line-${kind}`)).toHaveCount(1);
     }
+    await main.getByRole('tab', { name: 'many.py', exact: true }).click();
+    await main.locator('.git-line-modified').click();
+    const manyPreview = main.getByRole('region', { name: 'Inline Git diff' });
+    await expect(manyPreview).toContainText('old_value_0');
+    await expect.poll(() => manyPreview.locator('.view-line').count()).toBeLessThan(50);
+    const vertical = main
+      .locator('.monaco-scrollable-element')
+      .first()
+      .locator('.scrollbar.vertical .slider');
+    const originalTop = (await vertical.boundingBox())!.y;
+    await main.locator('.git-inline-content').hover();
+    await page.mouse.wheel(0, 10000);
+    await expect.poll(async () => (await vertical.boundingBox())!.y).toBeGreaterThan(originalTop);
+    await main.getByRole('textbox', { name: 'Editor content', exact: true }).focus();
+    await page.keyboard.press('Meta+ArrowDown');
+    await expect(manyPreview).toContainText('old_value_199');
+    await expect(main.locator('.view-lines').first()).toContainText('new_value = 1');
+    await expect.poll(() => manyPreview.locator('.view-line').count()).toBeLessThan(50);
+    await page.screenshot({ path: join(evidence, 'inline-many.png') });
+    await page.keyboard.press('Escape');
+    await expect(manyPreview).toHaveCount(0);
     console.log(
       'Inline hunks: main/right/bottom, deletion/addition, edits, staging, file/worktree switching and staged diff passed.',
       session.id,
