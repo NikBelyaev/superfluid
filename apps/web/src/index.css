@@ -666,6 +666,9 @@ kbd {
   font: inherit;
   outline: none;
 }
+.tree-name-input:focus-visible {
+  outline: none;
+}
 .git-letter {
   font-size: var(--text-2xs);
   color: var(--warning-foreground);
