@@ -40,6 +40,7 @@ const bridge: Bridge = {
   exportText: (text, name) => ipcRenderer.invoke('export-text', text, name),
   trash: (sessionId, path) => ipcRenderer.invoke('trash', sessionId, path),
   copyFile: (sessionId, path) => ipcRenderer.invoke('copy-file', sessionId, path),
+  copyText: (text) => ipcRenderer.invoke('copy-text', text),
   external: (url) => ipcRenderer.invoke('external', url),
   browser: (input) => ipcRenderer.invoke('browser', input),
 };

@@ -131,19 +131,34 @@ try {
   await page.screenshot({ path: join(evidence, 'actions-below-symbol.png') });
   await page.keyboard.press('Escape');
   await showSymbol(4, 8);
-  await page.evaluate(`Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
-    writeText: async text => { document.documentElement.dataset.copiedReference = text; }
-  } })`);
-  await page.keyboard.press('Escape');
-  await page.keyboard.press('Control+E');
-  await page.keyboard.press('Meta+Shift+ArrowLeft');
-  const copyPoint = await symbolPoint();
-  await page.mouse.click(copyPoint.x, copyPoint.y, { button: 'right' });
-  await activateMenuAction('Copy reference');
-  await expect(page.locator('html')).toHaveAttribute('data-copied-reference', 'models.Store.count');
-  await page.evaluate(() => {
-    Reflect.deleteProperty(navigator, 'clipboard');
+  const copiedReference = await app.evaluateHandle(({ clipboard }) => {
+    const original = clipboard.writeText;
+    let resolve!: (text: string) => void;
+    const copied = new Promise<string>((done) => {
+      resolve = done;
+    });
+    clipboard.writeText = async (text) => {
+      resolve(text);
+    };
+    return {
+      copied,
+      restore() {
+        clipboard.writeText = original;
+      },
+    };
   });
+  try {
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Control+E');
+    await page.keyboard.press('Meta+Shift+ArrowLeft');
+    const copyPoint = await symbolPoint();
+    await page.mouse.click(copyPoint.x, copyPoint.y, { button: 'right' });
+    await activateMenuAction('Copy reference');
+    assert.equal(await copiedReference.evaluate((state) => state.copied), 'models.Store.count');
+  } finally {
+    await copiedReference.evaluate((state) => state.restore());
+    await copiedReference.dispose();
+  }
   await showSymbol(4, 8);
   await action('Search').click();
   const search = page.getByRole('dialog', { name: 'Search', exact: true });

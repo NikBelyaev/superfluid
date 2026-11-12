@@ -160,9 +160,12 @@ export default function Terminal({ id }: { id: string }) {
           if (e.nativeEvent.isComposing || e.key === 'Dead' || e.key === 'Process') return;
           if ((e.metaKey || e.ctrlKey) && e.key === 'c' && e.metaKey) {
             e.preventDefault();
-            void desktop.call('terminal.command', { id, command: 'copy' }).then((value) => {
-              if (value) void navigator.clipboard.writeText(value);
-            });
+            void desktop
+              .call('terminal.command', { id, command: 'copy' })
+              .then((value) => {
+                if (value) return desktop.copyText(value);
+              })
+              .catch(useApp.getState().fail);
             return;
           }
           if ((e.metaKey || e.ctrlKey) && e.key === 'v') return;

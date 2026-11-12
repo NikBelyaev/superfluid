@@ -75,6 +75,11 @@ export function installDesktopIpc(
       }),
     ]);
   });
+  ipcMain.handle('copy-text', (event, text: unknown) => {
+    trusted(event, window, devUrl);
+    if (typeof text !== 'string') throw new Error('Expected clipboard text.');
+    return clipboard.writeText(text);
+  });
   ipcMain.handle('external', async (event, url: string) => {
     trusted(event, window, devUrl);
     await shell.openExternal(externalUrl(url));

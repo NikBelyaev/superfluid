@@ -110,6 +110,7 @@ class Documents {
     if (existing) {
       existing.closed = false;
       existing.lastUsed = Date.now();
+      await this.refresh(existing);
       if (existing.model.getLanguageId() === 'python') void this.sync(existing).catch(() => {});
       return existing;
     }
@@ -277,10 +278,10 @@ class Documents {
   }
   async reload(doc: Doc) {
     if (doc.readOnly) throw new Error('External definitions are read only.');
+    const version = doc.version;
     clearTimeout(doc.saveTimer);
     await doc.saving;
     await this.recovery.flush(doc.key);
-    const version = doc.version;
     const disk = await desktop.call('files.read', {
       sessionId: doc.session.id,
       path: doc.path,
@@ -312,13 +313,19 @@ class Documents {
     void this.sync(doc).catch(() => {});
   }
   async refresh(doc: Doc) {
-    if (doc.dirty || doc.readOnly) return;
+    if (doc.dirty || doc.readOnly || doc.model.isDisposed()) return;
+    const version = doc.version;
     const disk = await desktop.call('files.read', {
       sessionId: doc.session.id,
       path: doc.path,
       diskOnly: true,
     });
-    if (!doc.dirty && disk.hash !== doc.hash) await this.reload(doc);
+    if (!doc.dirty && !doc.model.isDisposed() && doc.version === version && disk.hash !== doc.hash)
+      await this.reload(doc);
+  }
+  async refreshSession(sessionId: string) {
+    for (const doc of this.items.values())
+      if (doc.session.id === sessionId && !doc.closed) await this.refresh(doc).catch(() => {});
   }
   async close(sessionId: string, path: string) {
     const doc = this.items.get(this.key(sessionId, path));
@@ -376,6 +383,7 @@ class Documents {
   async activate(id: string) {
     this.activeSessions = [id, ...this.activeSessions.filter((x) => x !== id)].slice(0, 3);
     await this.prune();
+    await this.refreshSession(id);
     requestAnimationFrame(() => void this.prune());
   }
   async prune() {
