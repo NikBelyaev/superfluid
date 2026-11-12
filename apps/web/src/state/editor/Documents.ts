@@ -50,7 +50,7 @@ const language = (path: string) =>
     ? 'python'
     : /\.ya?ml$/.test(path)
       ? 'yaml'
-      : path.endsWith('.md')
+      : /\.(md|markdown)$/i.test(path)
         ? 'markdown'
         : /\.(sh|zsh)$/.test(path)
           ? 'shell'

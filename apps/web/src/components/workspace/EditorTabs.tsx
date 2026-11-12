@@ -10,6 +10,7 @@ import { tabDragId } from './tabDrag';
 import { WorkspaceTab, surfaceIcons } from './WorkspaceTab';
 import { NewSurfaceMenu } from '~/components/surfaces/NewSurfaceMenu';
 import { ChainTabMenu } from './ChainTabMenu';
+import { FileControls } from './FileControls';
 import { surfacePaths } from '~/state/fileChains';
 import { useFileGitStatus } from '~/hooks/useFileGitStatus';
 import { fileLabelClassName } from '~/components/vcs/fileLabels';
@@ -199,8 +200,11 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
         </div>
         <NewSurfaceMenu session={session} group={group} />
         <div className="spacer" />
-        {group === 'main' && (
-          <div className="tab-tools">
+        <div className="tab-tools">
+          {active?.kind === 'file' && (
+            <FileControls sessionId={session.id} group={group} tab={active} />
+          )}
+          {group === 'main' && (
             <button
               className="icon-button"
               title="Toggle island"
@@ -210,8 +214,8 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
             >
               <SquareMenu size={14} />
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </SortableContext>
   );

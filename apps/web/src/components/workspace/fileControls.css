@@ -1,0 +1,14 @@
+.file-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.file-controls:not(:last-child) {
+  margin-right: 4px;
+  padding-right: 6px;
+  border-right: 1px solid var(--border);
+}
+.file-controls .icon-button[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--foreground);
+}

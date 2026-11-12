@@ -1,6 +1,8 @@
 import { desktop } from '~/rpc/desktop';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { AlertCircle } from 'lucide-react';
+import { MarkdownPreview } from './MarkdownPreview';
+import './markdownPreview.css';
 import { documents, monaco, subscribe, getRevision, type Doc } from '~/state/editor/Documents';
 import { showSurface, useApp } from '~/state/workspaceStore';
 import { useFileDiff } from '~/components/diffs/useFileDiff';
@@ -25,11 +27,13 @@ export default function Editor({
   session,
   path,
   tabKey,
+  preview = false,
   group = 'main',
 }: {
   session: Session;
   path: string | null;
   tabKey: string;
+  preview?: boolean;
   group?: TabGroup;
 }) {
   const host = useRef<HTMLDivElement>(null),
@@ -41,6 +45,8 @@ export default function Editor({
     [loading, setLoading] = useState(false),
     [error, setError] = useState('');
   const revision = useApp((a) => a.revision);
+  const markdown = /\.(md|markdown)$/i.test(path ?? '');
+  const showPreview = markdown && preview;
   const diff = useFileDiff(session, doc?.path === path && !doc.readOnly ? path : undefined);
   useEffect(() => {
     const instance = editor.current;
@@ -319,6 +325,7 @@ export default function Editor({
         !host.current?.contains(active);
       if (
         (changed || revealed || ownerChanged) &&
+        !showPreview &&
         !editingElsewhere &&
         !useApp.getState().palette &&
         !useApp.getState().modal
@@ -352,7 +359,10 @@ export default function Editor({
     return () => {
       cancelled = true;
     };
-  }, [session.id, path, revision, tabKey]);
+  }, [session.id, path, revision, tabKey, showPreview]);
+  useLayoutEffect(() => {
+    if (markdown && !showPreview) editor.current?.focus();
+  }, [markdown, showPreview]);
   return (
     <div
       className="editor-pane"
@@ -384,7 +394,12 @@ export default function Editor({
           </button>
         </div>
       )}
-      <div className="editor-host" ref={host} />
+      <div className="editor-body">
+        <div className="editor-host" ref={host} data-preview={showPreview || undefined} />
+        {showPreview && doc?.session.id === session.id && doc.path === path && (
+          <MarkdownPreview doc={doc} group={group} />
+        )}
+      </div>
       {loading && <div className="editor-message">Opening file…</div>}
       {error && <div className="editor-message error-text">{error}</div>}
       {!path && (

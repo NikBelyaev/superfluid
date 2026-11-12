@@ -1,0 +1,43 @@
+.mermaid-diagram {
+  --pele-bg: var(--background);
+  --pele-fg: var(--foreground);
+  --pele-muted: var(--muted-foreground);
+  --pele-line: var(--muted-foreground);
+  --pele-surface: var(--card);
+  --pele-surface-alt: var(--sidebar);
+  --pele-border: var(--border);
+  --pele-accent: var(--primary);
+  --pele-critical: var(--error-foreground);
+  --pele-font: var(--font-sans);
+  --pele-font-mono: var(--font-mono);
+  margin: 16px 0;
+  max-width: 100%;
+}
+.mermaid-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.mermaid-host {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  overflow-x: auto;
+}
+.mermaid-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.mermaid-host svg {
+  max-width: 100%;
+  height: auto;
+}
+.mermaid-source {
+  max-height: 32rem;
+  margin: 0;
+}

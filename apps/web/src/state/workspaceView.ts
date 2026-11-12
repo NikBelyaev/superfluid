@@ -20,7 +20,12 @@ export const surfaceSchema = z
       revealChecks: z.string().optional(),
     }),
     z.object({ kind: z.literal('browser'), url: z.string() }),
-    z.object({ kind: z.literal('file'), path: z.string(), chain: z.unknown().optional() }),
+    z.object({
+      kind: z.literal('file'),
+      path: z.string(),
+      preview: z.boolean().optional(),
+      chain: z.unknown().optional(),
+    }),
   ])
   .transform((surface) => (surface.kind === 'file' ? restoreFileSurface(surface) : surface));
 export type Surface = z.infer<typeof surfaceSchema>;
