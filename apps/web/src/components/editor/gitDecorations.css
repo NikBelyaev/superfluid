@@ -40,7 +40,9 @@
   z-index: 20;
   display: flex;
   width: max-content;
+  box-sizing: content-box;
   height: 28px;
+  border: 1px solid var(--border);
   background: var(--card);
   pointer-events: auto;
 }
