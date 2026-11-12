@@ -12,6 +12,8 @@ export const desktop: Bridge = {
   exportText: (text, name) => window.superfluid.exportText(text, name),
   trash: (sessionId, path) => window.superfluid.trash(sessionId, path),
   copyFile: (sessionId, path) => window.superfluid.copyFile(sessionId, path),
+  copyText: async (text) =>
+    window.superfluid ? window.superfluid.copyText(text) : navigator.clipboard.writeText(text),
   external: (url) => window.superfluid.external(url),
   browser: (input) => window.superfluid.browser(input),
 };

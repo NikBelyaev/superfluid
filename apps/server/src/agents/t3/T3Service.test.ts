@@ -111,6 +111,12 @@ test('T3 pairing accepts local links and rejects remote hosts and embedded crede
 test('T3 streams steps to canonical worktrees, rejects stale runs and hides settled or archived conversations', async () => {
   const f = await fixture();
   try {
+    await f.remote.event(
+      'thread-one',
+      'turn-item.updated',
+      t3Step({ id: 'native-message-'.repeat(30), type: 'user_message' }),
+    );
+    assert.equal((await f.service.status()).connected, true);
     const link = join(f.root, 'linked');
     await symlink(f.second, link);
     await f.remote.shell(t3Thread(link, { id: 'thread-two' }));

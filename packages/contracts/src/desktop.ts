@@ -15,6 +15,7 @@ export interface Bridge {
   exportText(text: string, name: string): Promise<boolean>;
   trash(sessionId: string, path: string): Promise<void>;
   copyFile(sessionId: string, path: string): Promise<void>;
+  copyText(text: string): Promise<void>;
   external(url: string): Promise<void>;
   browser(input: {
     url?: string;
