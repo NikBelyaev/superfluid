@@ -41,7 +41,7 @@
   display: flex;
   width: max-content;
   height: 28px;
-  background: var(--background);
+  background: var(--card);
   pointer-events: auto;
 }
 
