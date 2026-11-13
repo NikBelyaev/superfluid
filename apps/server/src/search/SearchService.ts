@@ -293,7 +293,13 @@ export class SearchService {
         const target = state;
         return await this.queries.run(() =>
           Promise.race([
-            target.search(query, this.store.drafts(session.id), controller.signal, include, mode),
+            target.search(
+              query,
+              mode === 'file' ? [] : this.store.drafts(session.id),
+              controller.signal,
+              include,
+              mode,
+            ),
             cancelled,
           ]),
         );

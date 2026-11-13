@@ -13,7 +13,7 @@ async function finishIndex(search: SearchService) {
   await Promise.all([...state.sessions.values()].map((session) => session.building));
 }
 
-test('Zoekt lists filenames and searches text with an empty system PATH', async () => {
+test('Zoekt lists filenames and searches text with an empty system PATH', async (t) => {
   const root = await repository();
   for (let i = 0; i < 510; i++) await writeFile(join(root, `a-searchable-${i}.py`), '');
   await writeFile(join(root, 'searchable.py'), 'native-only marker\n');
@@ -24,6 +24,9 @@ test('Zoekt lists filenames and searches text with an empty system PATH', async 
   const previous = process.env.PATH;
   process.env.PATH = await temp();
   try {
+    const drafts = t.mock.method(store, 'drafts', () => {
+      throw new Error('Filename search must not load draft contents.');
+    });
     assert.deepEqual((await search.files(session(root), 'searchable.py')).hits, [
       { path: 'searchable.py' },
     ]);
@@ -32,6 +35,7 @@ test('Zoekt lists filenames and searches text with an empty system PATH', async 
     assert.equal(ranked.hits.length, 500);
     assert.equal(ranked.truncated, true);
     assert.equal((await search.files(session(root), 'ignored')).hits.length, 0);
+    drafts.mock.restore();
     assert.equal((await search.text(session(root), 'native-only marker')).hits.length, 1);
   } finally {
     process.env.PATH = previous;
