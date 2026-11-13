@@ -51,6 +51,55 @@ async function setup() {
   }
 }
 
+test('restoring nested folders keeps virtual rows at the restored scroll position', async () => {
+  await using fixture = await setup();
+  const { page, errors } = fixture;
+  await page.evaluate(() => {
+    const f = window.treeFixture;
+    f.files.get('source')!.push(
+      ...['src/branch', 'src/branch/deep'].map((path) => ({
+        name: path.split('/').at(-1)!,
+        path,
+        directory: true,
+        symlink: false,
+      })),
+      ...Array.from({ length: 80 }, (_, index) => ({
+        name: `file_${index}.py`,
+        path: `src/branch/deep/file_${index}.py`,
+        directory: false,
+        symlink: false,
+      })),
+    );
+    f.useApp.setState({ sessionId: 'other' });
+  });
+  await expect(page.locator('[data-path="one.py"]')).toBeVisible();
+  await page.evaluate(() => {
+    const f = window.treeFixture;
+    f.renderPause = f.signal();
+    const call = window.superfluid.call;
+    window.superfluid.call = async (method, input) => {
+      const result = await call(method, input);
+      if (method === 'files.list' && 'path' in input && input.path === '') f.entered.resolve();
+      return result;
+    };
+    f.useApp.getState().setView(
+      {
+        expanded: ['src', 'src/branch', 'src/branch/deep'],
+        fileTreeScroll: { project: 1158 },
+      },
+      'source',
+    );
+    f.useApp.setState({ sessionId: 'source' });
+  });
+  await page.evaluate(() => window.treeFixture.entered.promise);
+  await page.evaluate(() => window.treeFixture.renderPause!.resolve());
+  const tree = page.getByRole('tree', { name: 'Project files' });
+  await expect(tree).toHaveAttribute('aria-busy', 'false');
+  await expect(page.locator('[data-path="src/branch/deep/file_44.py"]')).toBeInViewport();
+  assert.equal(await tree.evaluate((element) => element.scrollTop), 1158);
+  assert.deepEqual(errors, []);
+});
+
 test('creating consecutive files and replacing a draft takes one click', async () => {
   await using fixture = await setup();
   const { page, errors } = fixture;

@@ -549,6 +549,8 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
       filter ||
       restoredScroll.current ||
       !loaded.current.has('') ||
+      // Suspense can let root data load before Headless Tree builds its first rows.
+      (!items.length && tree.retrieveChildrenIds('').length > 0) ||
       items.some((item) => item.isExpanded() && !loaded.current.has(item.getId()))
     )
       return;
