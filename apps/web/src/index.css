@@ -650,7 +650,7 @@ kbd {
 .file-label {
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+  mask-image: linear-gradient(to right, #000 calc(100% - 12px), transparent);
   flex: 1;
 }
 .git-letter {
@@ -669,6 +669,7 @@ kbd {
   opacity: 0.5;
 }
 .tree-row-end {
+  position: relative;
   display: grid;
   align-items: center;
   justify-items: end;
@@ -677,19 +678,23 @@ kbd {
 .tree-row-end > * {
   grid-area: 1 / 1;
 }
-.tree-row:hover .tree-row-end > .git-letter,
-.tree-row:hover .tree-row-end > .tree-git-dot {
+.tree-row:hover .tree-row-end > :not(.tree-actions),
+.tree-row-end:has(.tree-actions :is(:focus-visible, [aria-expanded='true'])) > :not(.tree-actions) {
   opacity: 0;
   pointer-events: none;
 }
 .tree-actions {
+  position: absolute;
+  right: 0;
   display: flex;
   flex: none;
   gap: 2px;
   opacity: 0;
   pointer-events: none;
 }
-.tree-row:hover .tree-actions {
+.tree-row:hover .tree-actions,
+.tree-actions:has(:focus-visible, [aria-expanded='true']) {
+  position: static;
   opacity: 1;
   pointer-events: auto;
 }
