@@ -1,7 +1,45 @@
 import { callPython } from '~/rpc/python';
-import { documents, monaco } from '~/state/editor/Documents';
+import { documents, monaco, type Doc } from '~/state/editor/Documents';
 import { definitionLink, definitionTrust } from './definitionPreview';
 import { symbolActions } from './symbolActions';
+import { completionLabel } from './completionLabel';
+import { pythonGeneration } from '~/state/python';
+import { useApp } from '~/state/workspaceStore';
+
+type CompletionEdit = {
+  range: { start: { line: number; character: number }; end: { line: number; character: number } };
+  newText: string;
+};
+type Completion = {
+  label: string;
+  kind?: number;
+  labelDetails?: { detail?: string; description?: string };
+  detail?: string;
+  documentation?: string | { kind: string; value: string };
+  insertText?: string;
+  insertTextFormat?: number;
+  textEdit?: Partial<CompletionEdit> & {
+    newText: string;
+    insert?: CompletionEdit['range'];
+    replace?: CompletionEdit['range'];
+  };
+  additionalTextEdits?: CompletionEdit[];
+  sortText?: string;
+  filterText?: string;
+  data?: unknown;
+};
+const completions = new WeakMap<
+  monaco.languages.CompletionItem,
+  { doc: Doc; generation: number; raw: Completion }
+>();
+const documentation = (value: Completion['documentation']) =>
+  typeof value === 'string' || !value
+    ? value
+    : value.kind === 'markdown'
+      ? { value: value.value, isTrusted: false }
+      : value.value;
+const additionalEdits = (item: Completion) =>
+  item.additionalTextEdits?.map((edit) => ({ range: range(edit.range), text: edit.newText }));
 
 async function request(
   model: monaco.editor.ITextModel,
@@ -33,39 +71,108 @@ async function request(
 const range = (r: any) =>
   new monaco.Range(r.start.line + 1, r.start.character + 1, r.end.line + 1, r.end.character + 1);
 
+const completionKinds = [
+  'Text',
+  'Method',
+  'Function',
+  'Constructor',
+  'Field',
+  'Variable',
+  'Class',
+  'Interface',
+  'Module',
+  'Property',
+  'Unit',
+  'Value',
+  'Enum',
+  'Keyword',
+  'Snippet',
+  'Color',
+  'File',
+  'Reference',
+  'Folder',
+  'EnumMember',
+  'Constant',
+  'Struct',
+  'Event',
+  'Operator',
+  'TypeParameter',
+] as const;
+
 monaco.languages.registerCompletionItemProvider('python', {
   triggerCharacters: ['.'],
-  provideCompletionItems: async (model, position, _context, token) => {
+  provideCompletionItems: async (model, position, context, token) => {
     try {
-      const result = await request(model, 'textDocument/completion', token, position);
-      if (token.isCancellationRequested) return { suggestions: [] };
+      const result = await request(model, 'textDocument/completion', token, position, {
+        context: {
+          triggerKind: context.triggerKind + 1,
+          triggerCharacter: context.triggerCharacter,
+        },
+      });
+      const doc = documents.find(model);
+      if (!doc || doc.closed || token.isCancellationRequested) return { suggestions: [] };
       const word = model.getWordUntilPosition(position);
+      const items: Completion[] = result?.items ?? result ?? [];
       return {
-        suggestions: (result?.items ?? result ?? []).slice(0, 300).map((i: any) => ({
-          label: i.label,
-          kind: monaco.languages.CompletionItemKind.Text,
-          detail: i.detail,
-          documentation: i.documentation,
-          insertText: i.textEdit?.newText ?? i.insertText ?? i.label,
-          insertTextRules:
-            i.insertTextFormat === 2
-              ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
-              : 0,
-          range: i.textEdit?.range
-            ? range(i.textEdit.range)
-            : new monaco.Range(
-                position.lineNumber,
-                word.startColumn,
-                position.lineNumber,
-                word.endColumn,
-              ),
-          sortText: i.sortText,
-          filterText: i.filterText,
-        })),
+        suggestions: items.slice(0, 300).map((i) => {
+          const editRange = i.textEdit?.range ?? i.textEdit?.replace ?? i.textEdit?.insert;
+          const item = {
+            label: completionLabel(i),
+            kind: monaco.languages.CompletionItemKind[completionKinds[(i.kind ?? 1) - 1] ?? 'Text'],
+            detail: i.detail,
+            documentation: documentation(i.documentation),
+            insertText: i.textEdit?.newText ?? i.insertText ?? i.label,
+            insertTextRules:
+              i.insertTextFormat === 2
+                ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+                : 0,
+            range: editRange
+              ? range(editRange)
+              : new monaco.Range(
+                  position.lineNumber,
+                  word.startColumn,
+                  position.lineNumber,
+                  word.endColumn,
+                ),
+            sortText: i.sortText,
+            filterText: i.filterText,
+            additionalTextEdits: additionalEdits(i),
+          };
+          completions.set(item, { doc, generation: pythonGeneration(doc.session.id), raw: i });
+          return item;
+        }),
       };
     } catch {
       return { suggestions: [] };
     }
+  },
+  resolveCompletionItem: async (item, token) => {
+    const context = completions.get(item);
+    if (!context || context.raw.data === undefined || context.raw.additionalTextEdits?.length)
+      return item;
+    const { doc, generation } = context;
+    const current = () =>
+      !token.isCancellationRequested &&
+      !doc.closed &&
+      !doc.model.isDisposed() &&
+      pythonGeneration(doc.session.id) === generation &&
+      useApp.getState().sessionId === doc.session.id;
+    if (!current()) return item;
+    const resolved: Completion = await callPython(
+      'lsp.request',
+      {
+        sessionId: doc.session.id,
+        method: 'completionItem/resolve',
+        params: { ...context.raw, textDocument: { uri: documents.diskUri(doc) } },
+      },
+      token,
+    );
+    if (!current()) return item;
+    item.label = completionLabel(resolved);
+    item.detail = resolved.detail;
+    item.documentation = documentation(resolved.documentation);
+    item.additionalTextEdits = additionalEdits(resolved);
+    return item;
   },
 });
 
@@ -93,8 +200,6 @@ monaco.languages.registerHoverProvider('python', {
         title = '',
       ) =>
         `[${label.replace(/[\\`*_{}\[\]()<>]/g, '\\$&')}](${definitionLink(doc, point, target)}${title ? ` "${title}"` : ''})`;
-      const target = r.definitions[0]?.symbol;
-      const name = model.getWordAtPosition(position)?.word;
       return {
         range: r.range ? range(r.range) : undefined,
         contents: [
@@ -102,29 +207,30 @@ monaco.languages.registerHoverProvider('python', {
             const context = [definition.module, ...definition.containers]
               .map((scope) => `${scope.kind === 5 ? '$(symbol-class) ' : ''}${link(scope)}`)
               .join(' · ');
-            const candidate =
-              r.definitions.length > 1
-                ? ` · ${link(definition.symbol, `${name ?? definition.symbol.name}:${definition.symbol.position.line + 1}`, 'Open definition')}`
-                : '';
+            const multiple = r.definitions.length > 1;
+            const label = [...definition.containers, definition.symbol]
+              .map((symbol) => symbol.name)
+              .join('.');
+            const file = decodeURIComponent(definition.symbol.uri.split('/').at(-1) ?? '');
             return {
-              value: `$(folder) ${context}${candidate}`,
+              value: multiple
+                ? `${link(definition.symbol, label, 'Open definition')}\n\n\`${file}:${definition.symbol.position.line + 1}\``
+                : `$(file) ${context}`,
               supportThemeIcons: true,
               isTrusted: definitionTrust,
             };
           }),
-          { value: r.markdown, isTrusted: false },
-          ...(target
-            ? [
+          ...(r.definitions.length > 1
+            ? []
+            : [
                 {
-                  value: link(
-                    target,
-                    `${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'} click to open definition`,
-                  ),
-                  isTrusted: definitionTrust,
+                  value: /^```\w*\s+Unknown\s+```$/.test(r.markdown.trim())
+                    ? '`Unknown`'
+                    : r.markdown,
+                  isTrusted: false,
                 },
-              ]
-            : []),
-          symbolActions(doc, point, r),
+              ]),
+          ...(r.definitions.length ? [symbolActions(doc, point, r)] : []),
         ],
       };
     } catch {

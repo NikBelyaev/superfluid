@@ -16,6 +16,7 @@ export const pythonRequests = {
     requestId,
     method: z.enum([
       'textDocument/completion',
+      'completionItem/resolve',
       'textDocument/hover',
       'textDocument/definition',
       'textDocument/typeDefinition',
@@ -28,6 +29,8 @@ export const pythonRequests = {
     params: z.record(z.string(), z.unknown()),
   }),
   'python.format': z.object({ sessionId: id, text }),
+  'python.organizeImports': z.object({ sessionId: id, path, text }),
+  'python.imports': z.object({ ...source, text, version: z.number().int().min(0), requestId }),
   'python.symbols': z.object({ sessionId: id, query: z.string().max(500), requestId }),
   'python.hover': z.object({ ...source, requestId }),
   'python.source': z.object({ ...source, requestId, target: location }),
@@ -64,6 +67,16 @@ export interface PythonDocumentSymbol {
   children?: PythonDocumentSymbol[];
 }
 
+export interface PythonUnusedImport {
+  range: { start: PythonLocation['position']; end: PythonLocation['position'] };
+  message: string;
+}
+
+export interface PythonImport {
+  title: string;
+  edits: { range: PythonUnusedImport['range']; newText: string }[];
+}
+
 export interface PythonResult<T> {
   generation: number;
   value: T;
@@ -79,11 +92,13 @@ export interface PythonStatus {
 }
 
 export interface PythonResults {
-  'lsp.open': PythonResult<null>;
+  'lsp.open': PythonResult<PythonUnusedImport[]>;
   'lsp.close': null;
   'lsp.cancel': null;
   'lsp.request': PythonResult<any>;
   'python.format': string;
+  'python.organizeImports': string;
+  'python.imports': PythonResult<PythonImport[]>;
   'python.symbols': PythonResult<{ hits: SearchHit[]; truncated: boolean }>;
   'python.hover': PythonResult<PythonHover | null>;
   'python.source': PythonResult<PythonSource>;

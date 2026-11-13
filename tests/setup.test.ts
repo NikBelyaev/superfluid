@@ -44,6 +44,7 @@ for (const scenario of [
         join(directory, 'download.ts'),
       );
       await writeFile(join(directory, 'ty.mjs'), 'export async function installTy() {}');
+      await writeFile(join(directory, 'ruff.mjs'), 'export async function installRuff() {}');
       await writeFile(join(directory, 'zoekt.mjs'), 'export async function copyZoekt() {}');
       const electron = join(directory, 'node_modules/electron');
       await mkdir(electron, { recursive: true });

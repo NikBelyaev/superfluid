@@ -1,118 +1,183 @@
+@reference '../../tailwind.css';
+
 .editor-host .monaco-hover {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--popover);
-  color: var(--foreground);
-  box-shadow: var(--shadow-popover);
-  overflow: hidden;
-  font-family: var(--font-sans);
+  @apply overflow-hidden rounded-[var(--floating-radius)] border border-solid border-border bg-popover font-sans text-foreground shadow-[var(--shadow-popover)];
 }
 .editor-host .monaco-resizable-hover:has(> .monaco-hover) {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--popover);
-  box-shadow: var(--shadow-popover);
+  @apply rounded-[var(--floating-radius)] border border-solid border-border bg-popover shadow-[var(--shadow-popover)];
+}
+.editor-host .monaco-resizable-hover > .monaco-hover {
+  @apply border-0 shadow-none;
+}
+.editor-host .monaco-hover > .monaco-scrollable-element > .scrollbar.invisible {
+  @apply invisible transition-none;
 }
 .editor-host .monaco-hover .hover-row {
-  background: transparent;
+  @apply bg-transparent;
+}
+.editor-host
+  .monaco-hover:has(.marker)
+  .hover-row:not(.status-bar):not(:has(.marker, .quick-fix-options)) {
+  @apply hidden;
+}
+.editor-host .monaco-hover-content:has(.quick-fix-options) {
+  @apply flex flex-col;
+}
+.editor-host .monaco-hover-content:has(.quick-fix-options) > .hover-row {
+  @apply shrink-0;
+}
+.editor-host .monaco-hover-content > .hover-row:has(.quick-fix-options) {
+  @apply min-h-0 shrink;
+}
+.editor-host
+  .hover-row:has(.quick-fix-options)
+  :is(.hover-row-contents, .markdown-hover, .hover-contents, .rendered-markdown) {
+  @apply flex min-h-0 flex-1 flex-col;
+}
+.editor-host .monaco-hover .hover-contents {
+  @apply px-4 py-3 font-sans text-xs leading-5;
+}
+.editor-host .monaco-hover .marker {
+  @apply min-w-0 flex-1 whitespace-pre-wrap! px-4 py-3! font-mono! text-xs! leading-5!;
+}
+.editor-host .monaco-hover .hover-row.status-bar {
+  @apply border-0 border-t border-solid border-border bg-popover px-3 py-1 font-sans text-xs;
+}
+.editor-host .monaco-hover .hover-row.status-bar .actions {
+  @apply hidden!;
+}
+.editor-host .monaco-hover .hover-row.status-bar .actions > .action-container {
+  @apply rounded-[var(--control-radius)] text-muted-foreground;
 }
 .editor-host .monaco-hover a {
-  color: var(--primary);
-  text-decoration: none;
-}
-.editor-host .monaco-hover a:hover {
-  color: var(--primary);
-  text-decoration: underline;
+  @apply text-primary no-underline hover:text-primary hover:no-underline;
 }
 .editor-host
   .monaco-hover
   .markdown-hover:has(a[data-href^='command:superfluid.previewDefinition'])
   .hover-contents {
-  font-family: var(--font-mono);
-  font-size: var(--font-size-code);
+  @apply pt-2 pb-0 font-sans text-[11px] text-muted-foreground;
 }
 .editor-host
   .monaco-hover
-  .markdown-hover:has(a[data-href^='command:superfluid.previewDefinition']:only-child)
+  .markdown-hover:has(a[data-href^='command:superfluid.previewDefinition'])
+  + .markdown-hover
   .hover-contents {
-  font-size: var(--text-xs);
-  font-family: var(--font-sans);
+  @apply pt-2;
 }
-.definition-readonly {
-  color: var(--muted-foreground);
-  font-size: var(--text-xs);
+.editor-host .monaco-hover .markdown-hover:has(a[title='Open definition']) .hover-contents {
+  @apply min-w-40 px-1 py-0;
+}
+.editor-host .monaco-hover .markdown-hover:has(a[title='Open definition']) p {
+  @apply m-0;
+}
+.editor-host .monaco-hover a[title='Open definition'] {
+  @apply min-h-0 font-mono text-xs text-foreground hover:bg-accent focus-visible:bg-accent;
+}
+.editor-host .monaco-hover .monaco-tokenized-source {
+  @apply font-mono! text-xs! leading-5!;
+}
+.editor-host .monaco-hover .rendered-markdown :is(h1, h2, h3, h4, h5, h6) {
+  @apply font-mono text-xs leading-5 font-semibold;
+}
+.editor-host .monaco-hover .markdown-hover:has(.monaco-tokenized-source) .hover-contents {
+  @apply max-h-64 overflow-auto;
+}
+.editor-host .monaco-hover-content:has(> .editor-hover-body) {
+  @apply flex flex-col overflow-hidden;
+}
+.editor-host .editor-hover-body .markdown-hover:has(.monaco-tokenized-source) .hover-contents {
+  @apply max-h-none overflow-visible;
+}
+.editor-host .editor-hover-footer > .markdown-hover,
+.editor-host .editor-hover-footer > .status-bar {
+  @apply min-w-0 flex-1 border-0! p-0!;
+}
+.editor-host .editor-hover-footer .hover-contents {
+  @apply m-0! w-full p-0!;
+}
+.editor-host .editor-hover-footer .rendered-markdown > p {
+  @apply m-0! flex items-center gap-1 leading-5;
+}
+.editor-host .monaco-hover:has(.marker) .editor-hover-footer > .markdown-hover {
+  @apply hidden;
 }
 .editor-host .symbol-definition-link {
-  color: var(--primary) !important;
-  text-decoration: underline;
-  cursor: pointer;
+  @apply cursor-pointer! text-primary! underline!;
 }
 .editor-host .markdown-hover:has(a[data-href^='command:superfluid.symbolAction']) {
-  border-top: 1px solid var(--border);
-  font-family: var(--font-sans);
-  font-size: var(--text-xs);
+  @apply border-0 border-t border-solid border-border font-sans text-xs;
+}
+.editor-host .markdown-hover:has(a[data-href^='command:superfluid.symbolAction']) .hover-contents {
+  @apply px-2 py-1.5;
 }
 .editor-host .markdown-hover:has(a[data-href^='command:superfluid.symbolAction']) p {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 4px;
-  width: max-content;
+  @apply m-0 flex w-full min-w-0 items-center gap-1;
 }
 .editor-host .monaco-hover a[data-href^='command:superfluid.symbolAction'] {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
-  border-radius: var(--radius-sm);
-  color: var(--foreground);
+  @apply inline-flex min-h-7 items-center gap-2 rounded-[var(--control-radius)] px-2 py-1 text-foreground hover:bg-accent focus-visible:bg-accent focus-visible:outline-2 focus-visible:outline-ring;
 }
-.editor-host .monaco-hover a[data-href^='command:superfluid.symbolAction']:hover,
-.editor-host .monaco-hover a[data-href^='command:superfluid.symbolAction']:focus-visible {
-  background: var(--accent);
-  text-decoration: none;
-  outline: 1px solid var(--ring);
-}
-.editor-host .monaco-hover a[data-href^='command:superfluid.symbolAction?%5B%22delete']:hover {
-  color: var(--destructive);
+.editor-host .monaco-hover a[data-action='search'] {
+  @apply ml-auto;
 }
 .editor-host
-  .symbol-actions-above
-  .markdown-hover:has(a[data-href^='command:superfluid.symbolAction']) {
-  order: -1;
-  border-top: 0;
-  border-bottom: 1px solid var(--border);
+  .monaco-hover
+  a:is([data-action='search'], [data-action='copy'], [data-action='copy-name']) {
+  @apply text-[0px] text-muted-foreground;
 }
-.editor-host .symbol-rename {
-  margin: 0;
-  padding: 0;
-  width: max-content;
+.editor-host
+  .monaco-hover
+  a:is([data-action='search'], [data-action='copy'], [data-action='copy-name'])
+  .codicon {
+  @apply text-sm;
 }
-.editor-host .symbol-rename input {
-  field-sizing: content;
-  width: auto;
-  min-width: 1ch;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: var(--control-radius);
-  outline: 1px solid var(--ring);
-  outline-offset: 0;
-  background: var(--vscode-editor-background);
-  color: var(--vscode-editor-foreground);
-  box-shadow: none;
+.editor-host .monaco-hover .markdown-hover .hover-contents p > code:only-child {
+  @apply border-0 bg-transparent p-0 font-sans text-[11px] text-muted-foreground;
 }
-.editor-host .symbol-rename [role='alert'] {
-  position: absolute;
-  top: 100%;
-  margin-top: 4px;
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--control-radius);
-  background: var(--popover);
-  color: var(--destructive);
-  font-family: var(--font-sans);
-  font-size: var(--text-xs);
-  width: max-content;
-  max-width: 300px;
+.editor-host .monaco-hover .marker > span:nth-child(2) {
+  @apply mt-2 flex! items-center gap-2 pl-0! font-sans text-[11px] text-muted-foreground opacity-100!;
+}
+.editor-host .monaco-hover .status-bar .actions > div:not(.action-container) {
+  @apply hidden;
+}
+.editor-host .monaco-hover .status-bar a.action {
+  @apply inline-flex items-center gap-2 rounded-[var(--control-radius)] px-2 py-1 text-muted-foreground hover:bg-accent hover:text-foreground;
+}
+.editor-host .monaco-hover .markdown-hover:has(p > code:only-child) .hover-contents {
+  @apply py-1;
+}
+.editor-host .monaco-hover .markdown-hover:has(p > code:only-child) p {
+  @apply m-0;
+}
+.editor-host .monaco-hover .hover-copy-button,
+.editor-host .monaco-hover .diagnostic-type-row {
+  @apply hidden!;
+}
+.editor-host .monaco-hover .hover-row.hover-row-with-copy {
+  @apply pr-0!;
+}
+.editor-host .monaco-hover .diagnostic-message {
+  @apply flex items-start gap-2;
+}
+.editor-host .monaco-hover .diagnostic-message > .codicon {
+  @apply mt-0.5 shrink-0 text-sm text-diff-deletion-foreground;
+}
+.editor-host .monaco-hover .diagnostic-message > :is(.codicon-info, .codicon-warning) {
+  @apply text-muted-foreground;
+}
+.editor-host .monaco-hover .quick-fix-heading {
+  @apply flex shrink-0 items-center justify-between px-2 pt-1 pb-1.5 font-sans text-[11px] font-normal text-muted-foreground;
+}
+
+.editor-host
+  .monaco-hover
+  .markdown-hover:has(a[title='Open definition']):first-child
+  .hover-contents {
+  @apply pt-2;
+}
+.editor-host
+  .monaco-hover
+  .markdown-hover:has(a[title='Open definition']):has(+ .markdown-hover a[data-action])
+  .hover-contents {
+  @apply pb-2;
 }

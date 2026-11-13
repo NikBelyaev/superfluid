@@ -129,6 +129,8 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     'lsp.cancel': (input) => python.cancel(session(input.sessionId), input.requestId),
     'lsp.request': (input) => python.request(session(input.sessionId), input),
     'python.format': (input) => python.format(session(input.sessionId), input.text),
+    'python.organizeImports': (input) => python.organizeImports(session(input.sessionId), input),
+    'python.imports': (input) => python.imports(session(input.sessionId), input),
     'python.symbols': (input) => python.symbols(session(input.sessionId), input),
     'python.hover': (input) => python.hover(session(input.sessionId), input),
     'python.source': (input) => python.source(session(input.sessionId), input),

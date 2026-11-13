@@ -20,6 +20,8 @@ import 'monaco-editor/editor/contrib/snippet/browser/snippetController2';
 
 import 'monaco-editor/editor/contrib/contextmenu/browser/contextmenu';
 
+import 'monaco-editor/editor/contrib/codeAction/browser/codeActionContributions';
+
 import 'monaco-editor/editor/contrib/wordOperations/browser/wordOperations';
 
 import 'monaco-editor/editor/contrib/linesOperations/browser/linesOperations';

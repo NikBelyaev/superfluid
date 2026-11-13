@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { installTy } from './ty.mjs';
+import { installRuff } from './ruff.mjs';
 import { copyZoekt } from './zoekt.mjs';
 import { download } from './download.ts';
 const require = createRequire(import.meta.url);
@@ -44,4 +45,5 @@ if (process.platform !== 'win32') {
   );
 }
 await installTy();
+await installRuff();
 await copyZoekt();

@@ -4,9 +4,11 @@ import { build } from 'esbuild';
 import { cp, mkdir, rm } from 'node:fs/promises';
 import electron from 'electron';
 import { copyTy } from './ty.mjs';
+import { copyRuff } from './ruff.mjs';
 import { copyZoekt } from './zoekt.mjs';
 await mkdir('dist', { recursive: true });
 await copyTy();
+await copyRuff();
 await copyZoekt();
 await build({
   entryPoints: { main: 'apps/desktop/src/main.ts', preload: 'apps/desktop/src/preload.ts' },

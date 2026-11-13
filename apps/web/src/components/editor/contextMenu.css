@@ -1,92 +1,27 @@
+@reference '../../tailwind.css';
+
 .editor-host .context-view.monaco-menu-container {
-  --vscode-menu-background: var(--popover);
-  --vscode-menu-foreground: var(--foreground);
-  --vscode-menu-border: var(--border);
-  --vscode-menu-separatorBackground: var(--border);
-  --vscode-menu-selectionBorder: var(--ring);
-  --vscode-list-hoverBackground: var(--accent);
-  --vscode-list-hoverForeground: var(--foreground);
-  --vscode-cornerRadius-large: var(--floating-radius);
-  --vscode-cornerRadius-medium: var(--control-radius);
-  --vscode-strokeThickness: 1px;
-  background: var(--popover);
-  color: var(--foreground);
-  font-family: var(--font-sans);
-  box-shadow: var(--shadow-popover);
-  animation: none;
+  @apply [--vscode-strokeThickness:1px] [--vscode-cornerRadius-large:var(--floating-radius)] [--vscode-cornerRadius-medium:var(--control-radius)] [--vscode-menu-background:var(--popover)] [--vscode-menu-foreground:var(--foreground)] [--vscode-menu-border:var(--border)] [--vscode-menu-separatorBackground:var(--border)] [--vscode-menu-selectionBorder:transparent] [--vscode-menu-selectionBackground:var(--accent)] [--vscode-menu-selectionForeground:var(--foreground)] animate-none rounded-[var(--floating-radius)] bg-popover font-sans text-foreground shadow-[var(--shadow-popover)];
 }
-
-.editor-host .monaco-menu-container .monaco-action-bar.vertical .action-label:not(.separator),
-.editor-host .monaco-menu-container .monaco-action-bar.vertical .keybinding {
-  padding: 0 8px;
+.editor-host .monaco-menu-container .monaco-menu {
+  @apply w-72! min-w-0! max-w-[calc(100vw-32px)]!;
 }
-
-.monaco-menu-container
-  .monaco-action-bar.vertical
-  .actions-container:has(
-    .action-label:is(
-      [aria-label='Rename'],
-      [aria-label='Rename alias'],
-      [aria-label='Go to definition'],
-      [aria-label='Choose definition'],
-      [aria-label='Search'],
-      [aria-label='Copy reference'],
-      [aria-label='Copy name'],
-      [aria-label='Delete definition']
-    )
-  ) {
-  display: grid;
-  grid-template-columns: repeat(3, 36px) minmax(36px, auto);
-  width: max-content;
-
-  &::before {
-    content: '';
-    grid-column: 1 / -1;
-    order: 1;
-    border-top: 1px solid var(--border);
-    margin: 4px 0;
-  }
-
-  > .action-item {
-    grid-column: 1 / -1;
-    order: 2;
-  }
-
-  > .action-item:has(
-      .action-label:is(
-        [aria-label='Rename'],
-        [aria-label='Rename alias'],
-        [aria-label='Go to definition'],
-        [aria-label='Choose definition'],
-        [aria-label='Search'],
-        [aria-label='Copy reference'],
-        [aria-label='Copy name'],
-        [aria-label='Delete definition']
-      )
-    ) {
-    grid-column: auto;
-    order: 0;
-    width: 36px;
-    min-width: 0;
-
-    .action-menu-item {
-      height: 32px;
-      margin: 0 2px;
-    }
-
-    .action-label {
-      display: flex;
-      justify-content: center;
-      padding: 0;
-      font-size: 0;
-    }
-
-    .menu-item-check {
-      display: none;
-    }
-  }
+.editor-host .monaco-menu-container .action-menu-item {
+  @apply grid! h-8! min-w-0! grid-cols-[minmax(0,1fr)_var(--editor-shortcut-width,56px)] items-center! gap-2! rounded-[var(--control-radius)] px-1!;
 }
-
-.monaco-menu-container .action-menu-item:has([aria-label='Delete definition']) {
-  color: var(--error-foreground) !important;
+.editor-host .monaco-menu-container .monaco-action-bar.vertical .action-label:not(.separator) {
+  @apply flex! min-w-0! items-center! gap-2! overflow-hidden! p-0! font-sans text-xs;
+}
+.editor-host .monaco-menu-container .action-label > .codicon {
+  @apply shrink-0 text-muted-foreground;
+}
+.editor-host .monaco-menu-container .action-menu-item > .menu-item-check:not(.codicon-check),
+.editor-host .monaco-menu-container .keybinding {
+  @apply hidden!;
+}
+.editor-host .monaco-menu-container .action-menu-item > .submenu-indicator {
+  @apply relative! inset-auto! ml-auto!;
+}
+.editor-host .monaco-menu-container .action-menu-item:has([aria-label='Delete definition']) {
+  @apply text-diff-deletion-foreground!;
 }
