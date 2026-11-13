@@ -2,9 +2,11 @@ import { build } from 'esbuild';
 import { build as viteBuild } from 'vite';
 import { mkdir, cp, rm } from 'node:fs/promises';
 import { copyTy } from './ty.mjs';
+import { copyRuff } from './ruff.mjs';
 import { copyZoekt } from './zoekt.mjs';
 await mkdir('dist', { recursive: true });
 await copyTy();
+await copyRuff();
 await copyZoekt();
 await Promise.all([
   build({

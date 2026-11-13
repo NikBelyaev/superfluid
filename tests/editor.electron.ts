@@ -32,6 +32,10 @@ let failed = false;
 
 try {
   await git(project, ['branch', 'autosave-check']);
+  await writeFile(
+    join(project, 'hover_docs.py'),
+    `def scrollable_help(value: str) -> str:\n    """${Array.from({ length: 40 }, (_, i) => `Inventory documentation ${i + 1}.`).join('\n\n    ')}"""\n    return value\n`,
+  );
   const page = await fixture.firstWindow();
   if (process.env.SF_EXECUTABLE) assert.ok(page.url().startsWith('superfluid://app/'));
   assert.deepEqual(
@@ -196,6 +200,205 @@ try {
   await page.locator('.editor-tab.active').filter({ hasText: 'bom.py' }).waitFor();
   await page.getByRole('tab', { name: 'main.py', exact: true }).click();
   await expect(page.locator('.main-editor .view-lines')).toContainText('store = Store()');
+  await page.locator('.editor-host').click();
+  await page.keyboard.press('Meta+A');
+  await page.keyboard.insertText('from models import Store\nstore = Store()\nstore.');
+  const completions = page.locator('.suggest-widget.visible');
+  const countCompletion = completions.getByRole('option', { name: /^count(?: |$)/ });
+  const secondCompletion = completions.getByRole('option').nth(1);
+  await expect(secondCompletion).toBeVisible();
+  const optionBox = (await secondCompletion.boundingBox())!;
+  await page.keyboard.press('Escape');
+  await page.mouse.move(optionBox.x + 20, optionBox.y + optionBox.height / 2);
+  await page.keyboard.press('Control+Space');
+  await expect(secondCompletion).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await page.mouse.move(optionBox.x + 24, optionBox.y + optionBox.height / 2);
+  await expect(secondCompletion).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(secondCompletion).toHaveClass(/focused/);
+  await page.keyboard.press('ArrowDown');
+  await expect(secondCompletion).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Control+Space');
+  await expect(secondCompletion).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await countCompletion.click();
+  await expect(page.locator('.main-editor .view-lines')).toContainText('store.count');
+  await expect(completions).toHaveCount(0);
+  await page.keyboard.press('Meta+ArrowUp');
+  await page.keyboard.press('Meta+ArrowRight');
+  await page.keyboard.press('Shift+F12');
+  await expect(page.getByRole('textbox', { name: 'Search worktree', exact: true })).toHaveValue(
+    'Store',
+  );
+  await page.keyboard.press('Escape');
+  await page.evaluate(`Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async text => { document.documentElement.dataset.copiedReference = text; } },
+    })`);
+  await page.keyboard.press('Meta+Alt+Shift+C');
+  await expect(page.locator('html')).toHaveAttribute('data-copied-reference', 'models.Store');
+  await page.evaluate(() => {
+    Reflect.deleteProperty(navigator, 'clipboard');
+    delete document.documentElement.dataset.copiedReference;
+  });
+  await page.keyboard.press('Meta+Z');
+  await expect(page.locator('.main-editor .view-lines')).not.toContainText('store.count');
+  await page.keyboard.press('Meta+A');
+  await page.keyboard.insertText('from hover_docs import scrollable_help\n\nscrollable_help');
+  await page.keyboard.press('Escape');
+  await page
+    .locator('.view-line')
+    .filter({ hasText: /^scrollable_help$/ })
+    .click({ position: { x: 30, y: 10 } });
+  await page.keyboard.press('Meta+K');
+  await page.keyboard.press('Meta+I');
+  const longHover = page.getByRole('tooltip');
+  const hoverSearch = longHover.getByRole('link', { name: 'Search', exact: true });
+  await expect(hoverSearch).toBeVisible();
+  const searchTop = (await hoverSearch.boundingBox())!.y;
+  const hoverBody = longHover.locator('.editor-hover-body');
+  await hoverBody.hover();
+  await page.mouse.wheel(0, 400);
+  await expect.poll(() => hoverBody.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  assert.equal((await hoverSearch.boundingBox())!.y, searchTop);
+  await longHover.focus();
+  await page.keyboard.press('Home');
+  await expect.poll(() => hoverBody.evaluate((element) => element.scrollTop)).toBe(0);
+  await page.keyboard.press('PageDown');
+  await expect.poll(() => hoverBody.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await page.keyboard.press('Meta+ArrowUp');
+  await expect.poll(() => hoverBody.evaluate((element) => element.scrollTop)).toBe(0);
+  await page.keyboard.press('Alt+ArrowDown');
+  await expect.poll(() => hoverBody.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await hoverSearch.click();
+  await expect(page.getByRole('textbox', { name: 'Search worktree', exact: true })).toHaveValue(
+    'scrollable_help',
+  );
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Meta+A');
+  await page.keyboard.insertText('value = Sto');
+  const storeCompletion = completions
+    .getByRole('option', { name: /^Store(?: |,|$)/ })
+    .filter({ hasText: 'models' });
+  await storeCompletion.click();
+  await expect(page.locator('.main-editor .view-lines')).toContainText('from models import Store');
+  await expect(page.locator('.main-editor .view-lines')).toContainText('value = Store');
+  await page.keyboard.press('Meta+Z');
+  await expect(page.locator('.main-editor .view-lines')).not.toContainText(
+    'from models import Store',
+  );
+  await expect(page.locator('.main-editor .view-lines')).toContainText('value = Sto');
+  await page.keyboard.press('Meta+A');
+  await page.keyboard.insertText('value = Store');
+  await expect(completions).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('ArrowRight');
+  const importHint = page.getByRole('button', { name: 'Import Store' });
+  const importChoice = page
+    .locator('.editor-choice-menu')
+    .getByText('from models import Store', { exact: true });
+  await expect(importHint).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(importHint).toBeHidden();
+  await page.keyboard.press('Meta+ArrowUp');
+  await page.keyboard.press('Meta+ArrowRight');
+  await expect(importHint).toBeVisible();
+  await page.getByRole('tab', { name: 'bom.py', exact: true }).click();
+  await page.getByRole('tab', { name: 'main.py', exact: true }).click();
+  await expect(importHint).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Editor content', exact: true })).toBeFocused();
+  await page.locator('.main-editor .squiggly-error').hover({ force: true });
+  const hoverImport = page.getByRole('tooltip').getByRole('link', {
+    name: /^from models import Store/,
+  });
+  await expect(hoverImport).toBeVisible();
+  await expect(page.getByRole('button', { name: /^View Problem/ })).toBeHidden();
+  await page.keyboard.press('Escape');
+  for (const shortcut of ['F8', 'Shift+F8', 'Alt+F8', 'Alt+Shift+F8'])
+    await page.keyboard.press(shortcut);
+  await expect(page.locator('.marker-widget')).toHaveCount(0);
+  await page.mouse.move(1, 1);
+  await page.locator('.main-editor .squiggly-error').hover({ force: true });
+  await expect(hoverImport).toBeVisible();
+  await expect(page.getByRole('tooltip').getByText('Quick fix', { exact: true })).toBeVisible();
+  await expect(hoverImport.locator('kbd')).toHaveText('⌘1');
+  await expect(
+    page
+      .getByRole('tooltip')
+      .getByRole('link', {
+        name: /^from ast import Store/,
+      })
+      .locator('kbd'),
+  ).toHaveText('⌘2');
+  await expect(page.getByRole('button', { name: /^Quick Fix/ })).toBeHidden();
+  await expect(page.getByText('No quick fixes available', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.lightBulbWidget')).toBeHidden();
+  await page.screenshot({ path: 'test-results/import-hover.png' });
+  await hoverImport.click();
+  await expect(page.locator('.main-editor .view-lines')).toContainText('from models import Store');
+  await expect(page.locator('.action-widget:visible')).toHaveCount(0);
+  await page.keyboard.press('Meta+Z');
+  await expect(page.locator('.main-editor .view-lines')).not.toContainText(
+    'from models import Store',
+  );
+  await page.mouse.move(1, 1);
+  await page.locator('.main-editor .squiggly-error').hover({ force: true });
+  await expect(hoverImport).toBeVisible();
+  await page.keyboard.press('Meta+9');
+  await page.keyboard.press('Meta+2');
+  await expect(page.locator('.main-editor .view-lines')).toContainText('from ast import Store');
+  await page.keyboard.press('Meta+Z');
+  await expect(page.locator('.main-editor .view-lines')).not.toContainText('from ast import Store');
+  await page.mouse.move(1, 1);
+  await page.locator('.main-editor .squiggly-error').hover({ force: true });
+  await expect(hoverImport).toBeVisible();
+  await page.keyboard.press('Meta+1');
+  await expect(page.locator('.main-editor .view-lines')).toContainText('from models import Store');
+  await page.keyboard.press('Meta+Z');
+  await expect(page.locator('.main-editor .view-lines')).not.toContainText(
+    'from models import Store',
+  );
+  await page.keyboard.press('Escape');
+  await page.mouse.move(1, 1);
+  await page.keyboard.press('Meta+1');
+  await page.keyboard.press('Alt+Enter');
+  await expect(importChoice).toBeVisible();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.main-editor .view-lines')).toContainText('from ast import Store');
+  await expect(page.locator('.editor-choice-menu')).toHaveCount(0);
+  await page.keyboard.press('Meta+Z');
+  await page.keyboard.press('Meta+.');
+  await expect(importChoice).toBeVisible();
+  await importChoice.click();
+  await expect(page.locator('.main-editor .view-lines')).toContainText('from models import Store');
+  await page.keyboard.press('Meta+Z');
+  await expect(page.locator('.main-editor .view-lines')).not.toContainText(
+    'from models import Store',
+  );
+  await page.keyboard.press('Escape');
+  for (const name of ['alpha', 'beta', 'gamma', 'delta', 'epsilon'])
+    await writeFile(join(project, `${name}.py`), 'class HoverFixCandidate: pass\n');
+  await page.keyboard.press('Meta+A');
+  await page.keyboard.insertText('HoverFixCandidate');
+  await expect(completions).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.mouse.move(1, 1);
+  await page.locator('.main-editor .squiggly-error').hover({ force: true });
+  const fixes = page.getByRole('tooltip').locator('.quick-fix-options');
+  await expect(fixes.getByRole('link')).toHaveCount(5);
+  await fixes.hover();
+  await page.mouse.wheel(0, 180);
+  await expect.poll(() => fixes.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  const lastFix = fixes.getByRole('link').last();
+  const selectedImport = (await lastFix.innerText()).replace(/⌘\d$/, '').trim();
+  await lastFix.click();
+  await expect(page.locator('.main-editor .view-lines')).toContainText(selectedImport);
+  await page.keyboard.press('Meta+Z');
+  await page.keyboard.press('Shift+F10');
+  await page.getByRole('menu').waitFor();
+  await expect(page.getByRole('menuitem', { name: /Import symbol/ })).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await page.locator('.editor-host').click();
   await page.keyboard.press('Meta+A');
   await page.keyboard.insertText(

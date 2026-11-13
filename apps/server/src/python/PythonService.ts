@@ -6,6 +6,8 @@ import type {
   ParsedInput,
   PythonDefinition,
   PythonLocation,
+  PythonUnusedImport,
+  PythonImport,
   SearchHit,
 } from '@superfluid/contracts';
 import { z } from 'zod';
@@ -19,6 +21,12 @@ import { excludedSearchPath } from '../files/searchPaths';
 import { compareSearchHits } from '../search/relevance';
 import { Gate } from '../utils/Gate';
 
+const ruff =
+  process.env.SF_RUFF_PATH ||
+  fileURLToPath(
+    new URL(`../../../../dist/ruff${process.platform === 'win32' ? '.exe' : ''}`, import.meta.url),
+  );
+
 const symbolInformation = z.object({
   name: z.string(),
   containerName: z.string().optional(),
@@ -30,6 +38,35 @@ const symbolInformation = z.object({
     }),
   }),
 });
+
+const ruffPosition = z.object({ row: z.number().int().min(1), column: z.number().int().min(1) });
+const ruffDiagnostics = z.array(
+  z.object({
+    code: z.string().nullable(),
+    message: z.string(),
+    location: ruffPosition,
+    end_location: ruffPosition,
+  }),
+);
+
+const lspPosition = z.object({ line: z.number().int().min(0), character: z.number().int().min(0) });
+const lspRange = z.object({ start: lspPosition, end: lspPosition });
+const importDiagnostics = z.object({
+  items: z.array(z.looseObject({ code: z.string().optional(), range: lspRange })),
+});
+const importActions = z.array(
+  z.object({
+    title: z.string(),
+    edit: z
+      .object({
+        changes: z.record(
+          z.string(),
+          z.array(z.object({ range: lspRange, newText: z.string().max(2 * 1024 * 1024) })).max(100),
+        ),
+      })
+      .optional(),
+  }),
+);
 
 type Range = { start: PythonLocation['position']; end: PythonLocation['position'] };
 interface Symbol {
@@ -104,9 +141,15 @@ export class PythonService {
     await within(session.path, input.path);
     this.watcher.observe(session);
     const server = await this.languages.get(session);
-    await server.open(input.path, input.text, input.version);
+    const [, value] = await Promise.all([
+      server.open(input.path, input.text, input.version),
+      // Invalid Ruff settings must not disable Python language services.
+      this.unusedImports(session, { ...input, text: input.text.replace(/^\uFEFF/, '') }).catch(
+        () => [],
+      ),
+    ]);
     server.assertCurrent();
-    return { generation: server.generation, value: null };
+    return { generation: server.generation, value };
   }
   async closeDocument(session: Session, path: string) {
     await this.languages.documentClose(session.id, path);
@@ -142,6 +185,8 @@ export class PythonService {
         typeof document === 'object' && document !== null && 'uri' in document
           ? document.uri
           : undefined;
+      if (input.method === 'completionItem/resolve' && typeof uri !== 'string')
+        throw new Error('Completion resolution requires a workspace document.');
       if (typeof uri === 'string') {
         const file = fileURLToPath(uri);
         const rel = relative(session.path, file);
@@ -149,7 +194,9 @@ export class PythonService {
       }
       signal?.throwIfAborted();
       const server = await this.languages.get(session);
-      const value = await server.request(input.method, input.params, signal);
+      const params = { ...input.params };
+      if (input.method === 'completionItem/resolve') delete params.textDocument;
+      const value = await server.request(input.method, params, signal);
       return { generation: server.generation, value };
     });
   }
@@ -368,9 +415,122 @@ export class PythonService {
   }
 
   format(session: Session, text: string) {
-    return command('ruff', ['format', '--stdin-filename', 'document.py', '-'], {
+    return command(ruff, ['format', '--stdin-filename', 'document.py', '-'], {
       cwd: session.path,
       input: text,
     });
+  }
+
+  imports(session: Session, input: ParsedInput<'python.imports'>) {
+    return this.cancellable(session, input.requestId, async (signal) => {
+      const file = await within(session.path, input.path);
+      signal?.throwIfAborted();
+      this.watcher.observe(session);
+      const primary = await this.languages.get(session);
+      const server = await primary.importServer(input.path, input.text, input.version);
+      const textDocument = { uri: pathToFileURL(file).href };
+      const request = async (method: string, params: object) => {
+        try {
+          return await server.request(method, params, signal);
+        } catch (error) {
+          if (!(error instanceof Error && 'code' in error && error.code === -32801)) throw error;
+          signal?.throwIfAborted();
+          primary.assertCurrent();
+          // ty can invalidate a read while watched drafts change; read the current revision once.
+          return server.request(method, params, signal);
+        }
+      };
+      const report = importDiagnostics.parse(
+        await request('textDocument/diagnostic', { textDocument }),
+      );
+      const p = input.position;
+      const diagnostics = report.items.filter(
+        ({ code, range: { start, end } }) =>
+          code === 'unresolved-reference' &&
+          (p.line > start.line || (p.line === start.line && p.character >= start.character)) &&
+          (p.line < end.line || (p.line === end.line && p.character <= end.character)),
+      );
+      const value: PythonImport[] = [];
+      if (diagnostics.length) {
+        const actions = importActions.parse(
+          await request('textDocument/codeAction', {
+            textDocument,
+            range: { start: p, end: p },
+            context: { diagnostics, only: ['quickfix'], triggerKind: 1 },
+          }),
+        );
+        for (const action of actions) {
+          const changes = action.edit?.changes;
+          if (
+            !action.title.startsWith('import ') ||
+            !changes ||
+            Object.keys(changes).some((uri) => uri !== textDocument.uri)
+          )
+            continue;
+          const edits = changes[textDocument.uri];
+          if (edits?.length) value.push({ title: action.title, edits });
+          if (value.length === 50) break;
+        }
+      }
+      primary.assertCurrent();
+      return { generation: primary.generation, value };
+    });
+  }
+
+  async unusedImports(
+    session: Session,
+    input: ParsedInput<'python.organizeImports'>,
+  ): Promise<PythonUnusedImport[]> {
+    const file = await within(session.path, input.path);
+    const output = await command(
+      ruff,
+      [
+        'check',
+        '--select',
+        'F401',
+        '--no-fix',
+        '--no-cache',
+        '--output-format',
+        'json',
+        '--stdin-filename',
+        file,
+        '-',
+      ],
+      { cwd: session.path, input: input.text, accept: [1] },
+    );
+    const lines = input.text.split('\n');
+    // Ruff counts Unicode code points; Monaco positions count UTF-16 code units.
+    const position = ({ row, column }: z.infer<typeof ruffPosition>) => ({
+      line: row - 1,
+      character: Array.from(lines[row - 1] ?? '')
+        .slice(0, column - 1)
+        .join('').length,
+    });
+    return ruffDiagnostics
+      .parse(JSON.parse(output))
+      .filter((d) => d.code === 'F401')
+      .map((d) => ({
+        range: { start: position(d.location), end: position(d.end_location) },
+        message: d.message,
+      }));
+  }
+
+  async organizeImports(session: Session, input: ParsedInput<'python.organizeImports'>) {
+    const file = await within(session.path, input.path);
+    return command(
+      ruff,
+      [
+        'check',
+        '--select',
+        'F401,I001',
+        '--fix-only',
+        '--no-unsafe-fixes',
+        '--no-cache',
+        '--stdin-filename',
+        file,
+        '-',
+      ],
+      { cwd: session.path, input: input.text },
+    );
   }
 }

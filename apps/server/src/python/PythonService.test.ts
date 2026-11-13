@@ -1,11 +1,316 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { delimiter, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Workspace } from '../workspace/Workspace';
 import { repository, temp, terminalWorker, pythonProbe } from '../../../../tests/fixtures';
 import type { Input, Results } from '@superfluid/contracts';
+
+test('Python imports use the current buffer, nested Ruff settings and safe fixes', async () => {
+  const root = await repository();
+  await mkdir(join(root, 'nested'));
+  await writeFile(join(root, 'nested/ruff.toml'), '[lint.isort]\nforce-single-line = true\n');
+  const disk = 'print("disk version")\n';
+  await writeFile(join(root, 'nested/main.py'), disk);
+  const workspace = new Workspace(await temp(), () => {}, { terminalWorker });
+  const originalPath = process.env.PATH;
+  try {
+    const project = await workspace.projects.add(root);
+    const [session] = await workspace.projects.sessions(project.id);
+    const bin = await temp();
+    await writeFile(
+      join(bin, 'ruff'),
+      '#!/bin/sh\necho "External Ruff must not run" >&2\nexit 99\n',
+      { mode: 0o755 },
+    );
+    process.env.PATH = bin + delimiter + originalPath;
+    assert.equal(
+      await workspace.call('python.format', { sessionId: session.id, text: 'value=1\n' }),
+      'value = 1\n',
+    );
+    const text = [
+      'from os import path, environ',
+      'import sys',
+      'import json  # noqa: F401',
+      'from math import sqrt as sqrt',
+      '',
+      'print( path, sys.version )',
+      '',
+    ].join('\n');
+    const input = { sessionId: session.id, path: 'nested/main.py', text };
+    const unusedImports = (input: Input<'python.organizeImports'>) =>
+      workspace.python.unusedImports(session, input);
+    const unused = await unusedImports(input);
+    assert.deepEqual(
+      unused.map((d) => d.range),
+      [{ start: { line: 0, character: 21 }, end: { line: 0, character: 28 } }],
+    );
+    const optimized = await workspace.call('python.organizeImports', input);
+    assert.equal(
+      optimized,
+      [
+        'import json  # noqa: F401',
+        'import sys',
+        'from math import sqrt as sqrt',
+        'from os import path',
+        '',
+        'print( path, sys.version )',
+        '',
+      ].join('\n'),
+    );
+    assert.deepEqual(await unusedImports({ ...input, text: optimized }), []);
+    assert.equal(await readFile(join(root, input.path), 'utf8'), disk);
+    const bom = '\ufeffimport sys\r\nimport os\r\n\r\nprint(sys.version)\r\n';
+    assert.equal(
+      await workspace.call('python.organizeImports', { ...input, text: bom }),
+      '\ufeffimport sys\r\n\r\nprint(sys.version)\r\n',
+    );
+    const unicode = 'label = "😀"; from os import path as путь, environ\nprint(путь)\n';
+    assert.deepEqual(
+      (await unusedImports({ ...input, text: unicode })).map((d) => d.range),
+      [
+        {
+          start: { line: 0, character: unicode.indexOf('environ') },
+          end: { line: 0, character: unicode.indexOf('environ') + 7 },
+        },
+      ],
+    );
+    await writeFile(
+      join(root, 'nested/ruff.toml'),
+      '[lint.per-file-ignores]\n"main.py" = ["F401"]\n',
+    );
+    assert.deepEqual(await unusedImports(input), []);
+    assert.match(await workspace.call('python.organizeImports', input), /environ/);
+    await mkdir(join(root, 'pkg'));
+    await writeFile(join(root, 'pkg/__init__.py'), '');
+    assert.equal(
+      await workspace.call('python.organizeImports', {
+        ...input,
+        path: 'pkg/__init__.py',
+        text: 'import os\n',
+      }),
+      'import os\n',
+    );
+    await assert.rejects(unusedImports({ ...input, path: '../outside.py' }), /worktree/);
+    await assert.rejects(
+      workspace.call('python.organizeImports', { ...input, path: '../outside.py' }),
+      /worktree/,
+    );
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+    await workspace.close();
+  }
+});
+
+for (const kind of ['ty', 'pyright'] as const)
+  test(`${kind} offers imports at the cursor from the selected worktree and unsaved buffers`, async (t) => {
+    const root = await repository();
+    await writeFile(join(root, 'alpha.py'), 'class ImportCandidate: pass\n');
+    await writeFile(join(root, 'beta.py'), 'class ImportCandidate: pass\n');
+    const workspace = new Workspace(await temp(), () => {}, { terminalWorker });
+    try {
+      const project = await workspace.projects.add(root);
+      const [session] = await workspace.projects.sessions(project.id);
+      session.python = await pythonProbe(root, kind === 'ty' ? [3, 10] : [3, 9]);
+      workspace.store.put('sessions', session);
+      const input = {
+        sessionId: session.id,
+        path: 'main.py',
+        text: 'value = ImportCandidate()\nother = Path()\n',
+        version: 1,
+        position: { line: 0, character: 10 },
+      };
+      const result = await workspace.call('python.imports', input);
+      assert.deepEqual(result.value.map((action) => action.title).sort(), [
+        'import alpha.ImportCandidate',
+        'import beta.ImportCandidate',
+      ]);
+      if (kind === 'ty') {
+        const server = await workspace.lsp.get(session);
+        const request = server.request.bind(server);
+        for (const interrupted of ['textDocument/diagnostic', 'textDocument/codeAction']) {
+          let invalidated = false;
+          const mock = t.mock.method(
+            server,
+            'request',
+            async (method: string, params: unknown, signal?: AbortSignal) => {
+              if (method === interrupted && !invalidated) {
+                invalidated = true;
+                throw Object.assign(new Error('content modified'), { code: -32801 });
+              }
+              return request(method, params, signal);
+            },
+          );
+          try {
+            assert.deepEqual((await workspace.call('python.imports', input)).value, result.value);
+          } finally {
+            mock.mock.restore();
+          }
+        }
+      }
+      for (const action of result.value) {
+        assert.equal(action.edits.length, 1);
+        assert.deepEqual(action.edits[0].range, {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 0 },
+        });
+        assert.match(action.edits[0].newText, /^from (alpha|beta) import ImportCandidate\n$/);
+      }
+      const other = await workspace.call('session.create', {
+        sessionId: session.id,
+        branch: 'other-imports',
+        base: 'main',
+      });
+      other.python = await pythonProbe(other.path, kind === 'ty' ? [3, 10] : [3, 9]);
+      workspace.store.put('sessions', other);
+      assert.deepEqual(
+        (await workspace.call('python.imports', { ...input, sessionId: other.id })).value,
+        [],
+      );
+      assert.deepEqual(
+        (
+          await workspace.call('python.imports', {
+            ...input,
+            text: 'from alpha import ImportCandidate\nvalue = ImportCandidate()\n',
+            version: 2,
+            position: { line: 1, character: 10 },
+          })
+        ).value,
+        [],
+      );
+      const text = 'class FreshImportCandidate: pass\n';
+      workspace.store.draft({
+        sessionId: session.id,
+        path: 'alpha.py',
+        text,
+        version: 1,
+        hash: '',
+      });
+      await workspace.call('lsp.open', {
+        sessionId: session.id,
+        path: 'alpha.py',
+        text,
+        version: 1,
+      });
+      const fresh = await workspace.call('python.imports', {
+        ...input,
+        text: 'value = FreshImportCandidate()\n',
+        version: 3,
+        position: { line: 0, character: 12 },
+      });
+      assert.ok(fresh.value.some((action) => action.title === 'import alpha.FreshImportCandidate'));
+      assert.equal((await workspace.lsp.get(session)).kind, kind);
+      await assert.rejects(
+        workspace.call('python.imports', { ...input, path: '../outside.py' }),
+        /worktree/,
+      );
+    } finally {
+      await workspace.close();
+    }
+  });
+
+for (const kind of ['ty', 'pyright'] as const)
+  test(`${kind} completes unimported names and resolves their import edits`, async () => {
+    const root = await repository();
+    await writeFile(join(root, 'models.py'), 'class AutoImportCandidate: pass\n');
+    let analyzed!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      analyzed = resolve;
+    });
+    const workspace = new Workspace(
+      await temp(),
+      (event) => {
+        if (event.type === 'diagnostics' && event.uri.endsWith('/main.py')) analyzed();
+      },
+      { terminalWorker },
+    );
+    try {
+      const project = await workspace.projects.add(root);
+      const [session] = await workspace.projects.sessions(project.id);
+      session.python = await pythonProbe(root, kind === 'ty' ? [3, 10] : [3, 9]);
+      workspace.store.put('sessions', session);
+      const text = 'value = AutoImportCand';
+      const textDocument = { uri: pathToFileURL(join(session.path, 'main.py')).href };
+      await workspace.call('lsp.open', {
+        sessionId: session.id,
+        path: 'main.py',
+        text,
+        version: 1,
+      });
+      await ready;
+      const result = await workspace.call('lsp.request', {
+        sessionId: session.id,
+        method: 'textDocument/completion',
+        params: { textDocument, position: { line: 0, character: text.length } },
+      });
+      const candidate = (result.value?.items ?? result.value ?? []).find(
+        (item: { label: string }) => item.label === 'AutoImportCandidate',
+      );
+      assert.ok(
+        candidate,
+        `An unimported workspace class is offered while typing its prefix: ${JSON.stringify(result.value)}`,
+      );
+      const resolved = candidate.additionalTextEdits?.length
+        ? { value: candidate }
+        : await workspace.call('lsp.request', {
+            sessionId: session.id,
+            method: 'completionItem/resolve',
+            params: { ...candidate, textDocument },
+          });
+      assert.ok(
+        resolved.value.additionalTextEdits?.some((edit: { newText: string }) =>
+          edit.newText.includes('from models import AutoImportCandidate'),
+        ),
+      );
+      await assert.rejects(
+        workspace.call('lsp.request', {
+          sessionId: session.id,
+          method: 'completionItem/resolve',
+          params: {
+            ...candidate,
+            textDocument: { uri: pathToFileURL(join(session.path, '../outside.py')).href },
+          },
+        }),
+        /worktree/,
+      );
+    } finally {
+      await workspace.close();
+    }
+  });
+
+test('Pyright completions remain available when the import index cannot start', async () => {
+  const root = await repository();
+  const previous = process.env.SF_TY_PATH;
+  process.env.SF_TY_PATH = join(root, 'missing-ty');
+  const workspace = new Workspace(await temp(), () => {}, { terminalWorker });
+  try {
+    const project = await workspace.projects.add(root);
+    const [session] = await workspace.projects.sessions(project.id);
+    session.python = await pythonProbe(root, [3, 9]);
+    workspace.store.put('sessions', session);
+    await workspace.call('lsp.open', {
+      sessionId: session.id,
+      path: 'main.py',
+      text: 'pri',
+      version: 1,
+    });
+    const result = await workspace.call('lsp.request', {
+      sessionId: session.id,
+      method: 'textDocument/completion',
+      params: {
+        textDocument: { uri: pathToFileURL(join(session.path, 'main.py')).href },
+        position: { line: 0, character: 3 },
+      },
+    });
+    assert.ok(result.value.items.some((item: { label: string }) => item.label === 'print'));
+  } finally {
+    await workspace.close();
+    if (previous === undefined) delete process.env.SF_TY_PATH;
+    else process.env.SF_TY_PATH = previous;
+  }
+});
 
 for (const kind of ['ty', 'pyright'] as const)
   test(`${kind} searches workspace symbols in unopened files and unsaved overlays`, async () => {

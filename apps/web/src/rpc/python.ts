@@ -3,6 +3,7 @@ import { desktop } from './desktop';
 import { assertPythonGeneration, pythonGeneration, pythonReady } from '~/state/python';
 import type { Doc } from '~/state/editor/Documents';
 import type { CancellationToken } from 'monaco-editor';
+import { monaco } from '~/components/editor/monaco';
 
 const synchronized = new WeakMap<
   Doc,
@@ -35,6 +36,28 @@ export async function syncPythonDocument(doc: Doc) {
     .then((result) => {
       entry.generation = result.generation;
       entry.complete = true;
+      if (
+        doc.model.isDisposed() ||
+        doc.closed ||
+        doc.version !== version ||
+        synchronized.get(doc) !== entry
+      )
+        return;
+      monaco.editor.setModelMarkers(
+        doc.model,
+        'python.imports',
+        result.value.map((d) => ({
+          startLineNumber: d.range.start.line + 1,
+          startColumn: d.range.start.character + 1,
+          endLineNumber: d.range.end.line + 1,
+          endColumn: d.range.end.character + 1,
+          message: d.message,
+          source: 'Ruff',
+          code: 'F401',
+          severity: monaco.MarkerSeverity.Hint,
+          tags: [monaco.MarkerTag.Unnecessary],
+        })),
+      );
     })
     .catch((error) => {
       if (synchronized.get(doc) === entry) synchronized.delete(doc);
@@ -45,7 +68,7 @@ export async function syncPythonDocument(doc: Doc) {
 }
 
 export async function callPython<
-  M extends 'lsp.request' | 'python.hover' | 'python.source' | 'python.symbols',
+  M extends 'lsp.request' | 'python.hover' | 'python.source' | 'python.symbols' | 'python.imports',
 >(
   method: M,
   input: Input<M>,

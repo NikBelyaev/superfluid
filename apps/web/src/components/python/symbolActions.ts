@@ -76,7 +76,10 @@ export function symbolActions(doc: Doc, position: PythonLocation['position'], ho
     return `[$(${icon}) ${label}](command:${command}?${encodeURIComponent(JSON.stringify(args))})`;
   };
   return {
-    value: context.actions.map(link).join(' '),
+    value: context.actions
+      .filter((action) => ['definition', 'search', 'copy', 'copy-name'].includes(action))
+      .map(link)
+      .join(' '),
     supportThemeIcons: true,
     isTrusted: { enabledCommands: [command] },
   };
@@ -93,19 +96,30 @@ export function renameSymbol(
   const version = doc.version;
   const generation = pythonGeneration(doc.session.id);
   const form = document.createElement('form');
-  form.className = 'symbol-rename';
+  form.className = 'symbol-rename relative m-0 w-max p-0';
+  editor.applyFontInfo(form);
+  const field = document.createElement('div');
+  field.className = 'grid w-max';
+  // Keep the original token covered when the draft becomes shorter.
+  const originalName = document.createElement('span');
+  originalName.className = 'invisible col-start-1 row-start-1 whitespace-pre';
+  originalName.setAttribute('aria-hidden', 'true');
+  originalName.textContent = word.word;
   const input = document.createElement('input');
+  input.className =
+    'col-start-1 row-start-1 [field-sizing:content] m-0 h-[1lh] min-w-full w-auto rounded-[var(--control-radius)] border-0 bg-[var(--vscode-editor-background)] p-0 [font:inherit] [font-feature-settings:inherit] [font-variation-settings:inherit] tracking-[inherit] text-[var(--vscode-editor-foreground)] shadow-none outline-1 outline-offset-0 outline-ring';
   input.setAttribute('aria-label', 'New symbol name');
   input.setAttribute('aria-description', 'Enter to rename. Escape to cancel.');
   input.value = word.word;
   input.required = true;
-  editor.applyFontInfo(input);
-  input.style.height = `${editor.getOption(monaco.editor.EditorOption.lineHeight)}px`;
   const error = document.createElement('div');
+  error.className =
+    'absolute top-full mt-1 w-max max-w-[300px] rounded-[var(--control-radius)] border border-solid border-border bg-popover px-2 py-1 font-sans text-xs text-diff-deletion-foreground';
   error.id = `${editor.getId()}-rename-error`;
   error.setAttribute('role', 'alert');
   error.hidden = true;
-  form.append(input, error);
+  field.append(originalName, input);
+  form.append(field, error);
   let focused = false;
   const widget: monaco.editor.IContentWidget = {
     suppressMouseDown: true,
@@ -117,8 +131,6 @@ export function renameSymbol(
     }),
     afterRender: (placement) => {
       if (placement === null || focused) return;
-      // Keep the original token covered when the draft becomes shorter.
-      input.style.minWidth = `${Math.ceil(input.getBoundingClientRect().width)}px`;
       focused = true;
       input.focus();
       input.select();
@@ -312,23 +324,25 @@ monaco.editor.registerCommand(command, (_accessor, ...args: Args) => {
 function installSymbolContextMenu(editor: monaco.editor.IStandaloneCodeEditor, root: HTMLElement) {
   let invoke: ((action: SymbolAction) => Promise<void>) | undefined;
   let pending: AbortController | undefined;
-  const actions = (Object.keys(actionLabels) as SymbolAction[]).map((action, index) => {
-    const available = editor.createContextKey<boolean>(`superfluid.symbol.${action}`, false);
-    const registration = editor.addAction({
-      id: `superfluid.symbol.${action}`,
-      label: actionLabels[action][1],
-      precondition: `superfluid.symbol.${action}`,
-      contextMenuGroupId: 'navigation',
-      contextMenuOrder: index - 100,
-      run: () => invoke?.(action).catch(useApp.getState().fail),
+  const actions = (Object.keys(actionLabels) as SymbolAction[])
+    .filter((action) => action !== 'definition')
+    .map((action, index) => {
+      const available = editor.createContextKey<boolean>(`superfluid.symbol.${action}`, false);
+      const registration = editor.addAction({
+        id: `superfluid.symbol.${action}`,
+        label: actionLabels[action][1],
+        precondition: `superfluid.symbol.${action}`,
+        contextMenuGroupId: 'navigation',
+        contextMenuOrder: index - 100,
+        run: () => invoke?.(action).catch(useApp.getState().fail),
+      });
+      return { action, available, registration };
     });
-    return { action, available, registration };
-  });
   const cancel = () => {
     pending?.abort();
     pending = undefined;
   };
-  const show = async (anchor?: { x: number; y: number }, point = editor.getPosition()) => {
+  const prepare = async (point = editor.getPosition()) => {
     cancel();
     invoke = undefined;
     for (const { available } of actions) available.set(false);
@@ -364,7 +378,7 @@ function installSymbolContextMenu(editor: monaco.editor.IStandaloneCodeEditor, r
           pythonGeneration(doc.session.id) !== generation ||
           useApp.getState().sessionId !== doc.session.id
         )
-          return;
+          return false;
         const definitions = hover?.definitions ?? [];
         const context = actionsAt(doc, position, definitions);
         invoke = (action) =>
@@ -372,12 +386,16 @@ function installSymbolContextMenu(editor: monaco.editor.IStandaloneCodeEditor, r
         for (const { action, available } of actions)
           available.set(!!context?.actions.includes(action));
       } catch (error) {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted) return false;
         useApp.getState().fail(error);
       }
     }
-    if (controller.signal.aborted) return;
+    if (controller.signal.aborted) return false;
     pending = undefined;
+    return true;
+  };
+  const show = async (anchor?: { x: number; y: number }, point = editor.getPosition()) => {
+    if (!(await prepare(point))) return;
     editor
       .getContribution<
         monaco.editor.IEditorContribution & {
@@ -397,10 +415,9 @@ function installSymbolContextMenu(editor: monaco.editor.IStandaloneCodeEditor, r
       const icon = document.createElement('span');
       icon.className = `codicon codicon-${entry[1][0]}`;
       icon.setAttribute('aria-hidden', 'true');
-      label.replaceChildren(icon);
+      label.replaceChildren(icon, document.createTextNode(entry[1][1]));
       const item = label.closest<HTMLElement>('.action-menu-item');
       item?.setAttribute('aria-label', entry[1][1]);
-      item?.setAttribute('title', entry[1][1]);
     }
   };
   const contextMenu = (event: MouseEvent) => {
@@ -422,6 +439,30 @@ function installSymbolContextMenu(editor: monaco.editor.IStandaloneCodeEditor, r
     void show({ x: event.clientX, y: event.clientY }, target.position ?? editor.getPosition());
   };
   const keyboard = (event: KeyboardEvent) => {
+    const mac = navigator.platform.includes('Mac');
+    const search =
+      event.key === 'F12' && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey;
+    const copy =
+      event.code === 'KeyC' &&
+      event.shiftKey &&
+      event.altKey &&
+      (mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey);
+    if (editor.hasTextFocus() && !event.isComposing && !event.repeat && (search || copy)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void prepare()
+        .then((ready) => {
+          if (!ready) return;
+          const action = search
+            ? 'search'
+            : actions.find((item) => item.action === 'copy')?.available.get()
+              ? 'copy'
+              : 'copy-name';
+          return invoke?.(action);
+        })
+        .catch(useApp.getState().fail);
+      return;
+    }
     if (
       !editor.hasTextFocus() ||
       !(
@@ -463,47 +504,6 @@ export function installSymbolActions(
 ) {
   const removeContextMenu = installSymbolContextMenu(editor, root);
   const selector = `a[data-href^="command:${command}?"]`;
-  const update = () => {
-    const link = root.querySelector<HTMLElement>(selector);
-    const card = link?.closest<HTMLElement>('.monaco-hover');
-    if (!link || !card) return;
-    for (const icon of card.querySelectorAll(`${selector} .codicon`))
-      icon.setAttribute('aria-hidden', 'true');
-    const args = JSON.parse(decodeURIComponent(link.dataset.href!.split('?')[1])) as Args;
-    const point = editor.getScrolledVisiblePosition({
-      lineNumber: args[3].line + 1,
-      column: args[3].character + 1,
-    });
-    if (point)
-      card.classList.toggle(
-        'symbol-actions-above',
-        card.getBoundingClientRect().top > root.getBoundingClientRect().top + point.top,
-      );
-  };
-  const positionObserver = new MutationObserver(update);
-  let container: Element | null = null;
-  const observer = new MutationObserver((records) => {
-    if (
-      !records.some(
-        (record) =>
-          record.target instanceof Element &&
-          record.target.closest('.monaco-hover, .monaco-resizable-hover'),
-      )
-    )
-      return;
-    const next = root.querySelector(selector)?.closest('[widgetid]') ?? null;
-    if (next !== container) {
-      positionObserver.disconnect();
-      container = next;
-      if (container)
-        positionObserver.observe(container, { attributes: true, attributeFilter: ['style'] });
-    }
-    update();
-  });
-  observer.observe(root, {
-    childList: true,
-    subtree: true,
-  });
   const click = (event: MouseEvent) => {
     const link =
       event.target instanceof Element ? event.target.closest<HTMLElement>(selector) : null;
@@ -518,8 +518,6 @@ export function installSymbolActions(
   root.addEventListener('click', click, true);
   return () => {
     removeContextMenu();
-    observer.disconnect();
-    positionObserver.disconnect();
     root.removeEventListener('click', click, true);
   };
 }

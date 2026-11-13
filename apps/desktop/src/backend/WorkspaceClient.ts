@@ -41,6 +41,10 @@ export class WorkspaceClient {
           dirname(entrypoint),
           `ty${process.platform === 'win32' ? '.exe' : ''}`,
         ).replace('app.asar/', 'app.asar.unpacked/'),
+        SF_RUFF_PATH: join(
+          dirname(entrypoint),
+          `ruff${process.platform === 'win32' ? '.exe' : ''}`,
+        ).replace('app.asar/', 'app.asar.unpacked/'),
       },
       serviceName: 'Superfluid workspace',
     });

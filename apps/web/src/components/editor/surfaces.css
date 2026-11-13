@@ -1,0 +1,82 @@
+@reference '../../tailwind.css';
+
+.editor-host .suggest-widget,
+.editor-host .suggest-details {
+  @apply overflow-hidden rounded-[var(--floating-radius)] border border-solid border-border bg-popover text-foreground shadow-[var(--shadow-popover)];
+}
+.editor-host .suggest-widget .monaco-list-row {
+  @apply mx-1.5 w-[calc(100%-12px)] cursor-pointer rounded-[var(--control-radius)] px-1.5 text-foreground;
+}
+.editor-host .suggest-widget .monaco-list-row.focused {
+  @apply bg-accent! text-foreground! outline-none!;
+}
+.editor-host :is(.suggest-widget, .action-widget) .monaco-list-row:hover:not(.focused) {
+  @apply bg-transparent!;
+}
+.editor-host .suggest-widget.pointer-active .monaco-list-row:hover:not(.focused) {
+  @apply bg-accent!;
+}
+.editor-host .suggest-widget .monaco-list:focus:before {
+  @apply hidden;
+}
+.editor-host .suggest-widget .monaco-list-row .monaco-icon-label {
+  @apply shrink-0 font-semibold text-foreground;
+}
+.editor-host .suggest-widget .monaco-list-row .signature-label {
+  @apply ml-0 font-normal text-muted-foreground opacity-100!;
+}
+.editor-host .suggest-widget .monaco-list-row > .contents {
+  @apply block min-w-0 flex-1;
+}
+.editor-host .suggest-widget .monaco-list-row > .contents > .main > .left {
+  @apply flex min-w-0 items-baseline;
+}
+.editor-host .suggest-widget .monaco-list-row > .contents > .main > .right {
+  @apply flex min-w-0 max-w-[40%] shrink items-center;
+}
+.editor-host .suggest-widget .monaco-highlighted-label .highlight {
+  @apply text-primary!;
+}
+.editor-host .suggest-widget > .message {
+  @apply flex h-full items-center gap-2 px-4 font-sans text-xs leading-5 text-muted-foreground;
+}
+.editor-host .suggest-widget.message {
+  @apply rounded-[var(--control-radius)];
+}
+.editor-host .suggest-widget .suggest-status-bar .action-label {
+  @apply text-muted-foreground!;
+}
+.editor-host .suggest-widget .suggest-status-bar .action-item:nth-child(n + 2):not(:last-child) {
+  @apply hidden;
+}
+.editor-host .suggest-details > .monaco-scrollable-element > .body {
+  @apply p-3 font-sans text-xs;
+}
+.editor-host .suggest-details > .monaco-scrollable-element > .body > .header > .type {
+  @apply font-mono text-xs leading-5;
+}
+.editor-host .suggest-details .docs {
+  @apply text-foreground;
+}
+.editor-host .suggest-widget .suggest-status-bar {
+  @apply flex items-center gap-3 border-0 border-t border-solid border-border bg-popover px-3 py-1 font-sans text-[10px] text-muted-foreground;
+}
+.editor-host .suggest-status-bar .action-label {
+  @apply inline-flex items-center gap-1;
+}
+.editor-host .suggest-status-bar .left {
+  @apply flex-none p-0;
+}
+.editor-host .suggest-status-bar .right {
+  @apply ml-auto w-auto!;
+}
+.editor-host .suggest-status-bar .left .action-item:not(:first-child),
+.editor-host .suggest-status-bar .action-label:after {
+  @apply hidden!;
+}
+.editor-host .suggest-widget .monaco-list-row .details-label {
+  @apply truncate font-sans text-[11px] text-muted-foreground!;
+}
+.editor-host .suggest-widget .monaco-list-row .readMore {
+  @apply hidden!;
+}

@@ -38,6 +38,8 @@
       "node_modules/pyright/**",
       "dist/ty",
       "dist/ty.exe",
+      "dist/ruff",
+      "dist/ruff.exe",
       "dist/zoekt",
       "dist/zoekt.exe"
     ],

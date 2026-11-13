@@ -72,7 +72,7 @@ class Server {
     number,
     { resolve: (v: any) => void; reject: (e: Error) => void; dispose: () => void }
   >();
-  private documents = new Map<string, number>();
+  private documents = new Map<string, { version: number; text: string }>();
   private ready: Promise<void>;
   private closed = false;
   private released = false;
@@ -90,8 +90,8 @@ class Server {
         diagnosticMode: 'openFilesOnly',
         autoSearchPaths: true,
         typeCheckingMode: 'basic',
-        // shortcut: Enable auto-imports when Monaco supports completion resolve and extra edits.
-        autoImportCompletions: false,
+        autoImportCompletions: true,
+        indexing: true,
       },
     };
   }
@@ -104,7 +104,7 @@ class Server {
               src: { exclude: searchExcludes },
             },
             diagnosticMode: 'openFilesOnly',
-            completions: { autoImport: false },
+            completions: { autoImport: true },
           },
         }
       : { python: this.settings() };
@@ -211,7 +211,14 @@ class Server {
       capabilities: {
         textDocument: {
           hover: { contentFormat: ['markdown'] },
-          completion: { completionItem: { snippetSupport: true } },
+          completion: {
+            completionItem: {
+              snippetSupport: true,
+              documentationFormat: ['markdown', 'plaintext'],
+              labelDetailsSupport: true,
+              resolveSupport: { properties: ['documentation', 'detail', 'additionalTextEdits'] },
+            },
+          },
           documentSymbol: { hierarchicalDocumentSymbolSupport: true },
           publishDiagnostics: { versionSupport: true },
         },
@@ -337,14 +344,17 @@ class Server {
         const task = this.pending.get(message.id);
         if (!task) continue;
         task.dispose();
-        if (message.error) task.reject(new Error(message.error.message));
+        if (message.error)
+          task.reject(
+            Object.assign(new Error(message.error.message), { code: message.error.code }),
+          );
         else task.resolve(message.result);
       }
     }
   }
   private openRaw(path: string, text: string, version: number) {
     const uri = pathToFileURL(join(this.session.path, path)).href,
-      previous = this.documents.get(uri);
+      previous = this.documents.get(uri)?.version;
     if (previous === undefined) {
       this.send('textDocument/didOpen', {
         textDocument: { uri, languageId: 'python', version, text },
@@ -357,11 +367,12 @@ class Server {
         textDocument: { uri, version },
         contentChanges: [{ text }],
       });
-    this.documents.set(uri, Math.max(version, previous ?? -1));
+    if (previous === undefined || version > previous) this.documents.set(uri, { version, text });
   }
   async open(path: string, text: string, version: number) {
     await this.ready;
     this.openRaw(path, text, version);
+    if (this.symbolServer?.available) await this.symbolServer.open(path, text, version);
   }
   async documentClose(path: string) {
     await this.ready;
@@ -369,33 +380,75 @@ class Server {
     this.send('textDocument/didClose', { textDocument: { uri } });
     this.documents.delete(uri);
   }
+  private async symbolIndex() {
+    if (!this.symbolServer?.available)
+      this.symbolServer = new Server(
+        this.session,
+        this.generation,
+        () => {},
+        this.drafts,
+        'symbols',
+      );
+    const server = this.symbolServer;
+    await server.ready;
+    const drafts = this.drafts().filter((draft) => /\.pyi?$/.test(draft.path));
+    const uris = new Set(
+      drafts.map((draft) => pathToFileURL(join(this.session.path, draft.path)).href),
+    );
+    for (const uri of server.documents.keys())
+      if (!uris.has(uri) && !this.documents.has(uri))
+        await server.documentClose(relative(this.session.path, fileURLToPath(uri)));
+    for (const draft of drafts) await server.open(draft.path, draft.text, draft.version);
+    for (const [uri, document] of this.documents)
+      await server.open(
+        relative(this.session.path, fileURLToPath(uri)),
+        document.text,
+        document.version,
+      );
+    return server;
+  }
+  async importServer(path: string, text: string, version: number) {
+    await this.open(path, text, version);
+    const server = this.kind === 'pyright' ? await this.symbolIndex() : this;
+    await server.open(path, text, version);
+    return server;
+  }
   async request(method: string, params: unknown, signal?: AbortSignal) {
     signal?.throwIfAborted();
     await this.ready;
     if (method === 'workspace/symbol' && this.kind === 'pyright') {
       // Pyright only searches analyzed files; ty supplies the workspace symbol index without changing older-Python diagnostics.
-      if (!this.symbolServer?.available)
-        this.symbolServer = new Server(
-          this.session,
-          this.generation,
-          () => {},
-          this.drafts,
-          'symbols',
-        );
-      await this.symbolServer.ready;
-      const drafts = this.drafts().filter((draft) => /\.pyi?$/.test(draft.path));
-      const uris = new Set(
-        drafts.map((draft) => pathToFileURL(join(this.session.path, draft.path)).href),
-      );
-      for (const uri of this.symbolServer.documents.keys())
-        if (!uris.has(uri))
-          await this.symbolServer.documentClose(relative(this.session.path, fileURLToPath(uri)));
-      for (const draft of drafts)
-        await this.symbolServer.open(draft.path, draft.text, draft.version);
-      const value = await this.symbolServer.requestRaw(method, params, signal);
-      this.symbolServer.assertCurrent();
+      const server = await this.symbolIndex();
+      const value = await server.requestRaw(method, params, signal);
+      server.assertCurrent();
       this.assertCurrent();
       return value;
+    }
+    const trigger = (params as { context?: { triggerCharacter?: string } })?.context
+      ?.triggerCharacter;
+    if (method === 'textDocument/completion' && this.kind === 'pyright' && trigger !== '.') {
+      const [local, indexed] = await Promise.all([
+        this.requestRaw(method, params, signal),
+        this.symbolIndex()
+          .then(async (symbols) => {
+            const result = await symbols.requestRaw(method, params, signal);
+            symbols.assertCurrent();
+            return result;
+          })
+          .catch(() => {
+            signal?.throwIfAborted();
+            return undefined;
+          }),
+      ]);
+      const items = local?.items ?? local ?? [];
+      const names = new Set(items.map((item: { label: string }) => item.label));
+      // Pyright only indexes analyzed modules; the existing ty index supplies unopened imports.
+      const imports = (indexed?.items ?? indexed ?? []).filter(
+        (item: { label: string; additionalTextEdits?: unknown[] }) =>
+          item.additionalTextEdits?.length && !names.has(item.label),
+      );
+      this.assertCurrent();
+      return { items: [...items, ...imports], isIncomplete: !!local?.isIncomplete };
     }
     const result = await this.requestRaw(method, params, signal);
     this.assertCurrent();

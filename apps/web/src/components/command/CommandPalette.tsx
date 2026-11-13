@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Dialog } from '@base-ui/react/dialog';
 import { Command, ArrowUpRight } from 'lucide-react';
 import type { Session } from '@superfluid/contracts';
@@ -6,6 +7,8 @@ import { useApp, showSurface, openPalette } from '~/state/workspaceStore';
 import { runAction } from '~/commands/runProjectAction';
 import { openRepositoryMenu } from '~/commands/gitBatch';
 import { checkForAppUpdates } from '~/commands/updateApp';
+import { organizeImports } from '~/commands/python';
+import { importSymbol } from '~/components/python/importActions';
 import { SearchDialog } from '~/components/search/SearchDialog';
 
 export default function CommandPalette() {
@@ -37,6 +40,8 @@ function Commands({ session }: { session?: Session }) {
     { name: 'Find a file', run: () => openPalette('files') },
     { name: 'Search worktree', run: () => openPalette('search') },
     { name: 'Go to symbol in worktree', run: () => openPalette('symbols') },
+    { name: 'Optimize Imports', run: () => void organizeImports().catch(useApp.getState().fail) },
+    { name: 'Import symbol…', run: () => void importSymbol() },
     { name: 'Check for app updates', run: checkForAppUpdates },
     {
       name: 'Settings: About',
@@ -90,7 +95,7 @@ function Commands({ session }: { session?: Session }) {
   ].filter((c) => c.name.toLowerCase().includes(query.toLowerCase()));
 
   const choose = (i: number) => {
-    useApp.setState({ palette: null });
+    flushSync(() => useApp.setState({ palette: null }));
     commands[i]?.run();
   };
   return (

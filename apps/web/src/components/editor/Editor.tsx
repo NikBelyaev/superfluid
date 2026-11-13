@@ -18,6 +18,9 @@ import { navigate } from '~/components/python/navigation';
 import { installDefinitionHover } from '~/components/python/definitionPreview';
 import { installDefinitionLinks } from '~/components/python/definitionLinks';
 import { installSymbolActions, renameSymbol } from '~/components/python/symbolActions';
+import { organizeImports } from '~/commands/python';
+import { installImportActions } from '~/components/python/importActions';
+import { installEditorSurfaces } from './surfaces';
 import {
   editorViewKey,
   setTabGroup,
@@ -72,11 +75,16 @@ export default function Editor({
       wordWrap: 'off',
       guides: { indentation: true },
       bracketPairColorization: { enabled: true },
+      suggestFontSize: 12,
+      suggestLineHeight: 38,
+      suggest: { showIcons: false, showStatusBar: true, showInlineDetails: true },
     });
     editor.current = instance;
     const removeHoverNavigation = installDefinitionHover(host.current);
     const removeDefinitionLinks = installDefinitionLinks(instance, host.current);
     const removeSymbolActions = installSymbolActions(instance, host.current);
+    const removeImportActions = installImportActions(instance, host.current);
+    const removeSurfaces = installEditorSurfaces(instance, host.current);
     const remember = () => {
       const d = bound.current;
       if (!d || d.model.isDisposed()) return;
@@ -186,6 +194,21 @@ export default function Editor({
         }
       },
     });
+    const imports = instance.addAction({
+      id: 'superfluid.organizeImports',
+      label: 'Optimize Imports',
+      precondition: 'editorLangId == python && !editorReadonly',
+      keybindings: [
+        (navigator.platform.includes('Mac') ? monaco.KeyMod.WinCtrl : monaco.KeyMod.CtrlCmd) |
+          monaco.KeyMod.Alt |
+          monaco.KeyCode.KeyO,
+      ],
+      contextMenuGroupId: '1_modification',
+      run: () => {
+        const doc = bound.current;
+        if (doc) return organizeImports(doc).catch(useApp.getState().fail);
+      },
+    });
     const opener = monaco.editor.registerEditorOpener({
       openCodeEditor: async (source, resource, selection) => {
         if (source !== instance || !bound.current) return false;
@@ -230,10 +253,13 @@ export default function Editor({
       save.dispose();
       rename.dispose();
       format.dispose();
+      imports.dispose();
       opener.dispose();
       removeHoverNavigation();
       removeDefinitionLinks();
       removeSymbolActions();
+      removeImportActions();
+      removeSurfaces();
       focus.dispose();
       blur.dispose();
       instance.dispose();
@@ -346,7 +372,7 @@ export default function Editor({
         <span>{path ? documentPath(path) : 'No file selected'}</span>
         <div className="spacer" />
         {doc?.readOnly && (
-          <span className="definition-readonly">
+          <span className="text-xs text-muted-foreground">
             {doc.path.endsWith('.pyi') ? 'Type stub · Read only' : 'Read only'}
           </span>
         )}

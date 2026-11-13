@@ -1,0 +1,41 @@
+@reference '../../tailwind.css';
+
+.editor-host .monaco-hover .hover-row:has(a[data-href^='command:superfluid.applyImport']) {
+  @apply pr-0;
+}
+.editor-host
+  .monaco-hover
+  .hover-row:has(a[data-href^='command:superfluid.applyImport'])
+  .hover-copy-button {
+  @apply hidden;
+}
+.editor-host
+  .monaco-hover
+  .hover-row:has(a[data-href^='command:superfluid.applyImport'])
+  > .hover-row-contents {
+  @apply flex-1;
+}
+.editor-host .markdown-hover:has(a[data-href^='command:superfluid.applyImport']) .hover-contents {
+  @apply p-1.5;
+}
+.editor-host .markdown-hover:has(a[data-href^='command:superfluid.applyImport']) p {
+  @apply m-0;
+}
+.editor-host
+  .markdown-hover:has(a[data-href^='command:superfluid.applyImport'])
+  p:has(> strong:only-child) {
+  @apply px-2 pt-1 pb-1.5 font-sans text-[11px] text-muted-foreground;
+}
+.editor-host .markdown-hover:has(a[data-href^='command:superfluid.applyImport']) strong {
+  @apply font-medium;
+}
+.editor-host .monaco-hover a[data-href^='command:superfluid.applyImport'] {
+  @apply text-foreground no-underline hover:bg-accent hover:text-foreground hover:no-underline focus-visible:bg-accent;
+}
+.editor-host
+  .monaco-hover:has(a[data-href^='command:superfluid.applyImport'])
+  .status-bar
+  .actions
+  > :not(:first-child) {
+  @apply hidden;
+}
