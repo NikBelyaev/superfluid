@@ -17,7 +17,10 @@ for (const kind of ['ty', 'pyright'] as const)
     const hook = registerHooks({
       resolve(specifier, context, next) {
         if (specifier === '~/components/editor/monaco')
-          return { url: 'data:text/javascript,export const monaco = {};', shortCircuit: true };
+          return {
+            url: 'data:text/javascript,export const monaco = {editor: {setModelMarkers() {}}};',
+            shortCircuit: true,
+          };
         return next(specifier, context);
       },
     });
