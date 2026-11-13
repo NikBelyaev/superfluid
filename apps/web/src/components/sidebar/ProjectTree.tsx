@@ -13,6 +13,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ChevronDown,
   ChevronRight,
+  CornerDownLeft,
   FileCode2,
   FileText,
   FilePlusCorner,
@@ -30,7 +31,7 @@ import type { FileEntry, Session } from '@superfluid/contracts';
 import { useApp, showSurface } from '~/state/workspaceStore';
 import { TREE_ROW_HEIGHT, stickyTree } from './stickyTree';
 import { activeFile } from '~/state/workspaceView';
-import { moveFiles, renameFile } from '~/commands/files';
+import { moveFiles, renameFile, trashFiles } from '~/commands/files';
 import { treeGit } from './treeGit';
 import { TreeMenu } from './TreeMenu';
 import { fileLabelClassName } from '~/components/vcs/fileLabels';
@@ -71,8 +72,13 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
       ? collapsedItems
       : view.expanded;
   const [error, setError] = useState('');
+  const [changedSiblings, setChangedSiblings] = useState<{
+    parent: string;
+    paths: string[];
+  } | null>(null);
   const [fileMenu] = useState(() => Menu.createHandle<FileEntry>());
   const menuId = useId();
+  const errorId = `${menuId}-error`;
   const loaded = useRef(new Set<string>());
   const mounted = useRef(true);
   const draft = useRef<(FileEntry & { parent: string }) | null>(null);
@@ -199,8 +205,14 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
       },
       selectAll: { hotkey: 'MetaOrControl+KeyA' },
       toggleSelectedItem: { hotkey: 'MetaOrControl+Space' },
+      customDelete: {
+        hotkey: 'Delete',
+        preventDefault: true,
+        handler: () => remove(tree.getState().selectedItems),
+      },
     },
     canRename: () => !saving.current,
+    onRename: () => void completeEditing().catch(useApp.getState().fail),
     features: [
       asyncDataLoaderFeature,
       selectionFeature,
@@ -252,7 +264,10 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
             tree.setSelectedItems(focused ? [focused.getId()] : []);
             if (inputFocused) (focused?.getElement() ?? tree.getElement())?.focus();
           },
-          completeRenaming: () => void completeEditing().catch(useApp.getState().fail),
+          completeRenaming: ({ tree }) => {
+            const item = tree.getRenamingItem();
+            if (item) tree.getConfig().onRename?.(item, tree.getRenamingValue());
+          },
         },
       },
       {
@@ -272,6 +287,39 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
       },
     ],
   });
+  const editingPath = tree.getState().renamingItem;
+  const editingParent = editingPath
+    ? (draft.current?.parent ?? editingPath.slice(0, Math.max(0, editingPath.lastIndexOf('/'))))
+    : null;
+  const siblingPaths = changes
+    ? changedSiblings?.parent === editingParent
+      ? changedSiblings.paths
+      : []
+    : tree.retrieveChildrenIds(editingParent ?? '');
+  const name = tree.getRenamingValue();
+  const validName = !!name.trim() && name !== '.' && name !== '..' && !/[/\\\0]/.test(name);
+  const target = [editingParent, name].filter(Boolean).join('/');
+  const duplicateName =
+    !!editingPath && !submitting && target !== editingPath && siblingPaths.includes(target);
+  const message = duplicateName ? 'A file or folder with that name already exists.' : error;
+  const canConfirmName =
+    validName && !message && !submitting && (!changes || changedSiblings?.parent === editingParent);
+  useEffect(() => {
+    if (!changes || editingParent === null) return;
+    let cancelled = false;
+    void desktop
+      .call('files.list', { sessionId: session.id, path: editingParent })
+      .then((entries) => {
+        if (!cancelled)
+          setChangedSiblings({ parent: editingParent, paths: entries.map((entry) => entry.path) });
+      })
+      .catch((error) => {
+        if (!cancelled) setError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [changes, editingParent, session.id, status?.files]);
   const renameInput = useCallback(
     (input: HTMLInputElement | null) => {
       if (!input) return;
@@ -372,9 +420,8 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
   const completeEditing = async () => {
     const created = !!draft.current;
     const entry = draft.current ?? tree.getRenamingItem()?.getItemData();
-    if (!entry || saving.current) return;
-    const name = tree.getRenamingValue();
-    if (!name.trim() || name === '.' || name === '..' || /[/\\\0]/.test(name)) {
+    if (!entry || saving.current || duplicateName) return;
+    if (!validName) {
       setError('Enter a file or folder name without path separators.');
       return;
     }
@@ -412,7 +459,7 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
       tree.getItemInstance(path).setFocused();
       if (created) {
         useApp.setState((state) => ({ revision: state.revision + 1 }));
-        await useApp.getState().refreshGit(session.id);
+        void useApp.getState().refreshGit(session.id);
       }
       if (
         created &&
@@ -428,6 +475,31 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
   };
   const startCreate = (parent: string, directory: boolean) => {
     void create(parent, directory).catch(useApp.getState().fail);
+  };
+  const remove = (paths: string[]) => {
+    if (saving.current || tree.isRenamingItem()) return;
+    saving.current = true;
+    setSubmitting(true);
+    void trashFiles(session.id, paths)
+      .finally(async () => {
+        try {
+          if (mounted.current) {
+            await refresh();
+            if (mounted.current) {
+              const existing = new Set(
+                [...loaded.current].flatMap((path) => tree.retrieveChildrenIds(path)),
+              );
+              tree.setSelectedItems(
+                tree.getState().selectedItems.filter((path) => existing.has(path)),
+              );
+            }
+          }
+        } finally {
+          saving.current = false;
+          if (mounted.current) setSubmitting(false);
+        }
+      })
+      .catch(useApp.getState().fail);
   };
   const saveScroll = useCallback(() => {
     if (!restoredScroll.current) return;
@@ -654,9 +726,9 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
           <span className="tree-git-dot" role="img" aria-label="Contains Git changes" />
         )}
       </div>
-      {(error || search.error) && (
-        <p className="inline-error" role="alert">
-          {error || search.error}
+      {(message || search.error) && (
+        <p className="inline-error" role="alert" id={errorId}>
+          {message || search.error}
         </p>
       )}
       <div
@@ -730,6 +802,7 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
                 onContextMenu={(event) => {
                   if (item.isRenaming()) return;
                   event.preventDefault();
+                  if (!item.isSelected()) tree.setSelectedItems([entry.path]);
                   item.setFocused();
                   fileMenu.open(triggerId);
                 }}
@@ -759,23 +832,40 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
                   <FileText size={13} />
                 )}
                 {item.isRenaming() ? (
-                  <input
-                    {...item.getRenameInputProps()}
-                    ref={renameInput}
-                    className="tree-name-input"
-                    aria-label={
-                      draft.current?.path === entry.path
-                        ? entry.directory
-                          ? 'New folder name'
-                          : 'New file name'
-                        : entry.directory
-                          ? 'Folder name'
-                          : 'File name'
-                    }
-                    placeholder={entry.directory ? 'Folder name' : 'File name'}
-                    readOnly={submitting}
-                    onClick={(event) => event.stopPropagation()}
-                  />
+                  <div className="relative flex min-w-0 flex-1">
+                    <input
+                      {...item.getRenameInputProps()}
+                      ref={renameInput}
+                      className="tree-name-input h-[22px] w-0 min-w-0 flex-1 rounded-[3px] border border-ring bg-background py-0 pr-7 pl-1 text-foreground outline-none focus-visible:outline-none aria-invalid:border-error-foreground"
+                      aria-label={
+                        draft.current?.path === entry.path
+                          ? entry.directory
+                            ? 'New folder name'
+                            : 'New file name'
+                          : entry.directory
+                            ? 'Folder name'
+                            : 'File name'
+                      }
+                      placeholder={entry.directory ? 'Folder name' : 'File name'}
+                      aria-invalid={!!message}
+                      aria-describedby={message ? errorId : undefined}
+                      aria-keyshortcuts="Enter"
+                      readOnly={submitting}
+                      onChange={(event) => {
+                        tree.applySubStateUpdate('renamingValue', event.target.value);
+                        setError('');
+                      }}
+                      onClick={(event) => event.stopPropagation()}
+                    />
+                    {canConfirmName && (
+                      <kbd
+                        className="tree-name-enter pointer-events-none absolute top-0.75 right-1 inline-flex h-4 min-w-4.5 items-center justify-center rounded border border-input bg-foreground/7 p-0 text-(--control-muted-foreground)"
+                        aria-hidden="true"
+                      >
+                        <CornerDownLeft size={11} />
+                      </kbd>
+                    )}
+                  </div>
                 ) : (
                   <span className={`file-label ${fileLabelClassName(change)}`}>
                     {changes ? (
@@ -820,6 +910,10 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
                       className="tree-actions"
                       onClick={(event) => event.stopPropagation()}
                       onPointerDown={(event) => event.stopPropagation()}
+                      onMouseDown={(event) => {
+                        // Blurring a draft moves the clicked action before mouseup.
+                        if (tree.isRenamingItem()) event.preventDefault();
+                      }}
                       onDragStart={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
@@ -922,6 +1016,8 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
         create={startCreate}
         rename={startRename}
         submitting={submitting}
+        selectedPaths={tree.getState().selectedItems}
+        remove={remove}
       />
     </section>
   );

@@ -1,7 +1,6 @@
 import { Menu } from '@base-ui/react/menu';
 import { Copy, FolderPlus, Pencil, FilePlusCorner, Trash2 } from 'lucide-react';
 import type { FileEntry } from '@superfluid/contracts';
-import { trashFile } from '~/commands/files';
 import { useApp } from '~/state/workspaceStore';
 import { desktop } from '~/rpc/desktop';
 
@@ -11,12 +10,16 @@ export function TreeMenu({
   create,
   rename,
   submitting,
+  selectedPaths,
+  remove,
 }: {
   handle: Menu.Handle<FileEntry>;
   sessionId: string;
   create: (parent: string, directory: boolean) => void;
   rename: (path: string) => void;
   submitting: boolean;
+  selectedPaths: string[];
+  remove: (paths: string[]) => void;
 }) {
   return (
     <Menu.Root handle={handle}>
@@ -56,8 +59,10 @@ export function TreeMenu({
               </Menu.Item>
               <Menu.Item
                 className="negative"
+                disabled={submitting}
                 onClick={() =>
-                  payload && void trashFile(sessionId, payload.path).catch(useApp.getState().fail)
+                  payload &&
+                  remove(selectedPaths.includes(payload.path) ? selectedPaths : [payload.path])
                 }
               >
                 <Trash2 size={14} />

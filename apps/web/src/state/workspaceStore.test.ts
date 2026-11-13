@@ -341,6 +341,30 @@ test('surfaces stay in their worktree and Files is a single tree tab alongside t
     showSurface({ kind: 'diff' }, 'inactive', 'main');
     assert.equal(useApp.getState().views.inactive.changes, false);
     assert.deepEqual(useApp.getState().views.inactive.surface, { kind: 'files' });
+    for (const group of ['main', 'right', 'bottom'] as const) {
+      const markdown = { kind: 'file', path: 'README.md', preview: true } as const;
+      showSurface(markdown, 'inactive', group);
+      showSurface({ kind: 'file', path: 'main.py' }, 'inactive', group);
+      showSurface({ kind: 'file', path: 'README.md' }, 'inactive', group);
+      let current = tabGroup(useApp.getState().views.inactive, group);
+      assert.deepEqual(current.active, markdown);
+      assert.deepEqual(
+        current.tabs.find((tab) => surfaceKey(tab) === 'file:README.md'),
+        markdown,
+      );
+      const restored = restoreView(JSON.parse(JSON.stringify(useApp.getState().views.inactive)));
+      assert.deepEqual(tabGroup(restored, group).active, markdown);
+      showSurface({ ...markdown, preview: false }, 'inactive', group);
+      current = tabGroup(useApp.getState().views.inactive, group);
+      assert.deepEqual(current.active, { ...markdown, preview: false });
+      assert.deepEqual(
+        current.tabs.find((tab) => surfaceKey(tab) === 'file:README.md'),
+        {
+          ...markdown,
+          preview: false,
+        },
+      );
+    }
   } finally {
     await flushLayouts();
     call.mock.restore();

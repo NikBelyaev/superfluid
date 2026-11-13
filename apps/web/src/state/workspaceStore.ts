@@ -584,12 +584,16 @@ export function showSurface(
     surface = { ...surface, repositoryId: repository?.id || view.repositoryIds?.[0] };
   }
   const { tabs } = tabGroup(view, group);
+  const existing = tabs.find((tab) => surfaceKey(tab) === surfaceKey(surface));
+  if (surface.kind === 'file' && existing?.kind === 'file') surface = { ...existing, ...surface };
   a.setView(
     {
       ...setTabGroup(
         view,
         group,
-        tabs.some((s) => surfaceKey(s) === surfaceKey(surface)) ? tabs : [...tabs, surface],
+        existing
+          ? tabs.map((tab) => (tab === existing && surface.kind === 'file' ? surface : tab))
+          : [...tabs, surface],
         surface,
       ),
       ...(surface.kind === 'files' ? { changes: false } : {}),
