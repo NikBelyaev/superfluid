@@ -23,6 +23,9 @@ import {
   Pencil,
   RefreshCw,
   MoreHorizontal,
+  Search,
+  LoaderCircle,
+  X,
 } from 'lucide-react';
 import type { FileEntry, Session } from '@superfluid/contracts';
 import { useApp, showSurface } from '~/state/workspaceStore';
@@ -32,6 +35,9 @@ import { moveFiles, renameFile, trashFiles } from '~/commands/files';
 import { treeGit } from './treeGit';
 import { TreeMenu } from './TreeMenu';
 import { fileLabelClassName } from '~/components/vcs/fileLabels';
+import { Highlight } from '~/components/search/Highlight';
+import { expandFileSearch, fileSearchTree } from './fileSearchTree';
+import { useFileSearch } from './useFileSearch';
 
 const collapsedItems: string[] = [];
 
@@ -43,6 +49,28 @@ export default function ProjectTree({ session }: { session: Session }) {
 function ProjectFiles({ session, changes }: { session: Session; changes: boolean }) {
   const view = useApp((a) => a.views[session.id]);
   const status = useApp((a) => a.git[session.id]);
+  const search = useFileSearch(session.id);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const section = useRef<HTMLElement>(null);
+  const filter = useMemo(
+    () => (search.result ? fileSearchTree(search.result.hits) : undefined),
+    [search.result],
+  );
+  const projection = useRef(filter);
+  const normalScroll = useRef(0);
+  const pendingScroll = useRef<number | null>(null);
+  const [searchExpansion, setSearchExpansion] = useState<{
+    query: string;
+    items?: string[];
+  }>({ query: search.resultQuery });
+  if (searchExpansion.query !== search.resultQuery)
+    setSearchExpansion({ query: search.resultQuery });
+  const expandedItems = filter
+    ? ((searchExpansion.query === search.resultQuery ? searchExpansion.items : undefined) ??
+      filter.expanded)
+    : changes
+      ? collapsedItems
+      : view.expanded;
   const [error, setError] = useState('');
   const [changedSiblings, setChangedSiblings] = useState<{
     parent: string;
@@ -69,10 +97,17 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
   };
   const tree = useTree<FileEntry>({
     rootItemId: '',
-    state: { expandedItems: changes ? collapsedItems : view.expanded },
+    state: { expandedItems },
     setExpandedItems: (updater) => {
-      const expanded = typeof updater === 'function' ? updater(view.expanded) : updater;
-      const collapsed = view.expanded.find((path) => !expanded.includes(path));
+      const expanded = typeof updater === 'function' ? updater(expandedItems) : updater;
+      if (filter) {
+        setSearchExpansion({
+          query: search.resultQuery,
+          items: expandFileSearch(filter, expandedItems, expanded),
+        });
+        return;
+      }
+      const collapsed = expandedItems.find((path) => !expanded.includes(path));
       if (collapsed) {
         const item = tree.getItemInstance(collapsed);
         if (item.getItemMeta().index * TREE_ROW_HEIGHT < (virtualizer.scrollOffset ?? 0))
@@ -185,6 +220,20 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
       dragAndDropFeature,
       renamingFeature,
       {
+        key: 'file-filter',
+        treeInstance: {
+          retrieveChildrenIds: ({ prev }, path, skipFetch) => {
+            if (!projection.current) return prev!(path, skipFetch);
+            const children = projection.current.children.get(path) ?? [];
+            return draft.current?.parent === path ? [draft.current.path, ...children] : children;
+          },
+          retrieveItemData: ({ prev }, path) =>
+            (draft.current?.path === path
+              ? draft.current
+              : projection.current?.entries.get(path)) ?? prev!(path),
+        },
+      },
+      {
         key: 'file-name-editing',
         treeInstance: {
           abortRenaming: () => {
@@ -197,12 +246,15 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
             // Headless Tree defers DOM focus; a pending return can cancel the next edit.
             tree.applySubStateUpdate('renamingItem', null);
             setError('');
-            if (entry)
-              tree
-                .getItemInstance(entry.parent)
-                .updateCachedChildrenIds(
-                  tree.retrieveChildrenIds(entry.parent).filter((id) => id !== entry.path),
-                );
+            if (entry) {
+              if (projection.current) tree.rebuildTree();
+              else
+                tree
+                  .getItemInstance(entry.parent)
+                  .updateCachedChildrenIds(
+                    tree.retrieveChildrenIds(entry.parent).filter((id) => id !== entry.path),
+                  );
+            }
             const focused = entry
               ? entry.parent
                 ? tree.getItemInstance(entry.parent)
@@ -302,17 +354,30 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
     scrollPaddingStart: (tree.getFocusedItem()?.getItemMeta()?.level ?? 0) * TREE_ROW_HEIGHT,
     rangeExtractor: layout.rangeExtractor,
   });
+  useLayoutEffect(() => {
+    if (!filter && !projection.current) return;
+    if (filter && !projection.current)
+      normalScroll.current = restoredScroll.current
+        ? (virtualizer.scrollOffset ?? 0)
+        : initialOffset.current;
+    // Project search changes the projection without replacing the directory cache.
+    projection.current = filter;
+    pendingScroll.current = filter ? 0 : normalScroll.current;
+    tree.rebuildTree();
+  }, [filter, tree, virtualizer]);
+  useLayoutEffect(() => {
+    // The virtualizer clamps offsets until it receives the rebuilt rows.
+    if (pendingScroll.current === null || items !== tree.getItems()) return;
+    virtualizer.scrollToOffset(pendingScroll.current);
+    pendingScroll.current = null;
+  }, [items, tree, virtualizer]);
   const refresh = useCallback(async () => {
     setError('');
     for (const path of new Set(['', ...loaded.current].sort())) {
       const parent = path.slice(0, Math.max(0, path.lastIndexOf('/')));
       if (
         path &&
-        (!loaded.current.has(parent) ||
-          !tree
-            .getItemInstance(parent)
-            .getChildren()
-            .some((item) => item.getId() === path))
+        (!loaded.current.has(parent) || !(await tree.loadChildrenIds(parent)).includes(path))
       ) {
         loaded.current.delete(path);
         continue;
@@ -334,15 +399,19 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
     draft.current = entry;
     const folder = tree.getItemInstance(parent);
     if (parent && !folder.isExpanded()) folder.expand();
-    await tree.waitForItemChildrenLoaded(parent);
+    const ancestors = parent.split('/');
+    for (let index = 0; index <= ancestors.length; index++)
+      await tree.waitForItemChildrenLoaded(ancestors.slice(0, index).join('/'));
     if (!mounted.current || draft.current !== entry) return;
     const item = tree.getItemInstance(entry.path);
     item.updateCachedData(entry, true);
     if (directory) item.updateCachedChildrenIds([], true);
-    folder.updateCachedChildrenIds([
-      entry.path,
-      ...tree.retrieveChildrenIds(parent).filter((id) => id !== entry.path),
-    ]);
+    if (projection.current) tree.rebuildTree();
+    else
+      folder.updateCachedChildrenIds([
+        entry.path,
+        ...tree.retrieveChildrenIds(parent).filter((id) => id !== entry.path),
+      ]);
     tree.setSelectedItems([entry.path]);
     item.setFocused();
     item.startRenaming();
@@ -438,7 +507,14 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
     const view = current.views[session.id];
     if (view)
       current.setView(
-        { fileTreeScroll: { ...view.fileTreeScroll, [mode]: virtualizer.scrollOffset ?? 0 } },
+        {
+          fileTreeScroll: {
+            ...view.fileTreeScroll,
+            [mode]: projection.current
+              ? normalScroll.current
+              : (pendingScroll.current ?? virtualizer.scrollOffset ?? 0),
+          },
+        },
         session.id,
       );
   }, [session.id, mode, virtualizer]);
@@ -470,6 +546,7 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
   }, [tree, items, focused]);
   useLayoutEffect(() => {
     if (
+      filter ||
       restoredScroll.current ||
       !loaded.current.has('') ||
       items.some((item) => item.isExpanded() && !loaded.current.has(item.getId()))
@@ -477,13 +554,56 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
       return;
     virtualizer.scrollToOffset(initialOffset.current);
     restoredScroll.current = true;
-  }, [items, virtualizer]);
+  }, [items, virtualizer, filter]);
   const git = useMemo(() => treeGit(status?.files), [status?.files]);
   const containerProps = tree.getContainerProps(changes ? 'Changed files' : 'Project files');
   const loading =
-    (!loaded.current.has('') && !error) || tree.getState().loadingItemChildrens.length > 0;
+    !filter &&
+    ((!loaded.current.has('') && !error) || tree.getState().loadingItemChildrens.length > 0);
+  const showSearch = useCallback(() => {
+    if (search.value === null) search.change('');
+    searchInput.current?.focus();
+    searchInput.current?.select();
+  }, [search.value, search.change]);
+  const closeSearch = () => {
+    search.change(null);
+    tree.getElement()?.focus();
+  };
+  useEffect(() => {
+    if (changes) return;
+    const panel = section.current?.closest('.right-surfaces');
+    const handler = (event: KeyboardEvent) => {
+      if (
+        event.isComposing ||
+        event.code !== 'KeyF' ||
+        !(event.metaKey || event.ctrlKey) ||
+        event.shiftKey ||
+        event.altKey ||
+        (!panel?.contains(event.target as Node) &&
+          (event.target !== document.body ||
+            document.querySelector('.project-tree') !== section.current))
+      )
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      showSearch();
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [changes, showSearch]);
   return (
-    <section className="project-tree">
+    <section
+      ref={section}
+      className="project-tree"
+      tabIndex={-1}
+      onKeyDownCapture={(event) => {
+        if (event.key === 'Escape' && search.value !== null && !tree.isRenamingItem()) {
+          event.preventDefault();
+          event.stopPropagation();
+          closeSearch();
+        }
+      }}
+    >
       <div className="sidebar-title">
         <button
           className="text-button"
@@ -492,9 +612,82 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
           {changes ? 'Changes' : 'Project'}
           <ChevronDown size={12} />
         </button>
-        <div className="spacer" />
+        {!changes ? (
+          <div
+            className="group/file-search relative ml-(--sidebar-control-gap) grid h-7 min-w-0 flex-1 grid-cols-[--spacing(7)_minmax(0,0fr)] items-center transition-[grid-template-columns] duration-150 ease-out before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-7 before:rounded-md before:border before:border-solid before:border-border before:bg-background before:opacity-0 before:transition-[width,opacity] before:duration-150 before:ease-out focus-within:before:border-ring data-[open]:grid-cols-[--spacing(7)_minmax(0,1fr)] data-[open]:before:w-full data-[open]:before:opacity-100 motion-reduce:transition-none motion-reduce:before:transition-none"
+            data-open={search.value !== null || undefined}
+          >
+            <button
+              className="relative flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground! hover:text-foreground! aria-[expanded=false]:hover:bg-accent!"
+              aria-label="Search project files"
+              aria-expanded={search.value !== null}
+              title="Search project files (⌘F / Ctrl+F)"
+              onClick={showSearch}
+            >
+              {search.busy ? (
+                <LoaderCircle
+                  size={13}
+                  className="animate-spin motion-reduce:animate-none"
+                  role="status"
+                  aria-label="Searching files"
+                />
+              ) : (
+                <Search size={13} aria-hidden="true" />
+              )}
+            </button>
+            <div
+              className="relative flex h-full min-w-0 -translate-x-1 items-center overflow-hidden opacity-0 transition-[opacity,translate] duration-150 ease-out group-data-[open]/file-search:translate-x-0 group-data-[open]/file-search:opacity-100 motion-reduce:transition-none"
+              inert={search.value === null}
+            >
+              {search.value !== null && (
+                <>
+                  <input
+                    ref={searchInput}
+                    autoFocus
+                    aria-label="Search project files"
+                    aria-controls={`${menuId}-tree`}
+                    placeholder="Search files…"
+                    className="h-full min-w-0 flex-1 border-0 bg-transparent text-xs! text-foreground! outline-none placeholder:text-muted-foreground focus-visible:outline-none!"
+                    maxLength={500}
+                    value={search.value}
+                    onChange={(event) => search.change(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.nativeEvent.isComposing || search.busy) return;
+                      if (
+                        event.key === 'ArrowDown' ||
+                        event.key === 'ArrowUp' ||
+                        event.key === 'Enter'
+                      ) {
+                        const files = items.filter((item) => !item.isFolder());
+                        const item = event.key === 'ArrowUp' ? files.at(-1) : files[0];
+                        if (!item) return;
+                        event.preventDefault();
+                        if (event.key === 'Enter') open(item.getId());
+                        else {
+                          item.setFocused();
+                          virtualizer.scrollToIndex(item.getItemMeta().index, { align: 'auto' });
+                          tree.getElement()?.focus();
+                          tree.updateDomFocus();
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground! hover:text-foreground!"
+                    aria-label="Close file search"
+                    onClick={closeSearch}
+                  >
+                    <X size={13} />
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="spacer" />
+        )}
         <button
-          className="icon-button"
+          className={`icon-button ${search.value !== null ? '@max-[320px]/project-files:hidden' : ''}`}
           title="New file"
           disabled={changes || submitting}
           onClick={() => startCreate('', false)}
@@ -502,14 +695,21 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
           <FilePlusCorner size={15} />
         </button>
         <button
-          className="icon-button"
+          className={`icon-button ${search.value !== null ? '@max-[320px]/project-files:hidden' : ''}`}
           title="New folder"
           disabled={changes || submitting}
           onClick={() => startCreate('', true)}
         >
           <FolderPlus size={14} />
         </button>
-        <button className="icon-button" title="Refresh project tree" onClick={() => void refresh()}>
+        <button
+          className="icon-button"
+          title="Refresh project tree"
+          onClick={() => {
+            search.refresh();
+            void refresh();
+          }}
+        >
           <RefreshCw size={13} />
         </button>
       </div>
@@ -526,16 +726,17 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
           <span className="tree-git-dot" role="img" aria-label="Contains Git changes" />
         )}
       </div>
-      {message && (
+      {(message || search.error) && (
         <p className="inline-error" role="alert" id={errorId}>
-          {message}
+          {message || search.error}
         </p>
       )}
       <div
         {...containerProps}
+        id={`${menuId}-tree`}
         className="tree-scroll"
         tabIndex={items.length ? -1 : 0}
-        aria-busy={loading || submitting}
+        aria-busy={loading || submitting || search.busy}
         onScrollEnd={saveScroll}
         onKeyDownCapture={(event) => {
           // Headless Tree's navigation hotkeys require at least one item.
@@ -551,11 +752,21 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
         }}
       >
         <div
-          style={{ height: virtualizer.getTotalSize(), position: 'relative', isolation: 'isolate' }}
+          style={{
+            height: virtualizer.getTotalSize(),
+            position: 'relative',
+            isolation: 'isolate',
+          }}
         >
           {virtualizer.getVirtualItems().map(({ index, start, size }) => {
             const item = items[index];
             const entry = item.getItemData();
+            const matchCount =
+              entry.directory && !item.isExpanded() ? filter?.counts.get(entry.path) : undefined;
+            const matchLabel =
+              matchCount === undefined
+                ? undefined
+                : `${search.result?.truncated ? 'At least ' : ''}${matchCount} matching ${matchCount === 1 ? 'file' : 'files'}`;
             const depth = item.getItemMeta().level;
             const end = layout.ends[index];
             const sticky =
@@ -566,11 +777,12 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
             const row = (
               <div
                 {...props}
+                aria-description={matchLabel}
                 key={item.getKey()}
                 data-path={entry.path}
                 data-git-status={change}
                 data-drop-target={item.isUnorderedDragTarget() || undefined}
-                className={`tree-row ${sticky ? 'sticky' : ''} ${item.isSelected() ? 'selected' : ''}`}
+                className={`tree-row group/tree-row ${sticky ? 'sticky' : ''} ${item.isSelected() ? 'selected' : ''}`}
                 style={{
                   top: entry.directory ? depth * size : start,
                   paddingLeft: 12 + depth * 14 + (sticky ? 6 : 0),
@@ -656,7 +868,11 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
                   </div>
                 ) : (
                   <span className={`file-label ${fileLabelClassName(change)}`}>
-                    {changes ? entry.path : entry.name}
+                    {changes ? (
+                      entry.path
+                    ) : (
+                      <Highlight text={entry.name} query={search.resultQuery} />
+                    )}
                   </span>
                 )}
                 {!item.isRenaming() && (
@@ -670,14 +886,26 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
                             : change[0].toUpperCase()}
                       </span>
                     )}
-                    {entry.directory &&
-                      (git.directories.has(entry.path) || change === 'untracked') && (
-                        <span
-                          className="tree-git-dot bg-git-modified"
-                          role="img"
-                          aria-label="Contains Git changes"
-                        />
-                      )}
+                    {entry.directory && (
+                      <span className="flex items-center gap-2 group-hover/tree-row:opacity-0">
+                        {matchCount !== undefined && (
+                          <span
+                            className="text-xs text-muted-foreground tabular-nums"
+                            title={matchLabel}
+                          >
+                            {matchCount}
+                            {search.result?.truncated ? '+' : ''}
+                          </span>
+                        )}
+                        {(git.directories.has(entry.path) || change === 'untracked') && (
+                          <span
+                            className="tree-git-dot bg-git-modified"
+                            role="img"
+                            aria-label="Contains Git changes"
+                          />
+                        )}
+                      </span>
+                    )}
                     <div
                       className="tree-actions"
                       onClick={(event) => event.stopPropagation()}
@@ -765,12 +993,23 @@ function ProjectFiles({ session, changes }: { session: Session; changes: boolean
             );
           })}
         </div>
-        {!items.length && !error && (
+        {!items.length && !error && !search.error && (
           <div className="tree-empty">
-            {loading ? 'Loading files…' : changes ? 'No local changes.' : 'This folder is empty.'}
+            {loading
+              ? 'Loading files…'
+              : filter
+                ? 'No matching files.'
+                : changes
+                  ? 'No local changes.'
+                  : 'This folder is empty.'}
           </div>
         )}
       </div>
+      {filter && search.result?.truncated && (
+        <div className="px-4 py-1 text-xs text-muted-foreground" role="status">
+          Showing the first 500 matches. Refine your search.
+        </div>
+      )}
       <TreeMenu
         handle={fileMenu}
         sessionId={session.id}
