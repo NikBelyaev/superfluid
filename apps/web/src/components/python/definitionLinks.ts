@@ -16,10 +16,7 @@ export type ContentHover = monaco.editor.IEditorContribution & {
   showContentHover(range: monaco.Range, mode: 1, source: 0, focus: false): void;
 };
 
-export function installDefinitionLinks(
-  editor: monaco.editor.IStandaloneCodeEditor,
-  root: HTMLElement,
-) {
+export function installDefinitionLinks(editor: monaco.editor.IStandaloneCodeEditor) {
   // Native definition links require a file model resolver; workspace files use our bridge.
   editor.getContribution('editor.contrib.gotodefinitionatposition')?.dispose();
   const decorations = editor.createDecorationsCollection();
@@ -147,6 +144,11 @@ export function installDefinitionLinks(
       refresh();
       pressed = modified && event.event.leftButton && event.event.detail === 1 ? key : '';
     }),
+    // Monaco can replace the pressed token while moving the caret, suppressing DOM click.
+    editor.onMouseUp((event) => click(event)),
+    editor.onDidChangeCursorSelection(({ selection }) => {
+      if (!selection.isEmpty()) pressed = '';
+    }),
     editor.onMouseLeave(reset),
     editor.onDidChangeModel(reset),
     editor.onDidChangeModelContent(reset),
@@ -154,13 +156,19 @@ export function installDefinitionLinks(
       if (event.scrollTopChanged || event.scrollLeftChanged) reset();
     }),
   ];
-  const click = (event: MouseEvent) => {
+  const click = ({ event, target }: monaco.editor.IEditorMouseEvent) => {
     if (
       !(event.metaKey || event.ctrlKey) ||
-      event.button !== 0 ||
+      !event.leftButton ||
       !pressed ||
       pressed !== key ||
-      !point
+      !point ||
+      target.type !== monaco.editor.MouseTargetType.CONTENT_TEXT ||
+      !target.position ||
+      target.position.lineNumber !== point.lineNumber ||
+      editor.getModel()?.getWordAtPosition(target.position)?.startColumn !==
+        editor.getModel()?.getWordAtPosition(point)?.startColumn ||
+      !editor.getSelection()?.isEmpty()
     )
       return;
     const model = editor.getModel();
@@ -169,7 +177,6 @@ export function installDefinitionLinks(
     const version = doc.version;
     const position = { line: point.lineNumber - 1, character: point.column - 1 };
     event.preventDefault();
-    event.stopImmediatePropagation();
     pressed = '';
     // A committed click must outlive hover cancellation on keyup or mouseleave.
     controller = undefined;
@@ -181,7 +188,6 @@ export function installDefinitionLinks(
       )
       .catch(useApp.getState().fail);
   };
-  root.addEventListener('click', click, true);
   const unsubscribe = onPythonReset((sessionId) => {
     const model = editor.getModel();
     const doc = model && documents.find(model);
@@ -196,7 +202,6 @@ export function installDefinitionLinks(
     reset();
     unsubscribe();
     for (const subscription of subscriptions) subscription.dispose();
-    root.removeEventListener('click', click, true);
     window.removeEventListener('keydown', keys);
     window.removeEventListener('keyup', keys);
     window.removeEventListener('blur', blur);

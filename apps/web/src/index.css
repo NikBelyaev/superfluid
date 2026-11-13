@@ -653,19 +653,6 @@ kbd {
   text-overflow: ellipsis;
   flex: 1;
 }
-.tree-name-input {
-  width: 0;
-  min-width: 0;
-  flex: 1;
-  height: 22px;
-  padding: 0 4px;
-  border: 1px solid var(--ring);
-  border-radius: 3px;
-  background: var(--background);
-  color: var(--foreground);
-  font: inherit;
-  outline: none;
-}
 .git-letter {
   font-size: var(--text-2xs);
   color: var(--warning-foreground);
@@ -762,12 +749,15 @@ kbd {
 }
 .editor-header,
 .surface-header {
+  position: relative;
+  z-index: 1;
   height: 40px;
   display: flex;
   align-items: center;
   flex: none;
-  border-bottom: 1px solid var(--border);
-  background: var(--background);
+  background: color-mix(in srgb, var(--background) 90%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--background) 70%, transparent);
 }
 .tab-tools {
   display: flex;
@@ -874,7 +864,7 @@ kbd {
   flex-direction: column;
   overflow: hidden;
 }
-.breadcrumb {
+.editor-notice {
   background: var(--background);
   height: 28px;
   flex: none;
@@ -888,20 +878,13 @@ kbd {
   white-space: nowrap;
   line-height: 16px;
 }
-.editor-header:has(+ .surface-panel > .editor-pane),
-.surface-header:has(+ .surface-panel > .editor-pane) {
-  border-bottom: none;
-}
-.breadcrumb > span:last-of-type {
-  color: var(--muted-foreground);
-}
 .editor-host {
   flex: 1;
   min-height: 0;
 }
 .editor-empty {
   position: absolute;
-  inset: 28px 0 0;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -934,7 +917,7 @@ kbd {
 }
 .editor-message {
   position: absolute;
-  inset: 28px 0 0;
+  inset: 0;
   background: var(--card);
   display: flex;
   align-items: center;
@@ -961,8 +944,9 @@ kbd {
 .statusbar {
   height: var(--statusbar-height);
   flex: none;
-  border-top: 1px solid var(--border);
-  background: var(--sidebar);
+  background: color-mix(in srgb, var(--background) 90%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 -4px 10px color-mix(in srgb, var(--background) 70%, transparent);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -992,27 +976,15 @@ kbd {
   background: var(--success-foreground);
 }
 .island {
-  position: absolute;
-  top: 92px;
-  right: 18px;
-  width: var(--island-width);
   border: 1px solid var(--border);
   border-radius: var(--floating-radius);
-  z-index: 15;
   background: var(--card);
   box-shadow: none;
   overflow: hidden;
   font-size: var(--text-detail);
-  max-width: calc(100% - 24px);
-  max-height: calc(100% - 112px);
   display: flex;
   flex-direction: column;
   scrollbar-width: thin;
-}
-@container editor (max-width: 560px) {
-  .island {
-    display: none;
-  }
 }
 .island-heading {
   height: 40px;
@@ -2165,9 +2137,6 @@ kbd {
     max-width: 220px;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-  .island {
-    right: 12px;
   }
   .welcome-main {
     padding-left: 28px;

@@ -13,12 +13,20 @@ test('a chain retains its identity while following definitions, revisiting locat
   assert.equal(surfaceKey(next), surfaceKey(chain));
   assert.deepEqual(next.chain?.entries, [root, { ...target, line: 18 }, location('utils.py', 7)]);
   assert.equal(next.path, 'utils.py');
-  const returned = selectFileLocation(next, root);
+  const selected = selectFileLocation(next, { ...target, line: 18 });
+  const returned = selectFileLocation(selected, root);
   assert.equal(returned.chain?.index, 0);
   assert.equal(returned.path, 'main.py');
+  assert.equal(returned.chain?.targetIndex, 1);
+  assert.deepEqual(
+    restoreView({ ...emptyView(), tabs: [returned], active: returned }).active,
+    returned,
+  );
+  assert.equal(followFile(selected, { ...target, line: 18 }, root).chain?.targetIndex, 1);
   const revisited = followFile(returned, root, location('utils.py', 7));
   assert.equal(revisited.chain?.entries.length, 3);
   assert.equal(revisited.chain?.index, 2);
+  assert.equal(revisited.chain?.targetIndex, 2);
   assert.deepEqual(surfacePaths(revisited), ['main.py', 'models.py', 'utils.py']);
   assert.deepEqual(restoreView({ ...emptyView(), tabs: [next], active: next }).tabs, [next]);
   assert.deepEqual(chain.chain?.entries, [root, target]);
@@ -33,20 +41,24 @@ test('different positions in a file remain distinct and long chains keep their s
   tab = followFile(tab, location('same.py', 2), location('same.py', 20));
   assert.equal(tab.chain?.entries.length, 3);
   assert.equal(selectFileLocation(tab, location('same.py', 2)).chain?.index, 1);
+  const selected = selectFileLocation(tab, location('same.py', 2));
+  assert.equal(selectFileLocation(selected, location('main.py')).chain?.targetIndex, 1);
   for (let line = 21; line < 130; line++)
     tab = followFile(tab, location('same.py', line - 1), location('same.py', line));
   assert.equal(tab.chain?.entries.length, 100);
   assert.equal(tab.chain?.entries[0]?.path, 'main.py');
   assert.equal(tab.chain?.index, 99);
+  assert.equal(tab.chain?.targetIndex, 99);
   assert.equal(tab.chain?.entries.at(-1)?.line, 129);
 });
 
 test('moving a chain transfers every file position and keeps lineage attached to that tab', () => {
-  const tab = followFile(
+  const chain = followFile(
     { kind: 'file', path: 'main.py' },
     location('main.py'),
     location('models.py', 12),
   );
+  const tab = selectFileLocation(chain, location('main.py'));
   const saved = {
     cursorState: [],
     viewState: {
@@ -93,6 +105,17 @@ test('renaming and deleting chain members preserves the remaining trail and hidd
   assert.equal(removed.surface?.kind === 'file' && removed.surface.path, 'renamed.py');
   assert.equal(removed.rightPanelOpen, false);
   assert.equal(mapViewFiles(removed, () => null).surface, null);
+  const expanded = followFile(tab, location('models.py', 12), location('utils.py', 7));
+  for (const target of [location('models.py', 12), location('utils.py', 7)]) {
+    const selected = selectFileLocation(selectFileLocation(expanded, target), location('main.py'));
+    const rootView = { ...emptyView(), rightTabs: [selected], surface: selected };
+    const mapped = mapViewFiles(rootView, (path) => (path === 'models.py' ? null : path));
+    const file = mapped.surface;
+    assert.ok(file?.kind === 'file' && file.chain);
+    assert.equal(file.path, 'main.py');
+    assert.equal(file.chain.entries[file.chain.targetIndex]?.path, 'utils.py');
+    assert.deepEqual(restoreView(JSON.parse(JSON.stringify(mapped))).surface, file);
+  }
 });
 
 test('restoring malformed chains falls back safely and keeps valid entries bounded', () => {
@@ -124,4 +147,25 @@ test('restoring malformed chains falls back safely and keeps valid entries bound
   const tab = restored.tabs[0];
   assert.equal(tab?.kind === 'file' && tab.chain?.entries.length, 100);
   assert.equal(tab?.kind === 'file' && tab.chain?.index, 99);
+  assert.equal(tab?.kind === 'file' && tab.chain?.targetIndex, 99);
+  for (const targetIndex of [undefined, null, 0, -1, 1.5, 100, '1', 1]) {
+    const restored = restoreView({
+      tabs: [
+        {
+          kind: 'file',
+          path: 'main.py',
+          chain: {
+            id: 'saved',
+            entries: [location('main.py'), location('models.py'), location('utils.py')],
+            index: 0,
+            targetIndex,
+          },
+        },
+      ],
+    });
+    const file = restored.tabs[0];
+    assert.ok(file?.kind === 'file' && file.chain);
+    assert.equal(file.chain.targetIndex, targetIndex === 1 ? 1 : 2);
+    assert.equal(file.path, 'main.py');
+  }
 });

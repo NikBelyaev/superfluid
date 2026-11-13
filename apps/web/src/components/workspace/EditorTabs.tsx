@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { Columns2, X } from 'lucide-react';
+import { SquareMenu, X } from 'lucide-react';
 import { useDroppable } from '@dnd-kit/core';
 import { horizontalListSortingStrategy, SortableContext } from '@dnd-kit/sortable';
 import { useApp, showSurface, closeTabs, surfaceKey } from '~/state/workspaceStore';
@@ -10,6 +10,7 @@ import { tabDragId } from './tabDrag';
 import { WorkspaceTab, surfaceIcons } from './WorkspaceTab';
 import { NewSurfaceMenu } from '~/components/surfaces/NewSurfaceMenu';
 import { ChainTabMenu } from './ChainTabMenu';
+import { FileControls } from './FileControls';
 import { surfacePaths } from '~/state/fileChains';
 import { useFileGitStatus } from '~/hooks/useFileGitStatus';
 import { fileLabelClassName } from '~/components/vcs/fileLabels';
@@ -67,22 +68,24 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
             );
             const chain = tab.kind === 'file' ? tab.chain : undefined;
             const first = chain?.entries[0],
-              last = chain?.entries.at(-1);
+              current = chain?.entries[chain.targetIndex];
             const root = first ? documentPath(first.path).split('/').at(-1) : null;
-            const lastTitle = last ? documentPath(last.path).split('/').at(-1)! : title(tab);
+            const currentTitle = current
+              ? documentPath(current.path).split('/').at(-1)!
+              : title(tab);
             const rootStatus = first ? getGitStatus(first.path) : undefined;
-            const lastStatus =
-              tab.kind === 'file' ? getGitStatus(last?.path ?? tab.path) : undefined;
+            const currentStatus =
+              tab.kind === 'file' ? getGitStatus(current?.path ?? tab.path) : undefined;
             const currentPath = selected && active?.kind === 'file' ? active.path : undefined;
             const rootSelected = !!first && first.path === currentPath;
-            const lastSelected = selected && (!last || last.path === currentPath);
+            const currentSelected = selected && (!current || current.path === currentPath);
             return (
               <WorkspaceTab
                 key={key}
                 sessionId={session.id}
                 group={group}
                 tab={tab}
-                label={root ? `${root} › ${lastTitle}` : title(tab)}
+                label={root ? `${root} › ${currentTitle}` : title(tab)}
                 selected={selected}
                 index={index}
                 count={tabs.length}
@@ -128,17 +131,17 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
                   </>
                 )}
                 <button
-                  className={last ? 'chain-last-link group/file-link' : undefined}
+                  className={current ? 'chain-last-link group/file-link' : undefined}
                   role="tab"
                   aria-selected={selected}
-                  aria-current={chain && lastSelected ? 'location' : undefined}
+                  aria-current={chain && currentSelected ? 'location' : undefined}
                   tabIndex={selected ? 0 : -1}
                   aria-controls={
                     group === 'main' ? 'primary-editor-panel' : group + '-surface-panel'
                   }
                   title={
-                    last
-                      ? `${documentPath(last.path)}:${last.line}`
+                    current
+                      ? `${documentPath(current.path)}:${current.line}`
                       : tab.kind === 'file'
                         ? documentPath(tab.path)
                         : title(tab)
@@ -146,10 +149,12 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
                   aria-label={title(tab)}
                   aria-description={root ? `Navigation chain from ${root}` : undefined}
                   onClick={() =>
-                    last
+                    current
                       ? void useApp
                           .getState()
-                          .openFile(last.path, last.line, last.column, true, group, { tabKey: key })
+                          .openFile(current.path, current.line, current.column, true, group, {
+                            tabKey: key,
+                          })
                       : tab.kind === 'file'
                         ? void useApp
                             .getState()
@@ -166,10 +171,10 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
                     />
                   )}
                   <span
-                    className={`tab-label ${fileLabelClassName(lastStatus, lastSelected ? 'default' : 'inactive')}`}
-                    data-git-status={lastStatus}
+                    className={`tab-label ${fileLabelClassName(currentStatus, currentSelected ? 'default' : 'inactive')}`}
+                    data-git-status={currentStatus}
                   >
-                    {lastTitle}
+                    {currentTitle}
                   </span>
                   {dirty && <i className="dirty-dot" />}
                 </button>
@@ -195,8 +200,11 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
         </div>
         <NewSurfaceMenu session={session} group={group} />
         <div className="spacer" />
-        {group === 'main' && (
-          <div className="tab-tools">
+        <div className="tab-tools">
+          {active?.kind === 'file' && (
+            <FileControls sessionId={session.id} group={group} tab={active} />
+          )}
+          {group === 'main' && (
             <button
               className="icon-button"
               title="Toggle island"
@@ -204,10 +212,10 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
               aria-pressed={island}
               onClick={() => useApp.setState({ island: !island })}
             >
-              <Columns2 size={14} />
+              <SquareMenu size={14} />
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </SortableContext>
   );

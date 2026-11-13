@@ -8,6 +8,10 @@ import type {
   Project,
   Run,
   Session,
+  CodexAgent,
+  CodexIntegration,
+  T3Agent,
+  T3Integration,
 } from '@superfluid/contracts';
 import {
   emptyView,
@@ -32,6 +36,8 @@ import { followFile, selectFileLocation, surfacePaths } from './fileChains';
 
 export { surfaceKey, type Surface, type Location, type ViewState } from './workspaceView';
 
+export type AgentQuestionAnswer = { option: number } | { text: string };
+
 interface State {
   projects: Project[];
   sessions: Session[];
@@ -41,6 +47,15 @@ interface State {
   actions: Action[];
   runs: Run[];
   operations: Operation[];
+  codex: CodexIntegration | null;
+  codexAgents: CodexAgent[];
+  codexDismissed: string[];
+  codexDrafts: Record<string, string>;
+  agentQuestionDrafts: Record<string, { id: string; answers: AgentQuestionAnswer[] }>;
+  t3: T3Integration | null;
+  t3Agents: T3Agent[];
+  t3Dismissed: string[];
+  t3Drafts: Record<string, string>;
   git: Record<string, GitStatus>;
   repositories: Record<string, GitRepository[]>;
   repositoryGit: Record<string, Record<string, GitStatus>>;
@@ -89,6 +104,15 @@ export const useApp = create<State>((set, get) => ({
   actions: [],
   runs: [],
   operations: [],
+  codex: null,
+  codexAgents: [],
+  codexDismissed: [],
+  codexDrafts: {},
+  agentQuestionDrafts: {},
+  t3: null,
+  t3Agents: [],
+  t3Dismissed: [],
+  t3Drafts: {},
   git: {},
   repositories: {},
   repositoryGit: {},
@@ -560,12 +584,16 @@ export function showSurface(
     surface = { ...surface, repositoryId: repository?.id || view.repositoryIds?.[0] };
   }
   const { tabs } = tabGroup(view, group);
+  const existing = tabs.find((tab) => surfaceKey(tab) === surfaceKey(surface));
+  if (surface.kind === 'file' && existing?.kind === 'file') surface = { ...existing, ...surface };
   a.setView(
     {
       ...setTabGroup(
         view,
         group,
-        tabs.some((s) => surfaceKey(s) === surfaceKey(surface)) ? tabs : [...tabs, surface],
+        existing
+          ? tabs.map((tab) => (tab === existing && surface.kind === 'file' ? surface : tab))
+          : [...tabs, surface],
         surface,
       ),
       ...(surface.kind === 'files' ? { changes: false } : {}),

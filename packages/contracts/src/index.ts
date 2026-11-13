@@ -18,3 +18,6 @@ export * from './events';
 
 export * from './desktop';
 export * from './updates';
+export * from './agents/codex';
+export * from './agents/activity';
+export * from './agents/t3';

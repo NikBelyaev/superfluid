@@ -1,5 +1,5 @@
 import { expect } from 'playwright/test';
-import { readFile, writeFile, realpath } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, realpath } from 'node:fs/promises';
 import { watch } from 'node:fs';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
@@ -200,6 +200,48 @@ try {
   await page.locator('.editor-tab.active').filter({ hasText: 'bom.py' }).waitFor();
   await page.getByRole('tab', { name: 'main.py', exact: true }).click();
   await expect(page.locator('.main-editor .view-lines')).toContainText('store = Store()');
+  await mkdir(join(project, 'src'));
+  await writeFile(join(project, 'src', 'nested.py'), 'print("nested breadcrumb")\n');
+  const breadcrumbs = page.getByRole('navigation', { name: 'File path', exact: true });
+  await breadcrumbs.getByRole('button', { name: 'main.py', exact: true }).click();
+  const pathMenu = page.getByRole('menu', { name: 'Path navigation', exact: true });
+  await expect(pathMenu.getByRole('menuitem', { name: 'README.md', exact: true })).toHaveAttribute(
+    'aria-description',
+    'Git: modified',
+  );
+  await expect(pathMenu.getByRole('menuitem', { name: 'main.py', exact: true })).toHaveAttribute(
+    'aria-current',
+    'location',
+  );
+  await pathMenu.getByRole('menuitem', { name: 'models.py', exact: true }).click();
+  await expect(breadcrumbs.getByRole('button', { name: 'models.py', exact: true })).toBeVisible();
+  await breadcrumbs.getByRole('button', { name: 'fluid-lab', exact: true }).click();
+  await pathMenu.getByRole('menuitem', { name: 'src', exact: true }).click();
+  await pathMenu.getByRole('menuitem', { name: 'nested.py', exact: true }).click();
+  await expect(breadcrumbs.getByRole('button')).toHaveText(['fluid-lab', 'src', 'nested.py']);
+  await expect(breadcrumbs.getByRole('button', { name: 'nested.py', exact: true })).toHaveAttribute(
+    'aria-description',
+    'Git: untracked',
+  );
+  await expect(page.locator('.main-editor .view-lines')).toContainText('nested breadcrumb');
+  await breadcrumbs.getByRole('button', { name: 'src', exact: true }).click();
+  await pathMenu.getByRole('menuitem', { name: 'nested.py', exact: true }).waitFor();
+  await expect(pathMenu.getByRole('menuitem', { name: 'Parent folder', exact: true })).toHaveCount(
+    0,
+  );
+  await expect(pathMenu.getByRole('menuitem', { name: 'nested.py', exact: true })).toHaveAttribute(
+    'aria-description',
+    'Git: untracked',
+  );
+  await page.screenshot({ path: 'test-results/file-breadcrumbs.png' });
+  await page.keyboard.press('Escape');
+  await expect(breadcrumbs.getByRole('button', { name: 'src', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await pathMenu.getByRole('menuitem', { name: 'nested.py', exact: true }).waitFor();
+  await page.keyboard.press('Escape');
+  await breadcrumbs.getByRole('button', { name: 'fluid-lab', exact: true }).click();
+  await pathMenu.getByRole('menuitem', { name: 'main.py', exact: true }).click();
+  await expect(breadcrumbs.getByRole('button', { name: 'main.py', exact: true })).toBeVisible();
   await page.locator('.editor-host').click();
   await page.keyboard.press('Meta+A');
   await page.keyboard.insertText('from models import Store\nstore = Store()\nstore.');
@@ -230,16 +272,29 @@ try {
     'Store',
   );
   await page.keyboard.press('Escape');
-  await page.evaluate(`Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText: async text => { document.documentElement.dataset.copiedReference = text; } },
-    })`);
-  await page.keyboard.press('Meta+Alt+Shift+C');
-  await expect(page.locator('html')).toHaveAttribute('data-copied-reference', 'models.Store');
-  await page.evaluate(() => {
-    Reflect.deleteProperty(navigator, 'clipboard');
-    delete document.documentElement.dataset.copiedReference;
+  const copiedReference = await fixture.app.evaluateHandle(({ clipboard }) => {
+    const original = clipboard.writeText;
+    let resolve!: (text: string) => void;
+    const copied = new Promise<string>((done) => {
+      resolve = done;
+    });
+    clipboard.writeText = async (text) => {
+      resolve(text);
+    };
+    return {
+      copied,
+      restore() {
+        clipboard.writeText = original;
+      },
+    };
   });
+  try {
+    await page.keyboard.press('Meta+Alt+Shift+C');
+    assert.equal(await copiedReference.evaluate((state) => state.copied), 'models.Store');
+  } finally {
+    await copiedReference.evaluate((state) => state.restore());
+    await copiedReference.dispose();
+  }
   await page.keyboard.press('Meta+Z');
   await expect(page.locator('.main-editor .view-lines')).not.toContainText('store.count');
   await page.keyboard.press('Meta+A');
@@ -449,9 +504,9 @@ try {
   for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
   for (let i = 0; i < 7; i++) await page.keyboard.press('ArrowRight');
   await page.keyboard.press('F12');
-  await page.getByRole('tab', { name: 'models.py', exact: true }).waitFor();
+  await expect(breadcrumbs.getByRole('button', { name: 'models.py', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Navigate back (Ctrl −)', exact: true }).click();
-  await page.getByRole('tab', { name: 'main.py', exact: true }).waitFor();
+  await expect(breadcrumbs.getByRole('button', { name: 'main.py', exact: true })).toBeVisible();
   await page.keyboard.press('F2');
   const renameInput = page.getByRole('textbox', { name: 'New symbol name', exact: true });
   await renameInput.fill('Inventory');
@@ -464,7 +519,7 @@ try {
     .getByRole('menuitem', { name: /models\.py\s*:/ })
     .first()
     .click();
-  await page.locator('.breadcrumb').getByText('models.py', { exact: true }).waitFor();
+  await page.locator('.statusbar').getByText('models.py', { exact: true }).waitFor();
   await page.waitForFunction(() =>
     document.querySelector('.view-lines')?.textContent?.includes('Inventory'),
   );

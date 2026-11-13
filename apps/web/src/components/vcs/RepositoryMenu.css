@@ -323,54 +323,6 @@
   font-size: var(--text-detail);
   line-height: 20px;
 }
-.repository-composer {
-  position: relative;
-  z-index: 1;
-  border: 1px solid var(--border);
-  border-radius: var(--floating-radius);
-  background: var(--popover);
-  overflow: hidden;
-}
-.repository-form .repository-composer textarea {
-  display: block;
-  width: 100%;
-  min-height: 84px;
-  max-height: 260px;
-  field-sizing: content;
-  padding: var(--floating-content-inset);
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--foreground);
-  font-size: var(--text-sm);
-  line-height: 20px;
-  resize: none;
-  outline: none;
-}
-.repository-composer-tools {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 8px 8px;
-}
-.repository-composer-send {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--primary);
-  color: var(--primary-foreground);
-}
-.repository-composer-send:hover:not(:disabled) {
-  filter: brightness(1.1);
-}
-.repository-composer-send[aria-busy='true'] {
-  opacity: 1;
-}
-.repository-composer > .repository-notice {
-  margin: 0 var(--floating-content-inset) 8px;
-}
 
 .repository-graph-switch {
   margin-left: 4px;

@@ -5,7 +5,8 @@ export type FileLocation = Omit<Location, 'group' | 'tab'>;
 export interface FileSurface {
   kind: 'file';
   path: string;
-  chain?: { id: string; entries: FileLocation[]; index: number };
+  preview?: boolean;
+  chain?: { id: string; entries: FileLocation[]; index: number; targetIndex: number };
 }
 
 export const fileTabKey = (tab: FileSurface) =>
@@ -37,7 +38,12 @@ export function followFile(
   origin: FileLocation,
   destination: FileLocation,
 ): FileSurface {
-  const chain = tab.chain ?? { id: crypto.randomUUID(), entries: [entryAt(origin)], index: 0 };
+  const chain = tab.chain ?? {
+    id: crypto.randomUUID(),
+    entries: [entryAt(origin)],
+    index: 0,
+    targetIndex: 0,
+  };
   const entries = [...chain.entries];
   entries[chain.index] = entryAt(origin);
   let index = entries.findIndex(
@@ -54,7 +60,11 @@ export function followFile(
     entries.splice(1, entries.length - 100);
     index = entries.length - 1;
   }
-  return { kind: 'file', path: destination.path, chain: { ...chain, entries, index } };
+  return {
+    kind: 'file',
+    path: destination.path,
+    chain: { ...chain, entries, index, targetIndex: index || chain.targetIndex },
+  };
 }
 
 export function selectFileLocation(tab: FileSurface, location: FileLocation): FileSurface {
@@ -77,6 +87,7 @@ export function selectFileLocation(tab: FileSurface, location: FileLocation): Fi
     chain: {
       ...tab.chain,
       index,
+      targetIndex: index || tab.chain.targetIndex,
       entries: tab.chain.entries.map((entry, i) => (i === index ? entryAt(location) : entry)),
     },
   };
@@ -113,12 +124,30 @@ export function mapSurfaceFiles(
   return {
     ...tab,
     path: indexed[index]!.entry.path,
-    chain: { ...tab.chain, entries: indexed.map((item) => item.entry), index },
+    chain: {
+      ...tab.chain,
+      entries: indexed.map((item) => item.entry),
+      index,
+      targetIndex:
+        index ||
+        Math.max(
+          Math.min(1, indexed.length - 1),
+          indexed.findLastIndex((item) => item.index <= tab.chain!.targetIndex),
+        ),
+    },
   };
 }
 
-export function restoreFileSurface(value: { path: string; chain?: unknown }): FileSurface {
-  const file: FileSurface = { kind: 'file', path: value.path };
+export function restoreFileSurface(value: {
+  path: string;
+  preview?: boolean;
+  chain?: unknown;
+}): FileSurface {
+  const file: FileSurface = {
+    kind: 'file',
+    path: value.path,
+    ...(value.preview === undefined ? {} : { preview: value.preview }),
+  };
   const chain = value.chain;
   if (
     !chain ||
@@ -167,5 +196,18 @@ export function restoreFileSurface(value: { path: string; chain?: unknown }): Fi
   if (!entries.length) return file;
   const index =
     typeof chain.index === 'number' ? Math.max(0, Math.min(chain.index, entries.length - 1)) : 0;
-  return { ...file, path: entries[index]!.path, chain: { id: chain.id, entries, index } };
+  const targetIndex =
+    index ||
+    ('targetIndex' in chain &&
+    typeof chain.targetIndex === 'number' &&
+    Number.isInteger(chain.targetIndex) &&
+    chain.targetIndex > 0 &&
+    chain.targetIndex < entries.length
+      ? chain.targetIndex
+      : entries.length - 1);
+  return {
+    ...file,
+    path: entries[index]!.path,
+    chain: { id: chain.id, entries, index, targetIndex },
+  };
 }

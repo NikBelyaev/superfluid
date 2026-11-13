@@ -11,7 +11,8 @@ import {
 } from '@superfluid/contracts';
 import { useApp, showSurface } from '~/state/workspaceStore';
 import { PullRequestList } from './PullRequestList';
-import { PullRequestDiscussion, RequestMarkdown } from './PullRequestDiscussion';
+import { PullRequestDiscussion } from './PullRequestDiscussion';
+import { MarkdownText as RequestMarkdown } from '~/components/ui/MarkdownText';
 import {
   PullRequestDetailHeader,
   PullRequestDetailTabBar,

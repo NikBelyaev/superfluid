@@ -65,6 +65,10 @@ function Commands({ session }: { session?: Session }) {
       run: () => session && openRepositoryMenu(session.id, 'push'),
     },
     { name: 'Settings: Appearance', run: () => useApp.setState({ modal: { kind: 'settings' } }) },
+    {
+      name: 'Settings: Agents',
+      run: () => useApp.setState({ modal: { kind: 'settings', section: 'agents' } }),
+    },
     { name: 'New worktree', run: () => useApp.setState({ modal: { kind: 'worktree' } }) },
     { name: 'New terminal', run: () => session && void runAction(session) },
     { name: 'Show changes', run: () => showSurface({ kind: 'diff' }) },

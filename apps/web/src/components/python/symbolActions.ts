@@ -1,5 +1,6 @@
 import type { PythonHover, PythonLocation } from '@superfluid/contracts';
 import { callPython } from '~/rpc/python';
+import { desktop } from '~/rpc/desktop';
 import { documents, monaco, type Doc } from '~/state/editor/Documents';
 import { pythonGeneration } from '~/state/python';
 import { useApp, openPalette } from '~/state/workspaceStore';
@@ -240,7 +241,7 @@ async function run(
     return openDefinition(uri, version, position, definition.symbol, generation);
   if (action === 'search') return openPalette('search', name);
   if (action === 'copy' || action === 'copy-name') {
-    return navigator.clipboard.writeText(
+    return desktop.copyText(
       action === 'copy' && definition ? symbolReference(definition, name) : name,
     );
   }

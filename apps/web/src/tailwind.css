@@ -19,13 +19,17 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning-surface: var(--warning-surface);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-error-foreground: var(--error-foreground);
   --color-ring: var(--ring);
   --color-sidebar: var(--sidebar);
   --color-diff-addition-foreground: var(--success-foreground);
   --color-diff-deletion-foreground: var(--error-foreground);
-  --color-git-added: light-dark(#16a994, #00cab1);
-  --color-git-modified: light-dark(#1ca1c7, #08c0ef);
-  --color-git-deleted: light-dark(#ff2e3f, #ff6762);
+  --color-git-added: var(--success-foreground);
+  --color-git-modified: var(--primary);
+  --color-git-deleted: var(--error-foreground);
   --color-git-renamed: light-dark(#d5a910, #ffd452);
 }
 
@@ -35,6 +39,21 @@
 
 /* Adapted from T3 Code (MIT), commit 337c5858c33bc7f8f6dfd391a2c279fa0f7e4d17. */
 @theme {
+  --animate-agent-spin: agent-spin 1.2s linear infinite;
+  --animate-agent-shimmer: agent-shimmer 3s steps(30) infinite;
+  @keyframes agent-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @keyframes agent-shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
   --animate-skeleton: skeleton 2.4s infinite;
   @keyframes skeleton {
     /* Stepped ramps avoid repainting every frame on high-refresh displays. */

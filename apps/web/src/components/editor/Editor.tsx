@@ -1,15 +1,12 @@
 import { desktop } from '~/rpc/desktop';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { AlertCircle, Braces } from 'lucide-react';
-import {
-  documents,
-  documentPath,
-  monaco,
-  subscribe,
-  getRevision,
-  type Doc,
-} from '~/state/editor/Documents';
-import { useApp } from '~/state/workspaceStore';
+import { AlertCircle } from 'lucide-react';
+import { MarkdownPreview } from './MarkdownPreview';
+import './markdownPreview.css';
+import { documents, monaco, subscribe, getRevision, type Doc } from '~/state/editor/Documents';
+import { showSurface, useApp } from '~/state/workspaceStore';
+import { useFileDiff } from '~/components/diffs/useFileDiff';
+import { installGitDecorations } from './gitDecorations';
 import { editorTheme, useAppearance, useSystemDark } from '~/state/appearance';
 import type { Session } from '@superfluid/contracts';
 import './theme';
@@ -33,11 +30,13 @@ export default function Editor({
   session,
   path,
   tabKey,
+  preview = false,
   group = 'main',
 }: {
   session: Session;
   path: string | null;
   tabKey: string;
+  preview?: boolean;
   group?: TabGroup;
 }) {
   const host = useRef<HTMLDivElement>(null),
@@ -49,6 +48,24 @@ export default function Editor({
     [loading, setLoading] = useState(false),
     [error, setError] = useState('');
   const revision = useApp((a) => a.revision);
+  const markdown = /\.(md|markdown)$/i.test(path ?? '');
+  const showPreview = markdown && preview;
+  const diff = useFileDiff(session, doc?.path === path && !doc.readOnly ? path : undefined);
+  useEffect(() => {
+    const instance = editor.current;
+    const file = diff?.files?.[0];
+    if (
+      !instance ||
+      !doc ||
+      !file ||
+      diff.version === undefined ||
+      instance.getModel() !== doc.model
+    )
+      return;
+    return installGitDecorations(instance, file, diff.version, () =>
+      showSurface({ kind: 'diff', path: doc.path }, doc.session.id),
+    );
+  }, [doc, diff?.files, diff?.version]);
   const theme = editorTheme(useAppearance(), useSystemDark());
   useEffect(() => monaco.editor.setTheme(theme), [theme]);
   useSyncExternalStore(subscribe, getRevision);
@@ -62,7 +79,8 @@ export default function Editor({
       fontSize: parseFloat(appearance.getPropertyValue('--font-size-editor')),
       lineHeight: 22,
       minimap: { enabled: false },
-      padding: { top: 14, bottom: 20 },
+      padding: { top: 0, bottom: 20 },
+      scrollbar: { useShadows: false },
       scrollBeyondLastLine: false,
       smoothScrolling: false,
       automaticLayout: true,
@@ -81,7 +99,7 @@ export default function Editor({
     });
     editor.current = instance;
     const removeHoverNavigation = installDefinitionHover(host.current);
-    const removeDefinitionLinks = installDefinitionLinks(instance, host.current);
+    const removeDefinitionLinks = installDefinitionLinks(instance);
     const removeSymbolActions = installSymbolActions(instance, host.current);
     const removeImportActions = installImportActions(instance, host.current);
     const removeSurfaces = installEditorSurfaces(instance, host.current);
@@ -157,6 +175,15 @@ export default function Editor({
       run: () => {
         const d = bound.current;
         if (d) return documents.save(d).catch(useApp.getState().fail);
+      },
+    });
+    const openDiff = instance.addAction({
+      id: 'superfluid.diff',
+      label: 'Open file diff (Index → Buffer)',
+      contextMenuGroupId: 'navigation',
+      run: () => {
+        const d = bound.current;
+        if (d && !d.readOnly) showSurface({ kind: 'diff', path: d.path }, d.session.id);
       },
     });
     const rename = instance.addAction({
@@ -251,6 +278,7 @@ export default function Editor({
       unregister();
       capture.current = () => {};
       save.dispose();
+      openDiff.dispose();
       rename.dispose();
       format.dispose();
       imports.dispose();
@@ -323,6 +351,7 @@ export default function Editor({
         !host.current?.contains(active);
       if (
         (changed || revealed || ownerChanged) &&
+        !showPreview &&
         !editingElsewhere &&
         !useApp.getState().palette &&
         !useApp.getState().modal
@@ -356,7 +385,10 @@ export default function Editor({
     return () => {
       cancelled = true;
     };
-  }, [session.id, path, revision, tabKey]);
+  }, [session.id, path, revision, tabKey, showPreview]);
+  useLayoutEffect(() => {
+    if (markdown && !showPreview) editor.current?.focus();
+  }, [markdown, showPreview]);
   return (
     <div
       className="editor-pane"
@@ -365,18 +397,13 @@ export default function Editor({
         documents.focusedGroup = group;
       }}
     >
-      <div className="breadcrumb">
-        <Braces size={13} />
-        <span>{session.branch || 'Project'}</span>
-        <span>/</span>
-        <span>{path ? documentPath(path) : 'No file selected'}</span>
-        <div className="spacer" />
-        {doc?.readOnly && (
+      {doc?.readOnly && (
+        <div className="editor-notice">
           <span className="text-xs text-muted-foreground">
             {doc.path.endsWith('.pyi') ? 'Type stub · Read only' : 'Read only'}
           </span>
-        )}
-      </div>
+        </div>
+      )}
       {doc?.recovered && (
         <div className="recovery-banner">
           <AlertCircle size={14} />
@@ -393,7 +420,12 @@ export default function Editor({
           </button>
         </div>
       )}
-      <div className="editor-host" ref={host} />
+      <div className="editor-body">
+        <div className="editor-host" ref={host} data-preview={showPreview || undefined} />
+        {showPreview && doc?.session.id === session.id && doc.path === path && (
+          <MarkdownPreview doc={doc} group={group} />
+        )}
+      </div>
       {loading && <div className="editor-message">Opening file…</div>}
       {error && <div className="editor-message error-text">{error}</div>}
       {!path && (

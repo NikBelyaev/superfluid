@@ -1,17 +1,23 @@
-import { Blocks } from 'lucide-react';
+import { SquareMenu } from 'lucide-react';
 import { useApp } from '~/state/workspaceStore';
+import { activeFile } from '~/state/workspaceView';
+import { FileBreadcrumbs } from './FileBreadcrumbs';
 import type { Session } from '@superfluid/contracts';
 
 export function Statusbar({ session }: { session: Session }) {
   const view = useApp((a) => a.views[session.id]),
-    status = useApp((a) => a.git[session.id]),
     language = useApp((a) => a.language),
     island = useApp((a) => a.island);
+  const path = activeFile(view);
   return (
     <footer className="statusbar">
-      <button onClick={() => useApp.getState().setView({ changes: !view.changes })}>
-        {status?.files.length ?? 0} changes
-      </button>
+      {path ? (
+        <FileBreadcrumbs key={`${session.id}:${path}`} session={session} path={path} />
+      ) : (
+        <span className="flex min-w-0 overflow-hidden text-sm leading-4 text-ellipsis">
+          No file selected
+        </span>
+      )}
       <div className="spacer" />
       <span>{language[session.id] || 'Python intelligence starts with a .py file'}</span>
       <span className="status-separator" />
@@ -26,7 +32,7 @@ export function Statusbar({ session }: { session: Session }) {
       <span>UTF-8</span>
       <span>Spaces: 4</span>
       <button title="Show or hide actions" onClick={() => useApp.setState({ island: !island })}>
-        <Blocks size={13} />
+        <SquareMenu size={13} />
       </button>
     </footer>
   );

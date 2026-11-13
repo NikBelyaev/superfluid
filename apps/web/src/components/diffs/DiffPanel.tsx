@@ -4,6 +4,7 @@ import { ArrowUpRight, Check, Columns2, FileCode2, RefreshCw, Rows2 } from 'luci
 import type { Session } from '@superfluid/contracts';
 import { useApp } from '~/state/workspaceStore';
 import { Patch } from './Patch';
+import { useFileDiff } from './useFileDiff';
 
 export function Diff({
   session,
@@ -32,8 +33,11 @@ export function Diff({
     (!selected ? repositories?.find((r) => r.id === ids?.[0]) : undefined);
   const repositoryPath =
     selected && repository?.path ? selected.slice(repository.path.length + 1) : selected;
+  const live = mode === 'unstaged' && !!selected && !selected.endsWith('/');
+  const working = useFileDiff(session, live ? selected : undefined, token);
+  const useBuffer = live && !working?.unsupported;
   useEffect(() => {
-    if (selected?.endsWith('/') && mode === 'unstaged') return;
+    if (useBuffer || (selected?.endsWith('/') && mode === 'unstaged')) return;
     let cancelled = false;
     setBusy(true);
     setError('');
@@ -57,7 +61,10 @@ export function Diff({
     return () => {
       cancelled = true;
     };
-  }, [session.id, repository?.id, repositoryPath, mode, base, token]);
+  }, [session.id, repository?.id, repositoryPath, mode, base, token, status, useBuffer]);
+  const currentError = useBuffer ? working?.error : error;
+  const loading = useBuffer ? !working?.files && !working?.error : busy;
+  const changed = useBuffer ? working?.files?.some((file) => file.hunks.length) : !!patch;
   return (
     <div className="surface-content">
       <div className="surface-toolbar">
@@ -66,9 +73,9 @@ export function Diff({
           value={mode}
           onChange={(e) => setMode(e.target.value as typeof mode)}
         >
-          <option value="unstaged">Working tree → Index</option>
-          <option value="staged">Index → HEAD</option>
-          <option value="branch">Branch → Base</option>
+          <option value="unstaged">Index → Working buffer</option>
+          <option value="staged">HEAD → Index (staged)</option>
+          <option value="branch">Base → Branch</option>
         </select>
         {mode === 'branch' && (
           <input
@@ -89,7 +96,10 @@ export function Diff({
         <button
           className="diff-path"
           disabled={selected.endsWith('/')}
-          onClick={() => void useApp.getState().openFile(selected)}
+          onClick={() => {
+            if (useApp.getState().sessionId === session.id)
+              void useApp.getState().openFile(selected);
+          }}
         >
           <FileCode2 size={13} />
           {selected}
@@ -101,12 +111,16 @@ export function Diff({
           <h3>Untracked directory</h3>
           <p>Open individual files from the project tree to review changes.</p>
         </div>
-      ) : error ? (
-        <div className="surface-empty error-text">{error}</div>
-      ) : busy ? (
+      ) : currentError ? (
+        <div className="surface-empty error-text">{currentError}</div>
+      ) : loading ? (
         <div className="surface-empty">Loading changes…</div>
-      ) : patch ? (
-        <Patch patch={patch} split={split} />
+      ) : changed ? (
+        <Patch
+          patch={useBuffer ? undefined : patch}
+          files={useBuffer ? working?.files : undefined}
+          split={split}
+        />
       ) : (
         <div className="surface-empty">
           <Check size={24} />

@@ -1,0 +1,113 @@
+.git-line-added,
+.git-line-modified {
+  cursor: pointer;
+  margin-left: 6px;
+  width: 3px !important;
+  background: var(--color-git-added);
+}
+
+.git-line-deleted {
+  cursor: pointer;
+}
+
+.git-line-modified {
+  background: var(--color-git-modified);
+}
+
+.git-line-added::before,
+.git-line-modified::before {
+  content: '';
+  position: absolute;
+  inset: 0 -5px;
+}
+
+.git-line-added:hover,
+.git-line-modified:hover {
+  width: 6px !important;
+}
+
+.git-line-deleted::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 4px;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid var(--color-git-deleted);
+}
+
+.git-line-before::after {
+  top: -4px;
+  bottom: auto;
+}
+
+.git-line-deleted:hover::after {
+  border-top-width: 5px;
+  border-bottom-width: 5px;
+  border-left-width: 9px;
+}
+
+.git-inline-diff {
+  position: absolute;
+  color: var(--foreground);
+  pointer-events: none;
+}
+
+.git-inline-toolbar {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  width: max-content;
+  box-sizing: content-box;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--control-radius);
+  background: var(--card);
+  pointer-events: auto;
+}
+
+.git-inline-toolbar[data-overlap='true'] {
+  opacity: 0.6;
+}
+
+.git-inline-toolbar:hover,
+.git-inline-toolbar:focus-within {
+  opacity: 1;
+}
+
+.git-inline-content {
+  position: absolute;
+  width: 100%;
+  pointer-events: auto;
+}
+
+.git-inline-removed::before {
+  content: '−';
+  display: block;
+  text-align: center;
+  color: var(--color-git-deleted);
+}
+
+.git-inline-line-modified {
+  background: color-mix(in srgb, var(--color-git-modified) 14%, transparent);
+}
+
+.git-inline-line-added {
+  background: color-mix(in srgb, var(--color-git-added) 14%, transparent);
+}
+
+.git-inline-line-deleted {
+  background: color-mix(in srgb, var(--color-git-deleted) 14%, transparent);
+}
+
+.git-inline-word-added {
+  background: color-mix(in srgb, var(--color-git-added) 30%, transparent);
+}
+
+.git-inline-word-deleted {
+  background: color-mix(in srgb, var(--color-git-deleted) 30%, transparent);
+}
+
+.git-inline-word-empty {
+  border-left: 2px solid var(--color-git-modified);
+}

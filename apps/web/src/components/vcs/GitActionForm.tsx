@@ -13,6 +13,7 @@ import {
 import { runGitBatch, type GitAction } from '~/commands/gitBatch';
 import { RepositoryBranchPicker } from './RepositoryBranchPicker';
 import { RepositoryNotice } from './RepositoryNotice';
+import { MessageComposer, MessageComposerSend } from '~/components/ui/MessageComposer';
 
 type Action = Exclude<GitAction, 'create-branch' | 'checkout' | 'stash' | 'stash-apply'>;
 
@@ -76,9 +77,8 @@ export function GitActionForm({
     <RepositoryNotice tone="warning">{baseProblem}</RepositoryNotice>
   ) : null;
   const send = (
-    <button
+    <MessageComposerSend
       type="submit"
-      className="repository-composer-send"
       aria-label={actionName}
       aria-busy={pending}
       title={
@@ -89,7 +89,7 @@ export function GitActionForm({
       disabled={pending || !!actionProblem || !!baseProblem || (committing && !message.trim())}
     >
       {pending ? <LoaderCircle size={16} className="repository-spinner" /> : <ArrowUp size={16} />}
-    </button>
+    </MessageComposerSend>
   );
   return (
     <form
@@ -125,20 +125,25 @@ export function GitActionForm({
       }}
     >
       {committing && (
-        <div className="repository-composer">
-          <textarea
-            aria-label="Commit message"
-            placeholder="Commit message…"
-            autoFocus
-            required
-            rows={3}
-            disabled={pending}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-          />
-          {feedback}
-          <div className="repository-composer-tools">{send}</div>
-        </div>
+        <MessageComposer
+          input={{
+            'aria-label': 'Commit message',
+            placeholder: 'Commit message…',
+            autoFocus: true,
+            required: true,
+            rows: 3,
+            disabled: pending,
+            value: message,
+            onChange: (e) => setMessage(e.target.value),
+          }}
+          action={send}
+        >
+          {feedback && (
+            <div className="mx-[var(--floating-content-inset)] mb-2 [&>.repository-notice]:m-0!">
+              {feedback}
+            </div>
+          )}
+        </MessageComposer>
       )}
       {pr && (
         <div
