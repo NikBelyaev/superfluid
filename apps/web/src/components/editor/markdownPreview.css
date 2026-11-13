@@ -7,12 +7,6 @@
 .editor-host[data-preview] {
   visibility: hidden;
 }
-.markdown-preview {
-  position: absolute;
-  inset: 0;
-  overflow: auto;
-  padding: 24px;
-}
 .markdown-document {
   max-width: 80ch;
   margin: 0 auto;
@@ -45,7 +39,6 @@
 }
 .markdown-document a {
   color: var(--primary);
-  text-decoration: underline;
 }
 .markdown-document img {
   max-width: 100%;
