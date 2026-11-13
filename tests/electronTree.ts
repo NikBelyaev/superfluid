@@ -43,12 +43,7 @@ delete env.ELECTRON_RUN_AS_NODE;
 delete env.SF_DEV_URL;
 const executablePath = process.env.SF_EXECUTABLE || createRequire(import.meta.url)('electron');
 const args = [...(process.env.SF_EXECUTABLE ? [] : [resolve('.')]), '--project=' + project];
-let app = await electron.launch({
-  executablePath,
-  args,
-  env,
-  recordVideo: { dir: 'test-results/file-search-video', size: { width: 1512, height: 980 } },
-});
+let app = await electron.launch({ executablePath, args, env });
 console.log('Tree fixture:', project, 'Electron PID:', app.process().pid);
 await mkdir('test-results', { recursive: true });
 const errors: string[] = [];
@@ -629,7 +624,6 @@ try {
   await expect(fileSearch).toHaveCount(0);
   await expect(page.locator('.view-lines')).toContainText('unsaved');
   await app.close();
-  await page.video()?.saveAs(resolve('test-results/file-search-motion.webm'));
   app = await electron.launch({ executablePath, args, env });
   page = await app.firstWindow();
   page.on('pageerror', (error) => errors.push(error.message));
