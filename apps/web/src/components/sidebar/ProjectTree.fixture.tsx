@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client';
+import { Suspense, use } from 'react';
 import type { Bridge, FileEntry, Session } from '@superfluid/contracts';
 import ProjectTree from './ProjectTree';
 import { useApp } from '~/state/workspaceStore';
@@ -35,6 +36,7 @@ const fixture = {
   failure: '',
   signal,
   pause: null as ReturnType<typeof signal> | null,
+  renderPause: null as ReturnType<typeof signal> | null,
   entered: signal(),
   gitPause: null as ReturnType<typeof signal> | null,
   gitEntered: signal(),
@@ -105,12 +107,19 @@ useApp.setState({
     document.querySelector<HTMLTextAreaElement>('#editor')?.focus();
   },
 });
+function RenderGate() {
+  if (fixture.renderPause) use(fixture.renderPause.promise);
+  return null;
+}
 function Fixture() {
   const sessionId = useApp((state) => state.sessionId);
   const error = useApp((state) => state.error);
   return (
     <>
-      <ProjectTree session={sessionId === other.id ? other : session} />
+      <Suspense fallback={null}>
+        <ProjectTree session={sessionId === other.id ? other : session} />
+        <RenderGate />
+      </Suspense>
       <textarea id="editor" />
       <output>{error}</output>
     </>
