@@ -1,3 +1,27 @@
+@reference '../../tailwind.css';
+
+.markdown .hljs-attr,
+.markdown .hljs-title,
+.markdown .hljs-built_in {
+  @apply text-primary;
+}
+.markdown .hljs-string,
+.markdown .hljs-symbol {
+  @apply text-success-foreground;
+}
+.markdown .hljs-number,
+.markdown .hljs-literal {
+  @apply text-warning-foreground;
+}
+.markdown .hljs-keyword,
+.markdown .hljs-name,
+.markdown .hljs-type {
+  @apply text-(--pr-foreground);
+}
+.markdown .hljs-comment,
+.markdown .hljs-meta {
+  @apply text-muted-foreground;
+}
 .markdown-table {
   margin: 16px 0;
   width: 100%;

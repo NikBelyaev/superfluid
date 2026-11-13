@@ -10,7 +10,7 @@ try {
   await mkdir(join(fixture.project, 'docs'));
   await writeFile(
     join(fixture.project, 'docs/guide.MARKDOWN'),
-    '# Local guide\n\n```mermaid\nflowchart LR\n  Guide --> Preview\n```\n',
+    '# Local guide\n\n```mermaid\nflowchart LR\n  Guide --> Preview\n```\n\n## Guide section\n\nDetails.\n',
   );
   let page = await fixture.firstWindow();
   await page
@@ -41,6 +41,8 @@ try {
       'App -.-> Redis\nend\nReceiver -.-> Redis\nSource --> Preview\nclick Receiver "javascript:alert(1)"\n```\n\n' +
       '```mermaid\nsequenceDiagram\naccTitle: Save sequence\nparticipant R as VgappReceiver (async)\nparticipant Q as Очередь Redis (db1)\nparticipant A as Archive\nR->>Q: distribute_messages (сбой отправки — лог; затем возможен ack)\nQ-->>A: пачка сообщений\nA->>A: CreateEventArchive (MessageArchive?; skip_save_message; StaticEventArchive)\n```\n\n' +
       '```mermaid\nflowchart LR\nA --> [\n```\n\n' +
+      '## Navigation target\n\n### Repeated heading\n\n- First section.\n- Second item with `code`.\n\n' +
+      '### Repeated heading\n\n1. Second section.\n2. Another item.\n\n' +
       '[Local guide](docs/guide.MARKDOWN)\n\n' +
       '[Unsafe](javascript:alert(1))\n\n<script>throw new Error("unsafe markdown")</script>\n',
   );
@@ -52,6 +54,39 @@ try {
     preview.getByRole('heading', { name: 'Markdown preview', exact: true }),
   ).toBeVisible();
   await expect(preview.locator('strong')).toHaveText('Current buffer');
+  const outline = main.getByRole('navigation', { name: 'Document outline', exact: true });
+  await expect(outline.locator('[data-outline-mark]')).toHaveCount(4);
+  const outlineControl = outline.getByRole('button');
+  const rail = await outlineControl.boundingBox();
+  assert.ok(rail);
+  const thirdSection = { x: 12, y: rail.height * 0.625 };
+  await outlineControl.hover({ position: thirdSection });
+  await expect(outline.getByRole('tooltip')).toContainText(
+    /First section\.\s+Second item with code\./,
+  );
+  await outline.getByRole('tooltip').screenshot({ path: 'test-results/markdown-outline-list.png' });
+  await outlineControl.click({ position: thirdSection });
+  await expect(
+    preview.getByRole('heading', { name: 'Repeated heading', exact: true }).first(),
+  ).toBeFocused();
+  await outlineControl.focus();
+  await page.keyboard.press('End');
+  await expect(outlineControl).toHaveAccessibleName('Jump to section: Repeated heading');
+  await expect(outline.getByRole('tooltip')).toContainText(/Second section\.\s+Another item\./);
+  await page.keyboard.press('Enter');
+  await expect(
+    preview.getByRole('heading', { name: 'Repeated heading', exact: true }).last(),
+  ).toBeFocused();
+  await expect(outline.locator('[data-outline-mark]').last()).toHaveAttribute(
+    'data-current',
+    'true',
+  );
+  await outlineControl.focus();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Enter');
+  await expect(
+    preview.getByRole('heading', { name: 'Markdown preview', exact: true }),
+  ).toBeFocused();
   await expect(preview.getByRole('cell', { name: 'Ready', exact: true })).toBeVisible();
   await expect(preview.getByRole('checkbox').first()).toBeChecked();
   await expect(preview.locator('pre code.language-python')).toHaveText('print("hello")\n');
@@ -134,10 +169,17 @@ try {
   await expect(page.locator('.tab-drag-preview')).toHaveCount(0);
   await expect(right.getByRole('heading', { name: 'Local guide', exact: true })).toBeVisible();
   await expect(right.getByRole('img', { name: 'Mermaid diagram', exact: true })).toBeVisible();
+  await main.getByRole('tab', { name: 'README.md', exact: true }).click();
+  const mainScroll = await preview.evaluate((element) => element.scrollTop);
+  const rightOutline = right.getByRole('navigation', { name: 'Document outline', exact: true });
+  await rightOutline.getByRole('button').focus();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await expect(right.getByRole('heading', { name: 'Guide section', exact: true })).toBeFocused();
+  assert.equal(await preview.evaluate((element) => element.scrollTop), mainScroll);
   await right.getByRole('button', { name: 'Toggle Markdown preview', exact: true }).click();
   await expect(right.locator('.editor-host')).toBeVisible();
   await right.getByRole('button', { name: 'Toggle Markdown preview', exact: true }).click();
-  await main.getByRole('tab', { name: 'README.md', exact: true }).click();
   await expect(preview.locator('strong')).toHaveText(['Current buffer', 'Edited again']);
 
   await page.getByRole('button', { name: 'New worktree', exact: true }).first().click();
@@ -173,6 +215,9 @@ try {
     restored.getByRole('heading', { name: 'Refreshed preview', exact: true }),
   ).toBeVisible();
   await expect(restored.getByRole('img')).toHaveCount(0);
+  await expect(
+    restored.getByRole('navigation', { name: 'Document outline', exact: true }),
+  ).toHaveCount(0);
   await restored.getByRole('button', { name: 'Toggle Markdown preview', exact: true }).click();
   await expect(restored.locator('.editor-host')).toBeVisible();
   assert.deepEqual(fixture.errors, []);
