@@ -534,6 +534,7 @@ try {
     .getByRole('menuitem', { name: /main\.py\s*:/ })
     .first()
     .click();
+  await page.keyboard.press('Meta+Shift+P');
   await page.getByRole('button', { name: 'New terminal', exact: true }).click();
   await page.getByRole('textbox', { name: 'Terminal input' }).focus();
   await page.keyboard.insertText(

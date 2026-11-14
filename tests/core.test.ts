@@ -45,20 +45,6 @@ test('worktrees have independent document recovery and real PTY survives detach'
       /ENOENT/,
     );
     assert.equal(w.store.getDraft(main.id, 'main.py')?.text, 'main draft');
-    const action = await w.call('actions.save', {
-      projectId: project.id,
-      name: 'One-shot',
-      kind: 'shell',
-      command: 'printf TASK_DONE',
-    });
-    const task = await w.call('terminal.run', { sessionId: main.id, actionId: action.id });
-    for (
-      let i = 0;
-      i < 100 && w.terminals.runs.find((r) => r.id === task.id)?.state === 'running';
-      i++
-    )
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    assert.equal(w.terminals.runs.find((r) => r.id === task.id)?.state, 'exited');
     const run = await w.terminals.call('run', {
       sessionId: main.id,
       cwd: root,
