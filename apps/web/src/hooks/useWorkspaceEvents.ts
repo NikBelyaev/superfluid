@@ -22,6 +22,7 @@ export function useWorkspaceEvents() {
           ].slice(-128),
         }));
       else if (e.type === 'runs') useApp.setState({ runs: e.runs });
+      else if (e.type === 'servers') useApp.setState({ servers: e.servers });
       else if (e.type === 'project')
         useApp.setState((app) => ({
           projects: app.projects.map((project) =>

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { surfaceKey, type Surface, type TabGroup, type TabCloseScope } from '~/state/workspaceView';
 import { useApp } from '~/state/workspaceStore';
+import { desktop } from '~/rpc/desktop';
 import { tabDragId } from './tabDrag';
 
 export const surfaceIcons = {
@@ -47,6 +48,9 @@ export function WorkspaceTab({
 }) {
   const key = surfaceKey(tab);
   const menu = useApp((state) => state.surfaceMenu);
+  const terminal = useApp((state) =>
+    tab.kind === 'terminal' ? state.runs.find((run) => run.id === tab.id) : undefined,
+  );
   const open =
     menu?.sessionId === sessionId &&
     menu.group === group &&
@@ -83,6 +87,29 @@ export function WorkspaceTab({
       <ContextMenu.Portal>
         <ContextMenu.Positioner className="menu-positioner">
           <ContextMenu.Popup className="small-menu tab-context-menu" aria-label="Tab actions">
+            {tab.kind === 'terminal' && (
+              <>
+                <ContextMenu.Item
+                  onClick={() =>
+                    useApp.setState({
+                      modal: { kind: 'terminal-name', id: tab.id, name: terminal?.name ?? label },
+                    })
+                  }
+                >
+                  Rename terminal
+                </ContextMenu.Item>
+                <ContextMenu.Item
+                  disabled={terminal?.state !== 'running'}
+                  onClick={() =>
+                    void desktop
+                      .call('terminal.command', { id: tab.id, command: 'stop' })
+                      .catch(useApp.getState().fail)
+                  }
+                >
+                  Stop terminal
+                </ContextMenu.Item>
+              </>
+            )}
             <ContextMenu.Item onClick={() => close('this')}>Close</ContextMenu.Item>
             <ContextMenu.Item disabled={count < 2} onClick={() => close('others')}>
               Close others

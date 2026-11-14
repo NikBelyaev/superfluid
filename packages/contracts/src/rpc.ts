@@ -4,7 +4,13 @@ import { projectRequests, type ProjectResults, type Project } from './project';
 import { filesRequests, type FileResults } from './files';
 import { searchRequests, type SearchResults } from './search';
 import { vcsRequests, type VcsResults, type Operation } from './vcs';
-import { terminalRequests, type TerminalResults, type Action, type Run } from './terminal';
+import {
+  terminalRequests,
+  type TerminalResults,
+  type Action,
+  type Run,
+  type TerminalServer,
+} from './terminal';
 import { pythonRequests, type PythonResults } from './python';
 import { pullRequestRequests, type PullRequestResults } from './pullRequest';
 import {
@@ -48,6 +54,7 @@ export interface Results
     projects: Project[];
     actions: Action[];
     runs: Run[];
+    servers: TerminalServer[];
     operations: Operation[];
     codex: CodexIntegration;
     codexAgents: CodexAgent[];

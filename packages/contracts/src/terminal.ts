@@ -37,6 +37,15 @@ export interface Run {
   previewUrl?: string;
 }
 
+export interface TerminalServer {
+  sessionId: string;
+  terminalId: string;
+  pid: number;
+  port: number;
+  name: string;
+  url: string;
+}
+
 export type TerminalFrame = {
   id: string;
   sequence: number;
@@ -50,6 +59,12 @@ export type TerminalFrame = {
 export const terminalRequests = {
   'actions.save': actionSchema,
   'actions.delete': z.object({ id }),
+  'terminal.server.stop': z.object({
+    sessionId: id,
+    terminalId: id,
+    pid: z.int().positive(),
+    port: z.int().min(1).max(65535),
+  }),
   'terminal.run': z.object({
     sessionId: id,
     actionId: id.optional(),
@@ -79,6 +94,7 @@ export const terminalRequests = {
 export interface TerminalResults {
   'actions.save': Action;
   'actions.delete': null;
+  'terminal.server.stop': null;
   'terminal.run': Run;
   'terminal.command': any;
 }

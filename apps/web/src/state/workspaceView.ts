@@ -56,6 +56,7 @@ export interface ViewState {
   layoutVersion: 1;
   repositoryIds?: string[];
   islandCollapsed?: boolean;
+  projectActionId?: string;
   searchFilters?: z.infer<typeof searchFiltersSchema>;
   tabs: Surface[];
   active: Surface | null;
@@ -230,6 +231,7 @@ export function restoreView(source: object, runIds = new Set<string>()): ViewSta
       ? saved.repositoryIds.filter((id) => typeof id === 'string')
       : undefined,
     searchFilters: searchFilters.success ? searchFilters.data : undefined,
+    projectActionId: typeof saved.projectActionId === 'string' ? saved.projectActionId : undefined,
   } as ViewState;
   if (saved.surface != null && !view.surface) view.surface = view.rightTabs.at(-1) ?? null;
   if (saved.layoutVersion !== 1) {

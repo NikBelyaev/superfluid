@@ -1,5 +1,5 @@
 import { Worker } from 'node:worker_threads';
-import type { AppEvent, Run } from '@superfluid/contracts';
+import type { AppEvent, Run, TerminalServer } from '@superfluid/contracts';
 
 export class TerminalManager {
   private worker: Worker;
@@ -10,6 +10,7 @@ export class TerminalManager {
     { resolve: (v: any) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
   >();
   runs: Run[] = [];
+  servers: TerminalServer[] = [];
   constructor(
     notify: (event: AppEvent) => void,
     workerPath = new URL('./terminal-worker.mjs', import.meta.url),
@@ -18,6 +19,7 @@ export class TerminalManager {
     this.worker.on('message', (message) => {
       if (message.event) {
         if (message.event.type === 'runs') this.runs = message.event.runs;
+        if (message.event.type === 'servers') this.servers = message.event.servers;
         notify(message.event);
         return;
       }
@@ -47,10 +49,13 @@ export class TerminalManager {
       return Promise.reject(new Error('Terminal command queue is full.'));
     const id = ++this.serial;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error('Terminal engine did not respond.'));
-      }, 10000);
+      const timer = setTimeout(
+        () => {
+          this.pending.delete(id);
+          reject(new Error('Terminal engine did not respond.'));
+        },
+        method === 'stopServer' ? 30000 : 10000,
+      );
       this.pending.set(id, { resolve, reject, timer });
       this.worker.postMessage({ id, method, input });
     });
