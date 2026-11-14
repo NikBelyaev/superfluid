@@ -5,6 +5,7 @@ import { GhosttyTerminalCore } from '@superfluid/ghostty/core';
 import { command } from '../process/ProcessRunner';
 import type { Run, TerminalFrame } from '@superfluid/contracts';
 import { terminalThemeSchema } from '@superfluid/contracts';
+import { TerminalServers } from './TerminalServers';
 
 const port = parentPort!;
 
@@ -33,8 +34,21 @@ const terminals = new Map<string, Entry>();
 let attached: string | null = null;
 
 const event = (value: unknown) => port.postMessage({ event: value });
+const servers = new TerminalServers(
+  () =>
+    [...terminals.values()]
+      .filter((t) => t.run.state === 'running')
+      .map((t) => ({
+        terminalId: t.run.id,
+        sessionId: t.run.sessionId,
+        pid: t.pty.pid,
+        previewUrl: t.run.previewUrl,
+      })),
+  event,
+);
 
-const runs = () => event({ type: 'runs', runs: [...terminals.values()].map((t) => t.run) });
+const listedRuns = () => [...terminals.values()].map((t) => t.run);
+const runs = () => event({ type: 'runs', runs: listedRuns() });
 
 async function descendants(pid: number) {
   const table = await command('ps', ['-axo', 'pid=,ppid='], {
@@ -190,10 +204,14 @@ async function handle(method: string, input: any) {
     });
     if (input.shellCommand) pty.write(input.shellCommand + '\r');
     runs();
+    servers.start();
     return run;
   }
-  if (method === 'list') return [...terminals.values()].map((t) => t.run);
+  if (method === 'servers') return (await servers.refresh()).servers;
+  if (method === 'stopServer') return servers.stop(input);
+  if (method === 'list') return listedRuns();
   if (method === 'shutdown') {
+    await servers.close();
     for (const t of terminals.values()) await stop(t);
     await new Promise((r) => setTimeout(r, 1900));
     for (const t of terminals.values()) {

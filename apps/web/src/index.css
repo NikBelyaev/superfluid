@@ -9,7 +9,7 @@
   --right-width: 520px;
   --island-width: 280px;
   --editor-min-width: calc(var(--island-width) + 40px);
-  --workspace-controls-width: 72px;
+  --workspace-controls-width: 64px;
 }
 body {
   font-size: var(--text-sm);
@@ -469,7 +469,7 @@ kbd {
   gap: 4px;
   flex: none;
 }
-.workspace-controls .icon-button[aria-pressed='true'] {
+.tab-tools .icon-button[aria-pressed='true'] {
   color: var(--foreground);
   background: var(--accent);
 }
@@ -771,12 +771,17 @@ kbd {
   padding: 0 6px;
   gap: 2px;
 }
+.workspace-body:not(:has(.right-group)) .editor-header > .tab-tools,
+.right-group .surface-header > .tab-tools {
+  padding-right: 2px;
+}
 .workspace-controls {
   position: absolute;
   top: 0;
   right: 0;
   height: 40px;
   width: var(--workspace-controls-width);
+  padding-left: 0;
   z-index: 25;
   background: var(--background);
 }
@@ -1058,7 +1063,10 @@ kbd {
   font-weight: 500;
 }
 .island-row:hover {
-  background: rgb(0 0 0 / 3.5%);
+  background: var(--accent);
+  color: var(--foreground);
+}
+.island-row:hover > svg {
   color: var(--foreground);
 }
 .island-row:hover small {
@@ -2199,7 +2207,7 @@ kbd {
 }
 .split-action:hover,
 .split-action:has([data-popup-open]) {
-  background: rgb(0 0 0 / 3.5%);
+  background: var(--accent);
 }
 .split-menu-trigger {
   display: flex;
@@ -2220,6 +2228,12 @@ kbd {
   bottom: 8px;
   width: 1px;
   background: transparent;
+}
+.split-action > .island-row:hover,
+.split-menu-trigger:hover,
+.split-menu-trigger[data-popup-open] {
+  background: color-mix(in srgb, var(--foreground) 8%, var(--accent));
+  color: var(--foreground);
 }
 .split-action:hover .split-menu-trigger::before,
 .split-menu-trigger[data-popup-open]::before {

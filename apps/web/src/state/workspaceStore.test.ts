@@ -10,6 +10,7 @@ import {
   tabsToClose,
 } from './workspaceView';
 import { flushLayouts, showSurface, useApp } from './workspaceStore';
+import { repositorySummary } from './repositories';
 import type { GitStatus, Session } from '@superfluid/contracts';
 import { session } from '../../../../tests/fixtures';
 
@@ -197,6 +198,30 @@ test('refreshing selected repositories preserves freshly discovered sibling bran
   }
 });
 
+test('Git refresh skips status and change summaries when no repositories were found', async () => {
+  const before = useApp.getState();
+  const refresh = mock.fn(async () => {});
+  try {
+    useApp.setState({
+      repositories: { session: [] },
+      git: {
+        session: repositorySummary(
+          [{ id: 'removed-repository', path: '', branch: 'main' }],
+          {},
+          [],
+        ),
+      },
+      views: { session: { ...emptyView(), repositoryIds: ['removed-repository'] } },
+      refreshRepositoryGit: refresh,
+    });
+    await useApp.getState().refreshGit('session');
+    assert.equal(refresh.mock.callCount(), 0);
+    assert.equal(useApp.getState().git.session, undefined);
+  } finally {
+    useApp.setState(before, true);
+  }
+});
+
 test('closing hundreds of worktree layouts does not flood the IPC queue', async () => {
   const original = (globalThis as any).window;
   let active = 0,
@@ -293,13 +318,16 @@ test('a hidden right panel restores its selected tab without opening itself', ()
     diff = { kind: 'diff' } as const;
   const view = restoreView({
     ...emptyView(),
+    projectActionId: 'test-action',
     surface: files,
     rightTabs: [files, diff],
     rightPanelOpen: false,
   });
   assert.equal(view.rightPanelOpen, false);
+  assert.equal(view.projectActionId, 'test-action');
   assert.deepEqual(view.surface, files);
   assert.deepEqual(restoreView(JSON.parse(JSON.stringify(view))), view);
+  assert.equal(restoreView({ projectActionId: 42 }).projectActionId, undefined);
 });
 
 test('surfaces stay in their worktree and Files is a single tree tab alongside terminals', async () => {

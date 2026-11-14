@@ -106,8 +106,10 @@ test('batch actions skip clean siblings and restoration requires a clean destina
   ]);
   assert.ok(gitActionProblem('stash-apply', [repository, sibling], statuses));
   assert.equal(gitActionProblem('stash-apply', [sibling], statuses), '');
-  assert.match(
-    gitActionProblem('push', [repository], { core: { ...clean, push: { ahead: 1, behind: 1 } } }),
-    /Pull/,
+  const behind = { ...clean, push: { ahead: 1, behind: 1 } };
+  assert.match(gitActionProblem('push', [repository], { core: behind }), /Pull/);
+  assert.equal(
+    gitActionProblem('push', [repository], { core: { ...behind, files: dirty.files } }),
+    gitActionProblem('push', [repository], { core: behind }),
   );
 });

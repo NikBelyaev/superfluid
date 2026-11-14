@@ -49,10 +49,6 @@ export class ProjectActionService {
       ];
       shellCommand = '';
     }
-    if (shellCommand) {
-      args = ['-l', '-c', shellCommand];
-      shellCommand = '';
-    }
     return await this.terminals.call('run', {
       sessionId: session.id,
       cwd,

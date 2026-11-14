@@ -63,6 +63,26 @@ export function SourceControlSection({ session }: { session: Session }) {
   const repositoryIds = useApp((s) => s.views[session.id]?.repositoryIds);
   const repositories = useApp((s) => s.repositories[session.id]);
   const statuses = useApp((s) => s.repositoryGit[session.id]);
+  const actionAnchor = useRef<HTMLDivElement>(null);
+  const worktree = useApp((s) => s.repositoryWorktrees[session.id]);
+  if (!repositories?.length)
+    return (
+      <div className="island-section">
+        <button
+          className="island-row"
+          disabled={!repositories}
+          onClick={() =>
+            void desktop
+              .call('git.init', { sessionId: session.id })
+              .then(() => useApp.getState().refreshRepositories(session.id, true))
+              .catch(useApp.getState().fail)
+          }
+        >
+          <GitBranch size={14} />
+          <span>{repositories ? 'Initialize Git' : 'Finding repositories…'}</span>
+        </button>
+      </div>
+    );
   const selected = selectedRepositories(repositories || [], repositoryIds);
   const committing = hasRepositoryChanges(selected, statuses);
   const sessionOperations = operations.filter((op) => op.sessionId === session.id);
@@ -98,8 +118,6 @@ export function SourceControlSection({ session }: { session: Session }) {
             : 'Push & PR';
   const providers = new Set(selected.map((r) => r.provider));
   const provider = providers.size === 1 ? selected[0]?.provider : undefined;
-  const actionAnchor = useRef<HTMLDivElement>(null);
-  const worktree = useApp((s) => s.repositoryWorktrees[session.id]);
   const running = batch?.phase === 'running' || !!worktree;
   const failures = batch?.entries.filter((e) => e.error) || [];
   const warnings =
@@ -178,23 +196,7 @@ export function SourceControlSection({ session }: { session: Session }) {
     );
   return (
     <div className="island-section">
-      {repositories?.length ? (
-        <RepositoryMenu session={session} />
-      ) : (
-        <button
-          className="island-row"
-          disabled={!repositories}
-          onClick={() =>
-            void desktop
-              .call('git.init', { sessionId: session.id })
-              .then(() => useApp.getState().refreshRepositories(session.id, true))
-              .catch(useApp.getState().fail)
-          }
-        >
-          <GitBranch size={14} />
-          <span>{repositories ? 'Initialize Git' : 'Finding repositories…'}</span>
-        </button>
-      )}
+      <RepositoryMenu session={session} />
       <IslandRequests session={session} />
       <div className="split-action" ref={actionAnchor}>
         <Tooltip variant="card" side="left" content={feedback}>

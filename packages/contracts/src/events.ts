@@ -1,4 +1,4 @@
-import type { Run, TerminalFrame } from './terminal';
+import type { Run, TerminalFrame, TerminalServer } from './terminal';
 import type { Operation } from './vcs';
 import type { Project } from './project';
 import type { PullRequestRef } from './pullRequest';
@@ -15,6 +15,7 @@ export type AppEvent =
   | { type: 'pr.changed'; sessionId: string; ref: PullRequestRef }
   | { type: 'terminal.frame'; frame: TerminalFrame }
   | { type: 'runs'; runs: Run[] }
+  | { type: 'servers'; servers: TerminalServer[] }
   | { type: 'operation'; operation: Operation }
   | { type: 'files.changed'; sessionId: string }
   | {

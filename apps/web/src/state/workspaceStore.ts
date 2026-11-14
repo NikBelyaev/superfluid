@@ -7,6 +7,7 @@ import type {
   Operation,
   Project,
   Run,
+  TerminalServer,
   Session,
   CodexAgent,
   CodexIntegration,
@@ -46,6 +47,7 @@ interface State {
   views: Record<string, ViewState>;
   actions: Action[];
   runs: Run[];
+  servers: TerminalServer[];
   operations: Operation[];
   codex: CodexIntegration | null;
   codexAgents: CodexAgent[];
@@ -103,6 +105,7 @@ export const useApp = create<State>((set, get) => ({
   views: {},
   actions: [],
   runs: [],
+  servers: [],
   operations: [],
   codex: null,
   codexAgents: [],
@@ -447,6 +450,14 @@ export const useApp = create<State>((set, get) => ({
     if (!id) return;
     try {
       if (!get().repositories[id]) return await get().refreshRepositories(id);
+      if (!get().repositories[id].length) {
+        if (get().git[id]) {
+          const git = { ...get().git };
+          delete git[id];
+          set({ git });
+        }
+        return;
+      }
       const view = get().views[id];
       const paths = view
         ? [

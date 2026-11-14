@@ -58,6 +58,7 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
       projects: store.all<Project>('projects').sort((a, b) => b.lastOpened - a.lastOpened),
       actions: store.all<Action>('actions'),
       runs: terminals.runs,
+      servers: terminals.servers,
       operations: store.all<Operation>('operations'),
       codex: await workspace.codex.status(),
       codexAgents: workspace.codex.list(),
@@ -124,6 +125,10 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     'actions.delete': (input) => actions.delete(input.id),
     'terminal.run': (input) => actions.run(session(input.sessionId), input),
     'terminal.command': (input) => terminals.call('command', input),
+    'terminal.server.stop': (input) => {
+      session(input.sessionId);
+      return terminals.call('stopServer', input);
+    },
     'lsp.open': (input) => python.open(session(input.sessionId), input),
     'lsp.close': (input) => python.closeDocument(session(input.sessionId), input.path),
     'lsp.cancel': (input) => python.cancel(session(input.sessionId), input.requestId),

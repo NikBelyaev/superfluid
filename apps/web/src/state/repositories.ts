@@ -106,10 +106,10 @@ export function gitActionProblem(
       ? 'Create or select a named branch first.'
       : '';
   }
+  if (values.some((status) => (status.push?.behind || 0) > 0))
+    return 'One or more selected repositories are behind their remote branches. Pull or rebase before pushing.';
   if ((action === 'push' || action === 'pr') && dirty)
     return `Commit or stash local changes before ${action === 'push' ? 'pushing' : 'creating a pull request'}.`;
-  if (values.some((status) => (status.push?.behind || 0) > 0))
-    return 'Pull or rebase upstream changes first.';
   if (action === 'pr' && values.some((status) => (status.push?.ahead || 0) > 0))
     return 'Push local commits before creating a pull request.';
   if (!targets.length) {

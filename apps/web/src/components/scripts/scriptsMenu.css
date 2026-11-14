@@ -1,0 +1,37 @@
+.project-action-positioner {
+  width: var(--anchor-width);
+  max-width: calc(100vw - 24px);
+}
+.small-menu.project-action-menu {
+  width: 100%;
+}
+.project-action-menu-row {
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+}
+.project-action-menu-row:hover,
+.project-action-menu-row:has([data-highlighted]) {
+  background: var(--accent);
+}
+.project-action-menu .project-action-choice {
+  flex: 1;
+  min-width: 0;
+}
+.project-action-choice > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-action-menu .project-action-edit {
+  width: 28px;
+  flex: none;
+  justify-content: center;
+  padding: 0;
+  opacity: 0;
+}
+.project-action-menu-row:hover .project-action-edit,
+.project-action-menu-row:focus-within .project-action-edit,
+.project-action-menu-row:has([data-highlighted]) .project-action-edit {
+  opacity: 1;
+}
