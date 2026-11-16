@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Combobox } from '@base-ui/react/combobox';
-import { Check, ChevronDown, GitBranch, Layers2 } from 'lucide-react';
+import { Check, ChevronDown, GitBranch, Layers2, Plus } from 'lucide-react';
 
 function RepositoryBranchGroups({
   groups,
@@ -62,6 +62,7 @@ export function RepositoryBranchPicker({
   prefix,
   onChange,
   onOpen,
+  onCreate,
 }: {
   value: string;
   branches: string[];
@@ -70,27 +71,43 @@ export function RepositoryBranchPicker({
   prefix?: string;
   onChange: (value: string) => void;
   onOpen?: () => void;
+  onCreate?: (name: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const [collapsed, setCollapsed] = useState<string[]>([]);
+  const { contains } = Combobox.useFilter();
+  const createName =
+    onCreate && query.trim() && !branches.some((branch) => contains(branch, query.trim()))
+      ? query.trim()
+      : '';
   const groups = [
     { label: 'Local', items: branches.filter((b) => !b.startsWith('origin/')) },
     { label: 'Remote', items: branches.filter((b) => b.startsWith('origin/')) },
   ];
   return (
     <Combobox.Root
-      items={groups.filter((g) => !collapsed.includes(g.label)).flatMap((g) => g.items)}
+      items={
+        createName
+          ? [createName]
+          : groups.filter((g) => !collapsed.includes(g.label)).flatMap((g) => g.items)
+      }
       value={value || null}
+      filter={createName ? null : undefined}
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
         if (next) onOpen?.();
       }}
       onInputValueChange={(_value, details) => {
+        setQuery(_value);
         if (details.reason === 'input-change' || details.reason === 'input-clear') setCollapsed([]);
       }}
       onValueChange={(v) => {
-        if (v) onChange(v);
+        if (v) {
+          if (createName && v === createName) onCreate?.(v);
+          else onChange(v);
+        }
         setOpen(false);
       }}
     >
@@ -118,15 +135,23 @@ export function RepositoryBranchPicker({
               {collapsed.length ? null : 'No matching branches.'}
             </Combobox.Empty>
             <Combobox.List>
-              <RepositoryBranchGroups
-                groups={groups}
-                collapsed={collapsed}
-                onToggle={(label) =>
-                  setCollapsed((value) =>
-                    value.includes(label) ? value.filter((g) => g !== label) : [...value, label],
-                  )
-                }
-              />
+              {createName && (
+                <Combobox.Item className="repository-branch-option" value={createName}>
+                  <Plus size={14} />
+                  <span>Create branch “{createName}”</span>
+                </Combobox.Item>
+              )}
+              {!createName && (
+                <RepositoryBranchGroups
+                  groups={groups}
+                  collapsed={collapsed}
+                  onToggle={(label) =>
+                    setCollapsed((value) =>
+                      value.includes(label) ? value.filter((g) => g !== label) : [...value, label],
+                    )
+                  }
+                />
+              )}
             </Combobox.List>
           </Combobox.Popup>
         </Combobox.Positioner>

@@ -172,6 +172,13 @@ export function RepositoryGraph({
                   edit();
                 }}
                 onChange={selectExistingBranch}
+                onCreate={(name) => {
+                  setBranch(name);
+                  setDestination('');
+                  setWorktree(false);
+                  setAction('create-branch');
+                  edit();
+                }}
               />
             </div>
           </div>

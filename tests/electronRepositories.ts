@@ -137,7 +137,20 @@ try {
     await panel.getByRole('button', { name: 'Choose an action', exact: true }).isDisabled(),
     true,
   );
-  await panel.getByLabel('New branch name').fill('task/multi-repo');
+  await panel.getByLabel('Switch branch', { exact: true }).fill(' task/click ');
+  await page.getByRole('option', { name: 'Create branch “task/click”', exact: true }).click();
+  assert.equal(await panel.getByLabel('New branch name').inputValue(), 'task/click');
+  await panel.getByLabel('Switch branch', { exact: true }).fill('task/multi-repo');
+  await page.screenshot({ path: 'test-results/repository-switch-create-option.png' });
+  await page
+    .getByRole('option', { name: 'Create branch “task/multi-repo”', exact: true })
+    .waitFor();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  assert.equal(await panel.getByLabel('New branch name').inputValue(), 'task/multi-repo');
+  assert.equal(await panel.getByLabel('Switch branch', { exact: true }).inputValue(), '');
+  await page.screenshot({ path: 'test-results/repository-switch-create-selected.png' });
+  await panel.getByRole('button', { name: 'Creation options', exact: true }).click();
   await page.screenshot({ path: 'test-results/repository-creation-options.png' });
   await page.getByRole('option', { name: 'Create branch task/multi-repo', exact: true }).click();
   await panel.getByRole('button', { name: 'Create & switch · 3', exact: true }).click();
