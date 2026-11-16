@@ -304,6 +304,10 @@ try {
   await expect(results()).toHaveCount(1);
   await page.keyboard.press('Enter');
   await expect(page.locator('.main-editor .view-lines')).toContainText('external-disk');
+  await expect(page.locator('.lineage [aria-current="location"]')).toHaveAttribute(
+    'title',
+    /models\.py:2$/,
+  );
   await page.locator('.main-editor .editor-host').click();
   await page.keyboard.press('Meta+a');
   await page.keyboard.insertText('class RecoveredInventory:\n    sku = "buffer-only"\n');

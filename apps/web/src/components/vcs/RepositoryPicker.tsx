@@ -127,8 +127,8 @@ export function RepositoryPicker({ session, disabled }: { session: Session; disa
                   className="w-0 min-w-0 flex-1 border-0 bg-transparent p-0 leading-5 focus-visible:outline-none [font-size:var(--text-detail)]"
                   ref={search}
                   type="search"
-                  aria-label="Find repository"
-                  placeholder="Search…"
+                  aria-label="Find repository or branch"
+                  placeholder="Search repositories or branches…"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                 />

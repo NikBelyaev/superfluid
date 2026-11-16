@@ -67,15 +67,15 @@ try {
   await chips.click();
   await repositories.waitFor({ state: 'hidden' });
   await chips.click();
-  await repositories.getByLabel('Find repository').fill('framework');
+  await repositories.getByLabel('Find repository or branch').fill('framework');
   assert.equal(await repositories.getByRole('checkbox').count(), 1);
   assert.equal(await repositories.getByRole('separator').count(), 0);
   await repositories.getByRole('checkbox', { name: 'Select apps/framework', exact: true }).click();
-  await repositories.getByLabel('Find repository').fill('web-backend');
+  await repositories.getByLabel('Find repository or branch').fill('web-backend');
   await repositories
     .getByRole('checkbox', { name: 'Select apps/web-backend', exact: true })
     .click();
-  await repositories.getByLabel('Find repository').fill('');
+  await repositories.getByLabel('Find repository or branch').fill('');
   assert.deepEqual(
     await repositories
       .getByRole('checkbox')
