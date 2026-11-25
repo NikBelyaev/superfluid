@@ -9,6 +9,7 @@ import { LanguageServers } from '../python/LanguageServers';
 import { GitService } from './GitService';
 import { SourceControlService } from './SourceControlService';
 import { git } from './gitCommand';
+import { gitHistory } from './gitHistory';
 import { HostingService } from '../hosting/HostingService';
 import { SourceControlDiscovery } from '../hosting/SourceControlDiscovery';
 import { PullRequestService } from '../pullRequest/PullRequestService';
@@ -50,6 +51,142 @@ async function fixture(wrapped = true) {
     );
   return { root, first, second, s, store, service, projects, repos, firstId, secondId, act };
 }
+
+test('Git history resolves repository, merge parents, tags, and detached HEAD per worktree', async () => {
+  const f = await fixture(false);
+  try {
+    await git(f.first, ['switch', '-c', 'topic,one']);
+    await git(f.first, ['commit', '--allow-empty', '-m', 'Сохранить | историю']);
+    const topic = (await git(f.first, ['rev-parse', 'HEAD'])).trim();
+    await git(f.first, ['tag', '-a', 'v1,stable', '-m', 'Release']);
+    await git(f.first, ['update-ref', 'refs/remotes/origin/topic,one', topic]);
+    await git(f.first, [
+      'symbolic-ref',
+      'refs/remotes/origin/HEAD',
+      'refs/remotes/origin/topic,one',
+    ]);
+    await git(f.first, ['switch', 'main']);
+    await git(f.first, ['commit', '--allow-empty', '-m', 'Main step']);
+    const main = (await git(f.first, ['rev-parse', 'HEAD'])).trim();
+    await git(f.first, ['merge', '--no-ff', '-m', 'Merge topic', 'topic,one']);
+
+    const history = (repositoryId: string) =>
+      f.service.history(f.s, { sessionId: f.s.id, repositoryId });
+    const { commits, next } = await history(f.firstId);
+    assert.equal(next, null);
+    assert.equal(commits[0].subject, 'Merge topic');
+    assert.deepEqual(commits[0].parents, [main, topic]);
+    assert.deepEqual(commits[0].refs, [
+      { name: 'HEAD', kind: 'head' },
+      { name: 'main', kind: 'branch' },
+    ]);
+    assert.deepEqual(commits.find((commit) => commit.hash === topic)?.refs, [
+      { name: 'topic,one', kind: 'branch' },
+      { name: 'origin/topic,one', kind: 'remote' },
+      { name: 'v1,stable', kind: 'tag' },
+    ]);
+    assert.equal(commits.find((commit) => commit.hash === topic)?.subject, 'Сохранить | историю');
+    assert.deepEqual(
+      (await history(f.secondId)).commits.map((commit) => commit.subject),
+      ['Initial'],
+    );
+    await assert.rejects(() => history('outside'), /belong/);
+
+    const linked = join(await temp(), 'linked');
+    await git(f.first, ['worktree', 'add', '--detach', linked, topic]);
+    await git(linked, ['commit', '--allow-empty', '-m', 'Detached commit']);
+    const linkedSession = { ...session(linked), id: 'linked' };
+    const [linkedRepository] = await f.service.repositories.list(linkedSession);
+    const linkedHistory = await f.service.history(linkedSession, {
+      sessionId: linkedSession.id,
+      repositoryId: linkedRepository.id,
+    });
+    assert.equal(
+      linkedHistory.commits.find((commit) => commit.refs.some((ref) => ref.kind === 'head'))
+        ?.subject,
+      'Detached commit',
+    );
+    assert.ok(
+      !(await history(f.firstId)).commits.some((commit) => commit.subject === 'Detached commit'),
+    );
+  } finally {
+    f.store.close();
+  }
+});
+
+test('Git history paginates without gaps and rejects cursors after refs change', async () => {
+  const path = await temp();
+  await git(path, ['init', '-b', 'main']);
+  assert.deepEqual(await gitHistory(path), { commits: [], next: null });
+  const subjects = Array.from({ length: 101 }, (_, index) => `Commit ${index}`);
+  await git(path, ['fast-import', '--quiet'], {
+    input: subjects
+      .map((subject, index) => {
+        const message = index === 0 ? `${subject}\n\nOld migration [literal].*` : subject;
+        return `commit refs/heads/main\ncommitter Test <test@example.test> 1700000000 +0000\ndata ${Buffer.byteLength(message)}\n${message}\n\n`;
+      })
+      .join(''),
+  });
+  const first = await gitHistory(path);
+  assert.equal(first.commits.length, 100);
+  assert.ok(first.next);
+  const last = await gitHistory(path, { cursor: first.next });
+  assert.equal(last.next, null);
+  assert.deepEqual(
+    [...first.commits, ...last.commits].map((commit) => commit.subject),
+    subjects.toReversed(),
+  );
+  assert.equal(first.commits.at(-1)?.parents[0], last.commits[0].hash);
+  const match = await gitHistory(path, { query: '[LITERAL].*' });
+  assert.deepEqual(
+    match.commits.map((commit) => commit.subject),
+    ['Commit 0'],
+  );
+  assert.equal(match.next, null);
+  const search = await gitHistory(path, { query: 'cOMMit' });
+  const cursor = search.next;
+  assert.ok(cursor);
+  assert.equal(search.commits.length, 100);
+  assert.deepEqual(
+    (await gitHistory(path, { query: 'cOMMit', cursor })).commits.map((commit) => commit.subject),
+    ['Commit 0'],
+  );
+  await assert.rejects(() => gitHistory(path, { query: 'other', cursor }), /Git history changed/);
+  await git(path, ['branch', 'another']);
+  await assert.rejects(() => gitHistory(path, { cursor: first.next! }), /Git history changed/);
+});
+
+test('commit statistics and patches include root files, renames and first-parent changes', async () => {
+  const f = await fixture(false);
+  try {
+    const commit = async () => ({
+      sessionId: f.s.id,
+      repositoryId: f.firstId,
+      hash: (await git(f.first, ['rev-parse', 'HEAD'])).trim(),
+    });
+    const stats = async () => f.service.historyStats(f.s, await commit());
+    const patch = async () => f.service.historyPatch(f.s, await commit());
+    assert.deepEqual(await stats(), { insertions: 1, deletions: 0, files: 1 });
+    assert.match(await patch(), /diff --git a\/main\.py b\/main\.py/);
+    await git(f.first, ['switch', '-c', 'changes']);
+    await git(f.first, ['mv', 'main.py', 'renamed.py']);
+    await writeFile(join(f.first, 'data.bin'), Buffer.from([0, 1, 2]));
+    await git(f.first, ['add', 'data.bin']);
+    await git(f.first, ['commit', '-m', 'Rename and add binary']);
+    assert.deepEqual(await stats(), { insertions: 0, deletions: 0, files: 2 });
+    await git(f.first, ['switch', 'main']);
+    await writeFile(join(f.first, 'other.txt'), 'main only\n');
+    await git(f.first, ['add', 'other.txt']);
+    await git(f.first, ['commit', '-m', 'Advance main']);
+    await git(f.first, ['merge', '--no-ff', '-m', 'Merge changes', 'changes']);
+    assert.deepEqual(await stats(), { insertions: 0, deletions: 0, files: 2 });
+    const mergePatch = await patch();
+    assert.match(mergePatch, /rename from main\.py\nrename to renamed\.py/);
+    assert.doesNotMatch(mergePatch, /other\.txt/);
+  } finally {
+    f.store.close();
+  }
+});
 
 for (const wrapped of [true, false]) {
   test(`repository worktrees preserve sources and reopen as one context (${wrapped ? 'Git wrapper' : 'plain folder'})`, async () => {

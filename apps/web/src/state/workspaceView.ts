@@ -1,16 +1,27 @@
 import type { editor } from 'monaco-editor/editor/editor.api';
 import { z } from 'zod';
-import { pullRequestRefSchema, searchTypes, type Input } from '@superfluid/contracts';
+import {
+  gitHistoryCommitTarget,
+  pullRequestRefSchema,
+  searchTypes,
+  type Input,
+} from '@superfluid/contracts';
 import { fileTabKey, surfacePaths, mapSurfaceFiles, restoreFileSurface } from './fileChains';
 
 export const surfaceSchema = z
   .discriminatedUnion('kind', [
     z.object({ kind: z.literal('files') }),
+    z.object({
+      kind: z.literal('git-history'),
+      repositoryId: z.string().optional(),
+      repositoryIds: z.array(z.string()).optional(),
+    }),
     z.object({ kind: z.literal('terminal'), id: z.string() }),
     z.object({
       kind: z.literal('diff'),
       path: z.string().optional(),
       mode: z.enum(['unstaged', 'staged', 'branch']).optional(),
+      commit: gitHistoryCommitTarget.optional(),
     }),
     z.object({
       kind: z.literal('pr'),
@@ -27,7 +38,12 @@ export const surfaceSchema = z
       chain: z.unknown().optional(),
     }),
   ])
-  .transform((surface) => (surface.kind === 'file' ? restoreFileSurface(surface) : surface));
+  .transform((surface) => {
+    if (surface.kind === 'file') return restoreFileSurface(surface);
+    if (surface.kind === 'git-history' && surface.repositoryId && !surface.repositoryIds)
+      return { ...surface, repositoryIds: [surface.repositoryId] };
+    return surface;
+  });
 export type Surface = z.infer<typeof surfaceSchema>;
 
 export interface Location {
@@ -97,10 +113,14 @@ export const surfaceKey = (s: Surface) =>
       : s.kind === 'file'
         ? fileTabKey(s)
         : s.kind === 'diff'
-          ? `diff:${s.path ?? ''}`
-          : s.kind === 'pr'
-            ? `pr:${s.repositoryId ?? ''}:${s.ref ? JSON.stringify(s.ref) : (s.number ?? '')}`
-            : `browser:${s.url}`;
+          ? s.commit
+            ? `diff:commit:${s.commit.repositoryId}:${s.commit.hash}`
+            : `diff:${s.path ?? ''}`
+          : s.kind === 'git-history'
+            ? 'git-history'
+            : s.kind === 'pr'
+              ? `pr:${s.repositoryId ?? ''}:${s.ref ? JSON.stringify(s.ref) : (s.number ?? '')}`
+              : `browser:${s.url}`;
 
 export type TabGroup = 'main' | 'right' | 'bottom';
 

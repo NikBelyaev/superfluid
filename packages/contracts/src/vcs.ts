@@ -17,6 +17,27 @@ export interface GitRepository {
   provider?: 'github' | 'gitlab';
 }
 
+export interface GitHistoryCommit {
+  hash: string;
+  parents: string[];
+  author: string;
+  date: string;
+  subject: string;
+  refs: { name: string; kind: 'head' | 'branch' | 'remote' | 'tag' }[];
+}
+
+const historyCursor = z.object({
+  offset: z.number().int().positive().max(2_147_483_646),
+  revision: z.string().regex(/^[0-9a-f]{64}$/),
+});
+
+export const gitHistoryCommitTarget = z.object({
+  repositoryId: id,
+  hash: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/),
+});
+export type GitHistoryCommitTarget = z.infer<typeof gitHistoryCommitTarget>;
+const historyCommitRequest = gitHistoryCommitTarget.extend({ sessionId: id });
+
 export interface GitStatus {
   branch: string;
   baseBranch?: string;
@@ -57,6 +78,19 @@ export const vcsRequests = {
   }),
   'git.repositories': z.object({ sessionId: id, refresh: z.boolean().default(false) }),
   'git.status': z.object({ sessionId: id, repositoryId: id.optional() }),
+  'git.history': z.object({
+    sessionId: id,
+    repositoryId: id,
+    cursor: historyCursor.optional(),
+    query: z
+      .string()
+      .trim()
+      .max(256)
+      .refine((value) => !value.includes('\0'))
+      .optional(),
+  }),
+  'git.historyStats': historyCommitRequest,
+  'git.historyPatch': historyCommitRequest,
   'git.init': z.object({ sessionId: id }),
   'git.index': z.object({ sessionId: id, repositoryId: id.optional(), path }),
   'git.diff': z.object({
@@ -103,6 +137,9 @@ export interface VcsResults {
   'git.worktree': Session;
   'git.repositories': GitRepository[];
   'git.status': GitStatus;
+  'git.history': { commits: GitHistoryCommit[]; next: z.infer<typeof historyCursor> | null };
+  'git.historyStats': { insertions: number; deletions: number; files: number };
+  'git.historyPatch': string;
   'git.init': Session[];
   'git.index': string | null;
   'git.diff': string;

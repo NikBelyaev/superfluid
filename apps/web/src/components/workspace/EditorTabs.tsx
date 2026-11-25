@@ -38,14 +38,18 @@ export function EditorTabs({ session, group = 'main' }: { session: Session; grou
         : tab.kind === 'terminal'
           ? (runs.find((run) => run.id === tab.id)?.name ?? 'Terminal')
           : tab.kind === 'diff'
-            ? 'Diff'
-            : tab.kind === 'browser'
-              ? 'Preview'
-              : tab.ref
-                ? `${tab.ref.provider === 'gitlab' ? '!' : '#'}${tab.ref.number}`
-                : tab.number
-                  ? '#' + tab.number
-                  : 'Requests';
+            ? tab.commit
+              ? 'Changes · ' + tab.commit.hash.slice(0, 8)
+              : 'Diff'
+            : tab.kind === 'git-history'
+              ? 'Git History'
+              : tab.kind === 'browser'
+                ? 'Preview'
+                : tab.ref
+                  ? `${tab.ref.provider === 'gitlab' ? '!' : '#'}${tab.ref.number}`
+                  : tab.number
+                    ? '#' + tab.number
+                    : 'Requests';
   return (
     <SortableContext
       items={tabs.map((tab) => tabDragId(group, surfaceKey(tab)))}

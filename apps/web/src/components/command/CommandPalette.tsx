@@ -73,6 +73,10 @@ function Commands({ session }: { session?: Session }) {
     { name: 'New terminal', run: () => session && void runAction(session) },
     { name: 'Show changes', run: () => showSurface({ kind: 'diff' }) },
     {
+      name: 'Open Git History',
+      run: () => session && showSurface({ kind: 'git-history' }, session.id, 'main'),
+    },
+    {
       name: 'Open pull / merge requests',
       run: () => session && showSurface({ kind: 'pr' }, session.id),
     },

@@ -597,13 +597,16 @@ export function showSurface(
   const { tabs } = tabGroup(view, group);
   const existing = tabs.find((tab) => surfaceKey(tab) === surfaceKey(surface));
   if (surface.kind === 'file' && existing?.kind === 'file') surface = { ...existing, ...surface };
+  if (surface.kind === 'git-history' && !surface.repositoryIds && existing?.kind === 'git-history')
+    surface = existing;
+  const updateTab = surface.kind === 'file' || surface.kind === 'git-history';
   a.setView(
     {
       ...setTabGroup(
         view,
         group,
         existing
-          ? tabs.map((tab) => (tab === existing && surface.kind === 'file' ? surface : tab))
+          ? tabs.map((tab) => (tab === existing && updateTab ? surface : tab))
           : [...tabs, surface],
         surface,
       ),
