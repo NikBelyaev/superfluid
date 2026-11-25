@@ -9,7 +9,31 @@ import { repository, temp } from './fixtures';
 const require = createRequire(import.meta.url);
 const project = await repository();
 const data = await temp();
-await writeFile(join(project, 'main.py'), 'def greet():\n    return "hello"\n');
+await writeFile(
+  join(project, 'main.py'),
+  `def greet(values, schema):
+    query = f"""
+        SELECT {", ".join(values)}
+        FROM {schema}.vist_underground_feederevent_tsdb
+        WHERE vehicle_id = %s AND time BETWEEN %s AND %s
+        ORDER BY time
+    """
+    return query
+
+def raw_query(values):
+    query = RF'''
+        SELECT {{literal}}, {values["id"]}, { {"key": "value"}["key"] }
+        FROM events
+    '''
+    return query
+
+def formatted_query(value, width):
+    query = f"""
+        SELECT {value:'>{width}}, {f"{value}"}
+    """
+    return query
+`,
+);
 const env = Object.fromEntries(
   Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
 );
@@ -36,6 +60,7 @@ try {
   await page.getByRole('button', { name: 'Open project files', exact: true }).click();
   await page.locator('[data-path="main.py"]').click();
   const keyword = page.locator('.view-line').first().locator('span[class^="mtk"]').first();
+  const returns = page.locator('.view-line').filter({ hasText: 'return query' });
   const choose = (name: string) =>
     page
       .locator('label')
@@ -65,6 +90,12 @@ try {
     );
     const before = await palette();
     await page.screenshot({ path: join(data, `${scheme}-monaco.png`) });
+    await expect(returns).toHaveCount(3);
+    for (const line of await returns.all())
+      await expect(line.locator('span[class^="mtk"]').filter({ hasText: 'return' })).toHaveCSS(
+        'color',
+        scheme === 'light' ? 'rgb(0, 0, 255)' : 'rgb(86, 156, 214)',
+      );
     await page.keyboard.press('Meta+,');
     await choose(`Darcula ${scheme}`);
     await page.getByRole('button', { name: 'Close settings' }).click();
