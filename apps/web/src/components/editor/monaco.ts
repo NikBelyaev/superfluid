@@ -34,10 +34,8 @@ import 'monaco-editor/editor/contrib/folding/browser/folding';
 
 import 'monaco-editor/editor/contrib/multicursor/browser/multicursor';
 
-import {
-  conf as pythonConfiguration,
-  language as pythonTokens,
-} from 'monaco-editor/languages/definitions/python/python';
+import { conf as pythonConfiguration } from 'monaco-editor/languages/definitions/python/python';
+import { pythonTokens } from './pythonTokens';
 
 import 'monaco-editor/languages/definitions/yaml/register';
 
