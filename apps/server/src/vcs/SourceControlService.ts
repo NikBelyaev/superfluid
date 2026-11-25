@@ -3,6 +3,7 @@ import { GitService } from './GitService';
 import { ProjectService } from '../project/ProjectService';
 import { Store } from '../persistence/Store';
 import { git } from './gitCommand';
+import { gitHistory, gitHistoryPatch, gitHistoryStats } from './gitHistory';
 import { within } from '../files/paths';
 import { assertNoDrafts } from '../files/drafts';
 import { relative } from 'node:path';
@@ -49,6 +50,18 @@ export class SourceControlService {
   async diff(session: Session, input: ParsedInput<'git.diff'>) {
     const { target, path } = await this.fileTarget(session, input);
     return this.git.diff(target, path, input.mode, input.base);
+  }
+  async history(session: Session, input: ParsedInput<'git.history'>) {
+    const target = await this.repositories.target(session, input.repositoryId);
+    return gitHistory(target.path, input);
+  }
+  async historyStats(session: Session, input: ParsedInput<'git.historyStats'>) {
+    const target = await this.repositories.target(session, input.repositoryId);
+    return gitHistoryStats(target.path, input.hash);
+  }
+  async historyPatch(session: Session, input: ParsedInput<'git.historyPatch'>) {
+    const target = await this.repositories.target(session, input.repositoryId);
+    return gitHistoryPatch(target.path, input.hash);
   }
   async index(session: Session, input: ParsedInput<'git.index'>) {
     const { target, path } = await this.fileTarget(session, input);

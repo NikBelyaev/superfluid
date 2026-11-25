@@ -1,10 +1,71 @@
 import { desktop } from '~/rpc/desktop';
 import { useEffect, useState } from 'react';
 import { ArrowUpRight, Check, Columns2, FileCode2, RefreshCw, Rows2 } from 'lucide-react';
-import type { Session } from '@superfluid/contracts';
+import type { GitHistoryCommitTarget, Session } from '@superfluid/contracts';
 import { useApp } from '~/state/workspaceStore';
 import { Patch } from './Patch';
 import { useFileDiff } from './useFileDiff';
+
+export function CommitDiff({
+  session,
+  commit: { repositoryId, hash },
+}: {
+  session: Session;
+  commit: GitHistoryCommitTarget;
+}) {
+  const repository = useApp((a) => a.repositories[session.id]?.find((r) => r.id === repositoryId));
+  const [split, setSplit] = useState(false);
+  const [result, setResult] = useState<{ patch: string } | { error: string }>();
+  useEffect(() => {
+    let cancelled = false;
+    void desktop.call('git.historyPatch', { sessionId: session.id, repositoryId, hash }).then(
+      (patch) => {
+        if (!cancelled) setResult({ patch });
+      },
+      (error) => {
+        if (!cancelled)
+          setResult({ error: error instanceof Error ? error.message : String(error) });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [session.id, repositoryId, hash]);
+  return (
+    <div className="surface-content">
+      <div className="surface-toolbar">
+        <span className="min-w-0 truncate">{repository?.path || 'Root repository'}</span>
+        <code className="shrink-0" title={hash}>
+          {hash.slice(0, 8)}
+        </code>
+        <div className="spacer" />
+        <button
+          type="button"
+          className="icon-button"
+          title="Toggle split diff"
+          onClick={() => setSplit(!split)}
+        >
+          {split ? <Rows2 size={14} /> : <Columns2 size={14} />}
+        </button>
+      </div>
+      {!result ? (
+        <div className="surface-empty" role="status">
+          Loading changes…
+        </div>
+      ) : 'error' in result ? (
+        <div className="surface-empty error-text" role="alert">
+          {result.error}
+        </div>
+      ) : result.patch ? (
+        <Patch patch={result.patch} split={split} />
+      ) : (
+        <div className="surface-empty" role="status">
+          No file changes in this commit.
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function Diff({
   session,

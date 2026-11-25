@@ -1,6 +1,7 @@
 import {
   Files,
   GitCompareArrows,
+  GitGraph,
   GitPullRequest,
   Globe,
   TerminalSquare,
@@ -48,6 +49,12 @@ export const surfaceActions = (session: Session, group: TabGroup) => [
     label: 'Diff',
     shortcut: 'D',
     run: () => showSurface({ kind: 'diff' }, session.id, group),
+  },
+  {
+    icon: GitGraph,
+    label: 'Git History',
+    shortcut: 'H',
+    run: () => showSurface({ kind: 'git-history' }, session.id, group),
   },
   {
     icon: GitPullRequest,

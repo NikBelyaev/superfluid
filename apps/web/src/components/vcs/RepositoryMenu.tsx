@@ -13,6 +13,7 @@ import './RepositoryMenu.css';
 export function RepositoryMenu({ session }: { session: Session }) {
   const menu = useApp((s) => s.repositoryMenu);
   const repositories = useApp((s) => s.repositories[session.id]);
+  const repositoryIds = useApp((s) => s.views[session.id]?.repositoryIds);
   const running = useApp(
     (s) => s.gitBatches[session.id]?.phase === 'running' || !!s.repositoryWorktrees[session.id],
   );
@@ -57,7 +58,16 @@ export function RepositoryMenu({ session }: { session: Session }) {
             {graph ? (
               <>
                 {(repositories?.length || 0) > 1 && (
-                  <RepositoryPicker session={session} disabled={running} />
+                  <RepositoryPicker
+                    session={session}
+                    disabled={running}
+                    ids={repositoryIds ?? []}
+                    onChange={(ids) => {
+                      const app = useApp.getState();
+                      app.setView({ repositoryIds: ids }, session.id);
+                      void app.refreshRepositoryGit(session.id, ids).catch(app.fail);
+                    }}
+                  />
                 )}
                 <RepositoryGraph
                   key={`${session.id}:${page}`}

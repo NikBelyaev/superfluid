@@ -7,8 +7,13 @@ import { EditorTabs } from '~/components/workspace/EditorTabs';
 import { dropFile } from '~/components/workspace/tabDrag';
 import { SurfaceLauncher } from './SurfaceLauncher';
 import { PullRequestSurface } from '~/components/pullRequest/PullRequestPanel';
+import { HistorySkeleton } from '~/components/gitHistory/HistorySkeleton';
 
 const Diff = lazy(() => import('~/components/diffs/DiffPanel').then((m) => ({ default: m.Diff })));
+const CommitDiff = lazy(() =>
+  import('~/components/diffs/DiffPanel').then((m) => ({ default: m.CommitDiff })),
+);
+const GitHistory = lazy(() => import('~/components/gitHistory/GitHistoryPanel'));
 
 const Browser = lazy(() =>
   import('~/components/preview/BrowserPanel').then((m) => ({ default: m.Browser })),
@@ -55,17 +60,40 @@ export default function RightPanel({
         id={group === 'main' ? 'primary-editor-panel' : group + '-surface-panel'}
         role="tabpanel"
       >
-        <Suspense fallback={<div className="surface-empty">Opening surface…</div>}>
+        <Suspense
+          fallback={
+            active?.kind === 'git-history' ? (
+              <HistorySkeleton />
+            ) : (
+              <div className="surface-empty">Opening surface…</div>
+            )
+          }
+        >
           {active?.kind === 'files' ? (
             <ProjectTree key={session.id} session={session} />
           ) : active?.kind === 'terminal' ? (
             <Terminal id={active.id} />
           ) : active?.kind === 'diff' ? (
-            <Diff
-              key={surfaceKey(active)}
+            active.commit ? (
+              <CommitDiff
+                key={session.id + surfaceKey(active)}
+                session={session}
+                commit={active.commit}
+              />
+            ) : (
+              <Diff
+                key={surfaceKey(active)}
+                session={session}
+                path={active.path}
+                initialMode={active.mode}
+              />
+            )
+          ) : active?.kind === 'git-history' ? (
+            <GitHistory
+              key={session.id}
               session={session}
-              path={active.path}
-              initialMode={active.mode}
+              group={group}
+              repositoryIds={active.repositoryIds}
             />
           ) : active?.kind === 'pr' ? (
             <PullRequestSurface

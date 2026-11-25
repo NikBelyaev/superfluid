@@ -4,26 +4,33 @@ import { Check, ChevronDown, FolderGit2, GitBranch, Search, X } from 'lucide-rea
 import type { Session } from '@superfluid/contracts';
 import { useApp } from '~/state/workspaceStore';
 import { selectedRepositories } from '~/state/repositories';
+import { OverflowChips } from '~/components/ui/OverflowChips';
 import { DiffStat } from './DiffStat';
 
 const chipClassName =
   'inline-flex min-w-0 max-w-[145px] items-center gap-1 rounded-full bg-[color-mix(in_srgb,var(--foreground)_7%,var(--popover))] px-1.5 py-0.5 text-xs leading-5 [&>svg]:text-muted-foreground [&>span]:truncate';
 
-export function RepositoryPicker({ session, disabled }: { session: Session; disabled: boolean }) {
+export function RepositoryPicker({
+  session,
+  disabled,
+  ids,
+  onChange,
+}: {
+  session: Session;
+  disabled?: boolean;
+  ids: string[];
+  onChange: (ids: string[]) => void;
+}) {
   const repositories = useApp((s) => s.repositories[session.id]) || [];
   const statuses = useApp((s) => s.repositoryGit[session.id]);
   const errors = useApp((s) => s.repositoryErrors[session.id]);
-  const ids = useApp((s) => s.views[session.id]?.repositoryIds) || [];
   const selected = selectedRepositories(repositories, ids);
   const [open, setOpen] = useState(false),
     [query, setQuery] = useState('');
   const anchor = useRef<HTMLDivElement>(null),
     search = useRef<HTMLInputElement>(null);
   const name = (path: string) => path.split('/').at(-1) || session.path.split('/').at(-1) || 'Root';
-  const choose = (next: string[]) => {
-    useApp.getState().setView({ repositoryIds: next }, session.id);
-    void useApp.getState().refreshRepositoryGit(session.id, next).catch(useApp.getState().fail);
-  };
+  const choose = onChange;
   const filtered = repositories
     .filter((r) => `${r.path} ${r.branch}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => Number(ids.includes(b.id)) - Number(ids.includes(a.id)));
@@ -53,7 +60,7 @@ export function RepositoryPicker({ session, disabled }: { session: Session; disa
       }}
     >
       <div className="text-caption m-0 px-[var(--floating-content-inset)] pt-2">
-        Select repository
+        Select repositories
       </div>
       <div
         className="group/repository-picker relative p-[var(--sidebar-content-inset)]"
@@ -73,25 +80,20 @@ export function RepositoryPicker({ session, disabled }: { session: Session; disa
                 <span>All repositories</span>
               </span>
             ) : (
-              <>
-                {selected.slice(0, 2).map((r) => (
-                  <span className={chipClassName} key={r.id} title={r.path || session.path}>
-                    <FolderGit2 size={12} />
-                    <span>{name(r.path)}</span>
-                  </span>
-                ))}
-                {selected.length > 2 && (
-                  <span
-                    className={`${chipClassName} flex-none text-muted-foreground`}
-                    title={selected
-                      .slice(2)
-                      .map((r) => r.path || session.path)
-                      .join(', ')}
-                  >
-                    +{selected.length - 2}
-                  </span>
-                )}
-              </>
+              <span className="min-w-0 flex-1">
+                <OverflowChips
+                  chips={selected.map((repository) => ({
+                    key: repository.id,
+                    label: name(repository.path),
+                    content: (
+                      <span className={chipClassName} title={repository.path || session.path}>
+                        <FolderGit2 size={12} />
+                        <span>{name(repository.path)}</span>
+                      </span>
+                    ),
+                  }))}
+                />
+              </span>
             )}
           </span>
           <ChevronDown size={14} />
@@ -113,7 +115,7 @@ export function RepositoryPicker({ session, disabled }: { session: Session; disa
           align="start"
           sideOffset={4}
           collisionPadding={8}
-          className="z-[120] w-[var(--anchor-width)] max-w-[calc(100vw-16px)]"
+          className="z-[120] w-[var(--anchor-width)] max-w-[min(24rem,calc(100vw-16px))]"
         >
           <Popover.Popup
             className="flex max-h-[min(320px,var(--available-height))] flex-col overflow-hidden rounded-[var(--floating-radius)] border border-solid border-border bg-popover shadow-[var(--shadow-popover)] outline-none [font-size:var(--text-detail)]"
