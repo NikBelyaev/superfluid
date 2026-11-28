@@ -31,7 +31,7 @@ for (const kind of ['ty', 'pyright'] as const)
       workspace = new Workspace(
         await temp(),
         (event) => {
-          if (event.type === 'lsp.status') acceptPythonStatus(event);
+          if (event.type === 'lsp.status' && event.server !== 'gopls') acceptPythonStatus(event);
           if (event.type === 'diagnostics' && event.uri.endsWith('/main.py'))
             events.emit(
               `${event.sessionId}:${event.diagnostics.length ? 'error' : 'clean'}`,
