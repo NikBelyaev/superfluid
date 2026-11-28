@@ -3,10 +3,12 @@ import { useApp } from '~/state/workspaceStore';
 import { activeFile } from '~/state/workspaceView';
 import { FileBreadcrumbs } from './FileBreadcrumbs';
 import type { Session } from '@superfluid/contracts';
+import { openLanguageSettings } from '~/state/dialogs';
 
 export function Statusbar({ session }: { session: Session }) {
   const view = useApp((a) => a.views[session.id]),
     language = useApp((a) => a.language),
+    goStatus = useApp((a) => a.goLanguage[session.id]),
     island = useApp((a) => a.island);
   const path = activeFile(view);
   return (
@@ -19,7 +21,17 @@ export function Statusbar({ session }: { session: Session }) {
         </span>
       )}
       <div className="spacer" />
-      <span>{language[session.id] || 'Python intelligence starts with a .py file'}</span>
+      {path?.endsWith('.go') && goStatus?.needsInstallation ? (
+        <button type="button" onClick={openLanguageSettings}>
+          {goStatus.status}
+        </button>
+      ) : (
+        <span>
+          {path?.endsWith('.go')
+            ? (goStatus?.status ?? 'Starting Go intelligence…')
+            : language[session.id] || 'Python intelligence starts with a .py file'}
+        </span>
+      )}
       <span className="status-separator" />
       <button
         title={session.python}

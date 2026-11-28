@@ -18,6 +18,7 @@ port.on('message', async ({ data }: any) => {
     if (method === 'shutdown') {
       if (!closing) {
         closing = true;
+        workspace.gopls.cancelDownload();
         workspace.lsp.close();
         await stopCommands();
         await Promise.allSettled([...active]);

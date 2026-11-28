@@ -4,6 +4,7 @@ import type {
   Action,
   GitRepository,
   GitStatus,
+  GoStatus,
   Operation,
   Project,
   Run,
@@ -73,6 +74,7 @@ interface State {
   surfaceMenu: { sessionId: string; group: TabGroup; tabKey?: string; kind?: 'chain' } | null;
   island: boolean;
   language: Record<string, string>;
+  goLanguage: Record<string, GoStatus>;
   revision: number;
   bootstrap: () => Promise<void>;
   openProject: (p: Project) => Promise<void>;
@@ -130,6 +132,7 @@ export const useApp = create<State>((set, get) => ({
   surfaceMenu: null,
   island: true,
   language: {},
+  goLanguage: {},
   revision: 0,
   fail: (e) => set({ error: e instanceof Error ? e.message : String(e) }),
   bootstrap: async () => {
@@ -148,13 +151,26 @@ export const useApp = create<State>((set, get) => ({
         const { documents } = await import('~/state/editor/Documents');
         await documents.saveAll();
       }
-      const sessions = await desktop.call('session.list', { projectId: p.id });
+      const [sessions, projectActions] = await Promise.all([
+        desktop.call('session.list', { projectId: p.id }),
+        desktop.call('actions.prepare', { projectId: p.id }),
+      ]);
       if (change !== contextChange) return;
       const views = { ...get().views };
       const runIds = new Set(get().runs.map((r) => r.id));
       for (const s of sessions) views[s.id] = restoreView(views[s.id] ?? s.state, runIds);
       const selected = sessions.find((s) => s.available)?.id ?? sessions[0]?.id ?? null;
-      set({ projectId: p.id, sessions, views, sessionId: selected, busy: null });
+      set((state) => ({
+        projectId: p.id,
+        sessions,
+        views,
+        sessionId: selected,
+        busy: null,
+        actions: [
+          ...state.actions.filter((action) => action.projectId !== p.id),
+          ...projectActions,
+        ],
+      }));
       if (selected) await get().switchSession(selected);
     } catch (e) {
       if (change !== contextChange) return;

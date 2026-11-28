@@ -11,6 +11,7 @@ import { editorTheme, useAppearance, useSystemDark } from '~/state/appearance';
 import type { Session } from '@superfluid/contracts';
 import './theme';
 import '~/components/python/languageProviders';
+import '~/components/go/languageProviders';
 import { navigate } from '~/components/python/navigation';
 import { installDefinitionHover } from '~/components/python/definitionPreview';
 import { installDefinitionLinks } from '~/components/python/definitionLinks';
@@ -18,6 +19,7 @@ import { installSymbolActions, renameSymbol } from '~/components/python/symbolAc
 import { organizeImports } from '~/commands/python';
 import { installImportActions } from '~/components/python/importActions';
 import { installEditorSurfaces } from './surfaces';
+import { openLanguageSettings } from '~/state/dialogs';
 import {
   editorViewKey,
   setTabGroup,
@@ -48,6 +50,12 @@ export default function Editor({
     [loading, setLoading] = useState(false),
     [error, setError] = useState('');
   const revision = useApp((a) => a.revision);
+  const goError = useApp((a) => {
+    const status = a.goLanguage[session.id];
+    return path?.endsWith('.go') && status?.phase === 'error' && group !== 'main'
+      ? status
+      : undefined;
+  });
   const markdown = /\.(md|markdown)$/i.test(path ?? '');
   const showPreview = markdown && preview;
   const diff = useFileDiff(session, doc?.path === path && !doc.readOnly ? path : undefined);
@@ -397,6 +405,17 @@ export default function Editor({
         documents.focusedGroup = group;
       }}
     >
+      {goError && (
+        <div className="editor-notice">
+          {goError.needsInstallation ? (
+            <button type="button" onClick={openLanguageSettings} className="text-xs underline">
+              {goError.status}
+            </button>
+          ) : (
+            <span className="text-xs text-muted-foreground">{goError.status}</span>
+          )}
+        </div>
+      )}
       {doc?.readOnly && (
         <div className="editor-notice">
           <span className="text-xs text-muted-foreground">

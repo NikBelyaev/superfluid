@@ -10,6 +10,7 @@ import { checkForAppUpdates } from '~/commands/updateApp';
 import { organizeImports } from '~/commands/python';
 import { importSymbol } from '~/components/python/importActions';
 import { SearchDialog } from '~/components/search/SearchDialog';
+import { openLanguageSettings } from '~/state/dialogs';
 
 export default function CommandPalette() {
   const mode = useApp((a) => a.palette);
@@ -65,6 +66,7 @@ function Commands({ session }: { session?: Session }) {
       run: () => session && openRepositoryMenu(session.id, 'push'),
     },
     { name: 'Settings: Appearance', run: () => useApp.setState({ modal: { kind: 'settings' } }) },
+    { name: 'Settings: Languages', run: openLanguageSettings },
     {
       name: 'Settings: Agents',
       run: () => useApp.setState({ modal: { kind: 'settings', section: 'agents' } }),

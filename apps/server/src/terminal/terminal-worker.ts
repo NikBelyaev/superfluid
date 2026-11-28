@@ -1,4 +1,5 @@
 import { parentPort } from 'node:worker_threads';
+import type { TerminalLaunch } from './TerminalManager';
 import { spawn, type IPty } from 'node-pty';
 import { randomUUID } from 'node:crypto';
 import { GhosttyTerminalCore } from '@superfluid/ghostty/core';
@@ -138,6 +139,7 @@ function sendFrame(t: Entry) {
 
 async function handle(method: string, input: any) {
   if (method === 'run') {
+    const launch: TerminalLaunch = input;
     if ([...terminals.values()].filter((t) => t.run.state === 'running').length >= 12)
       throw new Error('Twelve terminals are running. Stop one before starting another.');
     // Exited buffers are bounded too; an explicit new run releases the oldest completed buffer.
@@ -158,11 +160,16 @@ async function handle(method: string, input: any) {
         COLORTERM: 'truecolor',
       };
       delete env.ELECTRON_RUN_AS_NODE;
-      pty = spawn(input.file, input.args, {
+      if (launch.env) {
+        if (launch.env.PATH) env.PATH = launch.env.PATH;
+        if (launch.env.GOROOT) env.GOROOT = launch.env.GOROOT;
+        else delete env.GOROOT;
+      }
+      pty = spawn(launch.file, launch.args, {
         name: 'xterm-256color',
         cols: 90,
         rows: 26,
-        cwd: input.cwd,
+        cwd: launch.cwd,
         env,
       });
     } catch (e) {
@@ -171,12 +178,12 @@ async function handle(method: string, input: any) {
     }
     const run: Run = {
       id,
-      sessionId: input.sessionId,
-      name: input.name,
-      command: input.command,
+      sessionId: launch.sessionId,
+      name: launch.name,
+      command: launch.command,
       state: 'running',
       startedAt: Date.now(),
-      previewUrl: input.previewUrl,
+      previewUrl: launch.previewUrl,
     };
     const t: Entry = {
       run,
@@ -202,7 +209,7 @@ async function handle(method: string, input: any) {
       runs();
       schedule(t);
     });
-    if (input.shellCommand) pty.write(input.shellCommand + '\r');
+    if (launch.shellCommand) pty.write(launch.shellCommand + '\r');
     runs();
     servers.start();
     return run;

@@ -23,6 +23,7 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     actions,
     terminals,
     python,
+    go,
     search,
     pullRequests,
   } = workspace;
@@ -82,6 +83,7 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     'files.save': async (input) => {
       const result = await files.save(session(input.sessionId), input.path, input.text, input.hash);
       search.changed(input.sessionId, input.path);
+      workspace.lsp.goSaved(input.sessionId, input.path, input.text);
       return result;
     },
     'files.create': async (input) => {
@@ -124,6 +126,7 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     'git.act': (input) => sourceControl.act(session(input.sessionId), input),
     'git.inspect': (input) => sourceControl.inspect(session(input.sessionId), input.operationId),
     'git.acknowledge': (input) => git.acknowledge(session(input.sessionId), input.operationId),
+    'actions.prepare': (input) => actions.prepare(input.projectId),
     'actions.save': (input) => actions.save(input),
     'actions.delete': (input) => actions.delete(input.id),
     'terminal.run': (input) => actions.run(session(input.sessionId), input),
@@ -136,6 +139,15 @@ export function createWorkspaceHandlers(workspace: Workspace): WorkspaceHandlers
     'lsp.close': (input) => python.closeDocument(session(input.sessionId), input.path),
     'lsp.cancel': (input) => python.cancel(session(input.sessionId), input.requestId),
     'lsp.request': (input) => python.request(session(input.sessionId), input),
+    'go.packageStatus': () => workspace.gopls.status(),
+    'go.install': () => workspace.gopls.install(),
+    'go.remove': () => workspace.gopls.remove(),
+    'go.sync': (input) => go.sync(session(input.sessionId), input),
+    'go.close': (input) => go.close(session(input.sessionId), input.path),
+    'go.cancel': (input) => go.cancel(session(input.sessionId), input.requestId),
+    'go.completion': (input) => go.completion(session(input.sessionId), input),
+    'go.hover': (input) => go.hover(session(input.sessionId), input),
+    'go.definition': (input) => go.definition(session(input.sessionId), input),
     'python.format': (input) => python.format(session(input.sessionId), input.text),
     'python.organizeImports': (input) => python.organizeImports(session(input.sessionId), input),
     'python.imports': (input) => python.imports(session(input.sessionId), input),
