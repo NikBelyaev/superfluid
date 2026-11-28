@@ -9,6 +9,7 @@ export * from './vcs';
 export * from './terminal';
 
 export * from './python';
+export * from './go';
 
 export * from './pullRequest';
 

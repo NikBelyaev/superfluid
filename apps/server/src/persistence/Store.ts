@@ -20,6 +20,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS actions(id TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS project_action_setup(project TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS drafts(session TEXT NOT NULL, path TEXT NOT NULL, text TEXT NOT NULL,
         hash TEXT NOT NULL, version INTEGER NOT NULL, updated INTEGER NOT NULL, PRIMARY KEY(session,path));
@@ -47,6 +48,39 @@ export class Store {
   }
   deleteAction(id: string) {
     this.db.prepare('DELETE FROM actions WHERE id=?').run(id);
+  }
+  projectActions(projectId: string): Action[] {
+    return this.db
+      .prepare("SELECT value FROM actions WHERE json_extract(value,'$.projectId')=? ORDER BY rowid")
+      .all(projectId)
+      .map((row) => JSON.parse(row.value as string));
+  }
+  actionsReviewed(projectId: string) {
+    return Boolean(
+      this.db.prepare('SELECT 1 FROM project_action_setup WHERE project=?').get(projectId),
+    );
+  }
+  markActionsReviewed(projectId: string) {
+    return (
+      this.db
+        .prepare('INSERT OR IGNORE INTO project_action_setup(project) VALUES(?)')
+        .run(projectId).changes > 0
+    );
+  }
+  completeActionSetup(projectId: string, suggestion?: Action) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const actions = this.projectActions(projectId);
+      if (this.markActionsReviewed(projectId) && suggestion && !actions.length) {
+        this.put('actions', suggestion);
+        actions.push(suggestion);
+      }
+      this.db.exec('COMMIT');
+      return actions;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
   drafts(sessionId: string): Draft[] {
     return this.db

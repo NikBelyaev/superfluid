@@ -3,36 +3,55 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { createRequire } from 'node:module';
-import type { Session, AppEvent } from '@superfluid/contracts';
+import { goDiagnostic, type Session, type AppEvent } from '@superfluid/contracts';
 import type { Store } from '../persistence/Store';
 import { inspectInterpreter, languageServerFor } from './interpreter';
 import { searchExcludes } from '../files/searchPaths';
+import {
+  findGoTool,
+  goEnvironment,
+  goName,
+  goplsName,
+  managedGo,
+  managedGopls,
+} from '../go/goExecutables';
 
 const require = createRequire(import.meta.url);
+const installGoplsMessage = 'Install gopls in Settings → Languages';
 
 export class LanguageServers {
   private servers = new Map<string, Server>();
+  private goServers = new Map<string, Server>();
   private generation = 0;
   constructor(
     private store: Store,
     private notify: (event: AppEvent) => void,
   ) {}
-  async get(s: Session) {
-    let server = this.servers.get(s.id);
-    if (server?.available) {
-      this.servers.delete(s.id);
-      this.servers.set(s.id, server);
+  async get(s: Session, language: 'python' | 'go' = 'python') {
+    const servers = language === 'go' ? this.goServers : this.servers;
+    let server = servers.get(s.id);
+    if (server && (server.available || server.missingExecutable)) {
+      servers.delete(s.id);
+      servers.set(s.id, server);
       return server;
     }
-    if (server) this.invalidate(s.id);
+    if (server && language === 'python') this.invalidate(s.id);
     s = this.store.get<Session>('sessions', s.id) ?? s;
-    if (this.servers.size >= 2) {
-      const [id, old] = this.servers.entries().next().value!;
+    servers.delete(s.id);
+    if (servers.size >= 2) {
+      const [id, old] = servers.entries().next().value!;
       old.close();
-      this.servers.delete(id);
+      servers.delete(id);
     }
-    server = new Server({ ...s }, ++this.generation, this.notify, () => this.store.drafts(s.id));
-    this.servers.set(s.id, server);
+    server = new Server(
+      { ...s },
+      ++this.generation,
+      this.notify,
+      () => this.store.drafts(s.id),
+      language === 'go' ? 'go' : 'editor',
+      language === 'go' ? this.store.directory : undefined,
+    );
+    servers.set(s.id, server);
     return server;
   }
   invalidate(id: string) {
@@ -48,18 +67,45 @@ export class LanguageServers {
     });
     return running;
   }
-  async documentClose(id: string, path: string) {
-    await this.servers.get(id)?.documentClose(path);
+  async documentClose(id: string, path: string, language: 'python' | 'go' = 'python') {
+    const servers = language === 'go' ? this.goServers : this.servers;
+    const server = servers.get(id);
+    if (server?.available) await server.documentClose(path);
+  }
+  goServer(id: string, generation: number) {
+    const server = this.goServers.get(id);
+    if (!server?.available || server.generation !== generation)
+      throw new Error('Go language server changed. Try again.');
+    this.goServers.delete(id);
+    this.goServers.set(id, server);
+    return server;
+  }
+  goSaved(id: string, path: string, text: string) {
+    if (path.endsWith('.go'))
+      void this.goServers
+        .get(id)
+        ?.saved(path, text)
+        .catch(() => {});
   }
   changed(id: string, path: string, event: 'rename' | 'change') {
     void this.servers
       .get(id)
       ?.changed(path, event)
       .catch(() => {});
+    if (/\.go$|(?:^|\/)go\.(?:mod|sum|work|work\.sum)$/.test(path))
+      void this.goServers
+        .get(id)
+        ?.changed(path, event)
+        .catch(() => {});
+  }
+  resetGo() {
+    for (const s of this.goServers.values()) s.close();
+    this.goServers.clear();
   }
   close() {
     for (const s of this.servers.values()) s.close();
     this.servers.clear();
+    this.resetGo();
   }
 }
 
@@ -77,9 +123,16 @@ class Server {
   private closed = false;
   private released = false;
   private stderr = '';
-  kind: 'ty' | 'pyright' = 'pyright';
+  missingExecutable = false;
+  kind: 'ty' | 'pyright' | 'gopls' = 'pyright';
   private executable = '';
   private fallback = '';
+  private get name() {
+    return this.kind === 'gopls' ? 'gopls' : this.kind === 'ty' ? 'ty' : 'Pyright';
+  }
+  private get language() {
+    return this.role === 'go' ? 'Go' : 'Python';
+  }
   get available() {
     return !this.closed;
   }
@@ -96,6 +149,7 @@ class Server {
     };
   }
   private configuration() {
+    if (this.kind === 'gopls') return {};
     return this.kind === 'ty'
       ? {
           ty: {
@@ -117,6 +171,7 @@ class Server {
       server: this.kind,
       phase,
       status,
+      ...(this.missingExecutable && phase === 'error' ? { needsInstallation: true } : {}),
     });
   }
   constructor(
@@ -124,10 +179,16 @@ class Server {
     readonly generation: number,
     private notify: (event: AppEvent) => void,
     private drafts: () => ReturnType<Store['drafts']>,
-    private role: 'editor' | 'symbols' = 'editor',
+    private role: 'editor' | 'symbols' | 'go' = 'editor',
+    private appDirectory?: string,
   ) {
-    this.status('starting', 'Checking Python interpreter…');
-    this.ready = this.start(drafts);
+    if (role === 'go') {
+      this.kind = 'gopls';
+      this.ready = this.launch(drafts);
+    } else {
+      this.status('starting', 'Checking Python interpreter…');
+      this.ready = this.start(drafts);
+    }
     this.ready.catch((error) => this.fail(error));
   }
   private async start(drafts: () => ReturnType<Store['drafts']>) {
@@ -151,7 +212,7 @@ class Server {
     }
   }
   private async launch(drafts: () => ReturnType<Store['drafts']>) {
-    if (this.released) throw new Error('Python server session released.');
+    if (this.released) throw new Error(`${this.language} server session released.`);
     const ty =
       process.env.SF_TY_PATH ||
       fileURLToPath(
@@ -160,18 +221,42 @@ class Server {
           import.meta.url,
         ),
       );
-    const child = (this.child = spawn(
-      this.kind === 'ty' ? ty : process.env.SF_NODE_EXEC_PATH || process.execPath,
-      this.kind === 'ty'
-        ? ['server']
-        : [
-            require
-              .resolve('pyright/langserver.index.js')
-              .replace('app.asar/', 'app.asar.unpacked/'),
-            '--stdio',
-          ],
-      { cwd: this.session.path, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, stdio: 'pipe' },
-    ));
+    const env =
+      this.kind === 'gopls'
+        ? goEnvironment(this.appDirectory)
+        : { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
+    let executable: string, args: string[];
+    if (this.kind === 'gopls') {
+      const managed = this.appDirectory && (await findGoTool(managedGopls(this.appDirectory), env));
+      const gopls = managed || (await findGoTool(env.SF_GOPLS_PATH || goplsName, env));
+      if (
+        env.GOROOT &&
+        this.appDirectory &&
+        (await findGoTool(goName, env)) === join(managedGo(this.appDirectory), 'bin', goName)
+      )
+        delete env.GOROOT;
+      if (this.released) throw new Error('Go server session released.');
+      if (!gopls) {
+        this.missingExecutable = true;
+        throw new Error(installGoplsMessage);
+      }
+      executable = gopls;
+      args = [];
+    } else if (this.kind === 'ty') {
+      executable = ty;
+      args = ['server'];
+    } else {
+      executable = process.env.SF_NODE_EXEC_PATH || process.execPath;
+      args = [
+        require.resolve('pyright/langserver.index.js').replace('app.asar/', 'app.asar.unpacked/'),
+        '--stdio',
+      ];
+    }
+    const child = (this.child = spawn(executable, args, {
+      cwd: this.session.path,
+      env,
+      stdio: 'pipe',
+    }));
     child.stdout.on('data', (chunk) => {
       if (this.child !== child) return;
       try {
@@ -188,17 +273,19 @@ class Server {
       this.stderr = (this.stderr + chunk.toString()).slice(-4096);
     });
     child.on('error', (e) => {
-      if (this.child === child) this.fail(e);
+      if (this.child !== child) return;
+      this.missingExecutable = this.kind === 'gopls' && 'code' in e && e.code === 'ENOENT';
+      this.fail(this.missingExecutable ? new Error(installGoplsMessage) : e);
     });
     child.on('exit', (code) => {
       if (this.child !== child) return;
       this.fail(
         new Error(
-          `Python language server stopped (${code}). ${this.stderr.trim() || 'The next request will restart it.'}`,
+          `${this.language} language server stopped (${code}). ${this.stderr.trim() || 'The next request will restart it.'}`,
         ),
       );
     });
-    this.status('starting', `Warming ${this.kind === 'ty' ? 'ty' : 'Pyright'}…${this.fallback}`);
+    this.status('starting', `Warming ${this.name}…${this.fallback}`);
     await this.requestRaw('initialize', {
       processId: process.pid,
       rootUri: pathToFileURL(this.session.path).href,
@@ -209,6 +296,7 @@ class Server {
         },
       ],
       capabilities: {
+        ...(this.kind === 'gopls' ? { general: { positionEncodings: ['utf-16'] } } : {}),
         textDocument: {
           hover: { contentFormat: ['markdown'] },
           completion: {
@@ -216,7 +304,13 @@ class Server {
               snippetSupport: true,
               documentationFormat: ['markdown', 'plaintext'],
               labelDetailsSupport: true,
-              resolveSupport: { properties: ['documentation', 'detail', 'additionalTextEdits'] },
+              ...(this.kind === 'gopls'
+                ? {}
+                : {
+                    resolveSupport: {
+                      properties: ['documentation', 'detail', 'additionalTextEdits'],
+                    },
+                  }),
             },
           },
           documentSymbol: { hierarchicalDocumentSymbolSupport: true },
@@ -231,16 +325,19 @@ class Server {
       },
       initializationOptions: this.kind === 'ty' ? this.configuration().ty : {},
     });
-    if (this.released) throw new Error('Python server session released.');
+    if (this.released) throw new Error(`${this.language} server session released.`);
     this.send('initialized', {});
     this.send('workspace/didChangeConfiguration', { settings: this.configuration() });
-    for (const d of drafts())
-      if (this.role === 'editor' || /\.pyi?$/.test(d.path)) this.openRaw(d.path, d.text, d.version);
-    this.status('ready', `${this.kind === 'ty' ? 'ty' : 'Pyright'} ready${this.fallback}`);
+    for (const d of drafts()) {
+      if (d.path.endsWith('.go') !== (this.role === 'go')) continue;
+      if (this.role !== 'symbols' || /\.pyi?$/.test(d.path))
+        this.openRaw(d.path, d.text, d.version);
+    }
+    this.status('ready', `${this.name} ready${this.fallback}`);
   }
   private write(message: unknown) {
     if (this.closed || !this.child?.stdin.writable)
-      throw new Error('Python language server is unavailable.');
+      throw new Error(`${this.language} language server is unavailable.`);
     const json = JSON.stringify(message);
     this.child.stdin.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`);
   }
@@ -249,7 +346,8 @@ class Server {
   }
   private requestRaw(method: string, params: unknown, signal?: AbortSignal): Promise<any> {
     signal?.throwIfAborted();
-    if (this.pending.size >= 32) return Promise.reject(new Error('Python request queue is full.'));
+    if (this.pending.size >= 32)
+      return Promise.reject(new Error(`${this.language} request queue is full.`));
     const id = ++this.serial;
     return new Promise((resolve, reject) => {
       const dispose = () => {
@@ -265,7 +363,10 @@ class Server {
         reject(error);
       };
       const aborted = () => cancel(signal!.reason);
-      const timer = setTimeout(() => cancel(new Error('Python request timed out.')), 15000);
+      const timer = setTimeout(
+        () => cancel(new Error(`${this.language} request timed out.`)),
+        15000,
+      );
       this.pending.set(id, { resolve, reject, dispose });
       signal?.addEventListener('abort', aborted, { once: true });
       try {
@@ -302,20 +403,35 @@ class Server {
         if (!message || typeof message !== 'object') throw new Error('Invalid message');
       } catch {
         this.fail(
-          new Error('Python returned an invalid response. The next request will restart it.'),
+          new Error(
+            `${this.language} returned an invalid response. The next request will restart it.`,
+          ),
         );
         return;
       }
       this.buffer = this.buffer.subarray(end + 4 + length);
       if (message.method === 'textDocument/publishDiagnostics') {
-        if (typeof message.params?.uri === 'string' && Array.isArray(message.params.diagnostics))
+        if (
+          typeof message.params?.uri === 'string' &&
+          Array.isArray(message.params.diagnostics) &&
+          (this.kind !== 'gopls' || this.documents.has(message.params.uri))
+        )
           this.notify({
             type: 'diagnostics',
             sessionId: this.session.id,
             generation: this.generation,
             server: this.kind,
             uri: message.params.uri,
-            diagnostics: message.params.diagnostics,
+            ...(this.kind === 'gopls' && Number.isInteger(message.params.version)
+              ? { version: message.params.version }
+              : {}),
+            diagnostics:
+              this.kind === 'gopls'
+                ? (message.params.diagnostics as unknown[]).slice(0, 500).flatMap((entry) => {
+                    const parsed = goDiagnostic.safeParse(entry);
+                    return parsed.success ? [parsed.data] : [];
+                  })
+                : message.params.diagnostics,
           });
       } else if (message.method && message.id !== undefined) {
         const settings = this.settings();
@@ -323,13 +439,15 @@ class Server {
         const result =
           message.method === 'workspace/configuration' && Array.isArray(message.params?.items)
             ? message.params.items.map((item: any) =>
-                item.section === 'ty'
-                  ? (configuration.ty ?? null)
-                  : item.section === 'python.analysis'
-                    ? settings.analysis
-                    : item.section === 'python'
-                      ? settings
-                      : configuration,
+                this.kind === 'gopls'
+                  ? null
+                  : item.section === 'ty'
+                    ? (configuration.ty ?? null)
+                    : item.section === 'python.analysis'
+                      ? settings.analysis
+                      : item.section === 'python'
+                        ? settings
+                        : configuration,
               )
             : message.method === 'workspace/workspaceFolders'
               ? [
@@ -357,7 +475,7 @@ class Server {
       previous = this.documents.get(uri)?.version;
     if (previous === undefined) {
       this.send('textDocument/didOpen', {
-        textDocument: { uri, languageId: 'python', version, text },
+        textDocument: { uri, languageId: this.role === 'go' ? 'go' : 'python', version, text },
       });
       // ty needs a workspace invalidation to update imports of a newly opened overlay.
       if (this.kind === 'ty')
@@ -377,8 +495,15 @@ class Server {
   async documentClose(path: string) {
     await this.ready;
     const uri = pathToFileURL(join(this.session.path, path)).href;
+    if (this.kind === 'gopls' && !this.documents.has(uri)) return;
     this.send('textDocument/didClose', { textDocument: { uri } });
     this.documents.delete(uri);
+  }
+  async saved(path: string, text: string) {
+    await this.ready;
+    const uri = pathToFileURL(join(this.session.path, path)).href;
+    if (this.documents.get(uri)?.text === text)
+      this.send('textDocument/didSave', { textDocument: { uri } });
   }
   private async symbolIndex() {
     if (!this.symbolServer?.available)
@@ -466,7 +591,7 @@ class Server {
     return result;
   }
   assertCurrent() {
-    if (this.closed) throw new Error('Python environment changed. Try again.');
+    if (this.closed) throw new Error(`${this.language} environment changed. Try again.`);
   }
   async changed(path: string, event: 'rename' | 'change') {
     await this.ready;
@@ -500,8 +625,8 @@ class Server {
     this.symbolServer?.close();
     this.released = true;
     this.closed = true;
-    this.fail(new Error('Python server session released.'));
+    this.fail(new Error(`${this.language} server session released.`));
     this.child?.kill();
-    this.status('stopped', 'Python intelligence paused');
+    this.status('stopped', `${this.language} intelligence paused`);
   }
 }

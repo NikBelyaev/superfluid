@@ -3,6 +3,8 @@ import { useApp } from '~/state/workspaceStore';
 import type { TabGroup } from './workspaceView';
 
 export const closeDialog = () => useApp.setState({ modal: null });
+export const openLanguageSettings = () =>
+  useApp.setState({ modal: { kind: 'settings', section: 'languages' }, palette: null });
 
 export const openGitReview = (operation: Operation) =>
   useApp.setState({
@@ -11,8 +13,10 @@ export const openGitReview = (operation: Operation) =>
     palette: null,
   });
 
+export type SettingsSection = 'appearance' | 'languages' | 'hosting' | 'agents' | 'about';
+
 export type Modal =
-  | { kind: 'settings'; section?: 'appearance' | 'hosting' | 'agents' | 'about' }
+  | { kind: 'settings'; section?: SettingsSection }
   | { kind: 'action'; action?: Action }
   | { kind: 'worktree' }
   | {

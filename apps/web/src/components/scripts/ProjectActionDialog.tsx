@@ -23,7 +23,7 @@ export function ProjectActionDialog({ action }: { action?: Action }) {
           projectId: session.projectId,
           name,
           kind,
-          command,
+          command: kind === 'go' ? 'go run .' : command,
           cwd,
           shortcut,
           previewUrl: url,
@@ -76,13 +76,19 @@ export function ProjectActionDialog({ action }: { action?: Action }) {
           <option value="shell">Shell command</option>
           <option value="python">Python file</option>
           <option value="django">Django server</option>
+          <option value="go">Go package</option>
         </select>
       </label>
       <label>
-        {kind === 'shell' ? 'Command' : kind === 'django' ? 'Manage script' : 'Python file'}
+        {kind === 'shell' || kind === 'go'
+          ? 'Command'
+          : kind === 'django'
+            ? 'Manage script'
+            : 'Python file'}
         <textarea
           required
-          value={command}
+          value={kind === 'go' ? 'go run .' : command}
+          readOnly={kind === 'go'}
           onChange={(e) => setCommand(e.target.value)}
           placeholder={
             kind === 'shell' ? 'python -m pytest' : kind === 'django' ? 'manage.py' : 'main.py'

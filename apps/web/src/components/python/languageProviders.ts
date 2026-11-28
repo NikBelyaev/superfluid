@@ -5,6 +5,7 @@ import { symbolActions } from './symbolActions';
 import { completionLabel } from './completionLabel';
 import { pythonGeneration } from '~/state/python';
 import { useApp } from '~/state/workspaceStore';
+import { completionKind } from '~/components/editor/completionKind';
 
 type CompletionEdit = {
   range: { start: { line: number; character: number }; end: { line: number; character: number } };
@@ -71,34 +72,6 @@ async function request(
 const range = (r: any) =>
   new monaco.Range(r.start.line + 1, r.start.character + 1, r.end.line + 1, r.end.character + 1);
 
-const completionKinds = [
-  'Text',
-  'Method',
-  'Function',
-  'Constructor',
-  'Field',
-  'Variable',
-  'Class',
-  'Interface',
-  'Module',
-  'Property',
-  'Unit',
-  'Value',
-  'Enum',
-  'Keyword',
-  'Snippet',
-  'Color',
-  'File',
-  'Reference',
-  'Folder',
-  'EnumMember',
-  'Constant',
-  'Struct',
-  'Event',
-  'Operator',
-  'TypeParameter',
-] as const;
-
 monaco.languages.registerCompletionItemProvider('python', {
   triggerCharacters: ['.'],
   provideCompletionItems: async (model, position, context, token) => {
@@ -118,7 +91,7 @@ monaco.languages.registerCompletionItemProvider('python', {
           const editRange = i.textEdit?.range ?? i.textEdit?.replace ?? i.textEdit?.insert;
           const item = {
             label: completionLabel(i),
-            kind: monaco.languages.CompletionItemKind[completionKinds[(i.kind ?? 1) - 1] ?? 'Text'],
+            kind: completionKind(i.kind),
             detail: i.detail,
             documentation: documentation(i.documentation),
             insertText: i.textEdit?.newText ?? i.insertText ?? i.label,

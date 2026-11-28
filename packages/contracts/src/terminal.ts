@@ -17,7 +17,7 @@ export const actionSchema = z.object({
   id: id.optional(),
   projectId: id,
   name: z.string().min(1).max(80),
-  kind: z.enum(['shell', 'python', 'django']),
+  kind: z.enum(['shell', 'python', 'django', 'go']),
   command: z.string().min(1).max(8192),
   cwd: path.default(''),
   shortcut: z.string().max(80).default(''),
@@ -57,6 +57,7 @@ export type TerminalFrame = {
 };
 
 export const terminalRequests = {
+  'actions.prepare': z.object({ projectId: id }),
   'actions.save': actionSchema,
   'actions.delete': z.object({ id }),
   'terminal.server.stop': z.object({
@@ -92,6 +93,7 @@ export const terminalRequests = {
 } as const;
 
 export interface TerminalResults {
+  'actions.prepare': Action[];
   'actions.save': Action;
   'actions.delete': null;
   'terminal.server.stop': null;

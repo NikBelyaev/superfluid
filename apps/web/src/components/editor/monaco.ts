@@ -43,6 +43,8 @@ import 'monaco-editor/languages/definitions/markdown/register';
 
 import 'monaco-editor/languages/definitions/shell/register';
 
+import 'monaco-editor/languages/definitions/go/register';
+
 import EditorWorker from 'monaco-editor/editor/editor.worker.js?worker';
 (self as typeof self & { MonacoEnvironment: unknown }).MonacoEnvironment = {
   getWorker: () => new EditorWorker(),

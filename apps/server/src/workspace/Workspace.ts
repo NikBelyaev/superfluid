@@ -14,6 +14,8 @@ import { SourceControlService } from '../vcs/SourceControlService';
 import { ProjectService } from '../project/ProjectService';
 import { LanguageServers } from '../python/LanguageServers';
 import { PythonService } from '../python/PythonService';
+import { GoService } from '../go/GoService';
+import { GoplsPackage } from '../go/GoplsPackage';
 import { SearchService } from '../search/SearchService';
 import { CodeSearchService } from '../search/CodeSearchService';
 import { TerminalManager } from '../terminal/TerminalManager';
@@ -37,6 +39,8 @@ export class Workspace {
   readonly sourceControl: SourceControlService;
   readonly actions: ProjectActionService;
   readonly python: PythonService;
+  readonly go: GoService;
+  readonly gopls: GoplsPackage;
   readonly search: SearchService;
   readonly codeSearch: CodeSearchService;
   readonly pullRequests: PullRequestService;
@@ -63,6 +67,7 @@ export class Workspace {
       this.hosting,
     );
     this.lsp = new LanguageServers(this.store, emit);
+    this.gopls = new GoplsPackage(directory, emit, () => this.lsp.resetGo());
     this.terminals = new TerminalManager(emit, options.terminalWorker);
     this.projects = new ProjectService(this.store, this.lsp, (project) =>
       emit({ type: 'project', project }),
@@ -77,6 +82,7 @@ export class Workspace {
     );
     this.actions = new ProjectActionService(this.store, this.terminals);
     this.python = new PythonService(this.lsp, this.watcher, this.files, this.documents);
+    this.go = new GoService(this.lsp, this.watcher);
     this.codeSearch = new CodeSearchService(
       this.search,
       this.python,
@@ -98,6 +104,7 @@ export class Workspace {
     await this.t3.close();
     this.codeSearch.close();
     this.watcher.close();
+    await this.gopls.close();
     this.lsp.close();
     await this.search.close();
     await this.terminals.close();

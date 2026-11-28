@@ -12,6 +12,7 @@ import {
   type TerminalServer,
 } from './terminal';
 import { pythonRequests, type PythonResults } from './python';
+import { goRequests, type GoResults } from './go';
 import { pullRequestRequests, type PullRequestResults } from './pullRequest';
 import {
   codexRequests,
@@ -28,6 +29,7 @@ export const requests = {
   ...vcsRequests,
   ...terminalRequests,
   ...pythonRequests,
+  ...goRequests,
   ...pullRequestRequests,
   ...codexRequests,
   ...t3Requests,
@@ -47,6 +49,7 @@ export interface Results
     VcsResults,
     TerminalResults,
     PythonResults,
+    GoResults,
     PullRequestResults,
     CodexResults,
     T3Results {

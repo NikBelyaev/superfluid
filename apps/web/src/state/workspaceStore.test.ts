@@ -65,6 +65,7 @@ test('opening projects restores supported surfaces from incompatible saved layou
     value: {
       superfluid: {
         call: async (method: string) => {
+          if (method === 'actions.prepare') return [];
           assert.equal(method, 'session.list');
           return sessions;
         },
@@ -109,6 +110,7 @@ test('a slow project open cannot replace a newer project selection', async () =>
     desktop,
     'call',
     async (method: string, input: { projectId: string }) => {
+      if (method === 'actions.prepare') return [];
       assert.equal(method, 'session.list');
       return input.projectId === 'slow'
         ? slow

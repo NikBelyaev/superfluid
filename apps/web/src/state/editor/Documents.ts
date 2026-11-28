@@ -1,4 +1,5 @@
 import { callPython, syncPythonDocument, forgetPythonDocument } from '~/rpc/python';
+import { closeGoDocument, syncGoDocument } from '~/rpc/go';
 import { monaco } from '~/components/editor/monaco';
 import { desktop } from '~/rpc/desktop';
 import type { Session, DocumentData, PythonDocumentSymbol } from '@superfluid/contracts';
@@ -54,7 +55,12 @@ const language = (path: string) =>
         ? 'markdown'
         : /\.(sh|zsh)$/.test(path)
           ? 'shell'
-          : 'plaintext';
+          : path.endsWith('.go')
+            ? 'go'
+            : 'plaintext';
+
+const hasLanguageServer = (model: monaco.editor.ITextModel) =>
+  model.getLanguageId() === 'python' || model.getLanguageId() === 'go';
 
 export const documentPath = (path: string) =>
   path.startsWith('file://') ? monaco.Uri.parse(path).fsPath : path;
@@ -111,7 +117,7 @@ class Documents {
       existing.closed = false;
       existing.lastUsed = Date.now();
       await this.refresh(existing);
-      if (existing.model.getLanguageId() === 'python') void this.sync(existing).catch(() => {});
+      if (hasLanguageServer(existing.model)) void this.sync(existing).catch(() => {});
       return existing;
     }
     await this.prune();
@@ -162,16 +168,17 @@ class Documents {
       this.recovery.changed(source);
       this.scheduleSave(doc);
       clearTimeout(doc.lspTimer);
-      if (model.getLanguageId() === 'python')
+      if (hasLanguageServer(model))
         doc.lspTimer = setTimeout(() => void this.sync(doc).catch(() => {}), 200);
       if (!wasDirty) notify();
     });
-    if (model.getLanguageId() === 'python') void this.sync(doc).catch(() => {});
+    if (hasLanguageServer(model)) void this.sync(doc).catch(() => {});
     notify();
     return doc;
   }
   async sync(doc: Doc) {
-    return syncPythonDocument(doc);
+    if (doc.model.getLanguageId() === 'go') await syncGoDocument(doc);
+    else await syncPythonDocument(doc);
   }
   async outline(doc: Doc): Promise<PythonDocumentSymbol[]> {
     if (doc.readOnly) return doc.symbols ?? [];
@@ -330,7 +337,13 @@ class Documents {
   async close(sessionId: string, path: string) {
     const doc = this.items.get(this.key(sessionId, path));
     if (!doc) return;
-    if (doc.dirty || doc.saving) {
+    if (doc.model.getLanguageId() === 'go') {
+      if (doc.dirty || doc.saving) await this.save(doc);
+      doc.closed = true;
+      clearTimeout(doc.lspTimer);
+      monaco.editor.setModelMarkers(doc.model, 'go', []);
+      await closeGoDocument(doc).catch(() => {});
+    } else if (doc.dirty || doc.saving) {
       await this.save(doc);
       doc.closed = true;
     } else {
@@ -372,11 +385,13 @@ class Documents {
         continue;
       clearTimeout(d.lspTimer);
       clearTimeout(d.saveTimer);
+      if (d.model.getLanguageId() === 'go') {
+        if (!d.closed) void closeGoDocument(d).catch(() => {});
+      } else void desktop.call('lsp.close', { sessionId, path: d.path }).catch(() => {});
       d.model.dispose();
       this.items.delete(key);
       this.recovery.forget(key);
       if (this.focused === d) this.focused = null;
-      void desktop.call('lsp.close', { sessionId, path: d.path }).catch(() => {});
     }
     notify();
   }
@@ -412,6 +427,7 @@ class Documents {
         continue;
       clearTimeout(d.lspTimer);
       clearTimeout(d.saveTimer);
+      if (!d.closed && d.model.getLanguageId() === 'go') void closeGoDocument(d).catch(() => {});
       d.model.dispose();
       this.items.delete(key);
       this.recovery.forget(key);

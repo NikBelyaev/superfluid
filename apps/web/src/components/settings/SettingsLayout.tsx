@@ -1,10 +1,20 @@
 import type { ReactNode } from 'react';
 import { Dialog } from '@base-ui/react/dialog';
-import { Palette, GitPullRequest, Bot, Info, X } from 'lucide-react';
+import { Palette, Code, GitPullRequest, Bot, Info, X } from 'lucide-react';
 import { SourceControlSettings } from './SourceControlSettings';
 import { AboutSettings } from './AboutSettings';
 import { useUpdates } from '~/state/updates';
 import { AgentSettings } from './AgentSettings';
+import { LanguageSettings } from './LanguageSettings';
+import type { SettingsSection } from '~/state/dialogs';
+
+const sections = [
+  { id: 'appearance', label: 'Appearance', Icon: Palette },
+  { id: 'languages', label: 'Languages', Icon: Code },
+  { id: 'hosting', label: 'Source Control', Icon: GitPullRequest },
+  { id: 'agents', label: 'Agents', Icon: Bot },
+  { id: 'about', label: 'About', Icon: Info },
+] as const;
 
 export function SettingsLayout({
   children,
@@ -12,8 +22,8 @@ export function SettingsLayout({
   onSectionChange,
 }: {
   children: ReactNode;
-  section?: 'appearance' | 'hosting' | 'agents' | 'about';
-  onSectionChange: (section: 'appearance' | 'hosting' | 'agents' | 'about') => void;
+  section?: SettingsSection;
+  onSectionChange: (section: SettingsSection) => void;
 }) {
   const updateAvailable = useUpdates((s) => Boolean(s.state?.availableVersion));
   return (
@@ -29,33 +39,19 @@ export function SettingsLayout({
           className="w-52 shrink-0 border-r border-border bg-sidebar px-3 py-6 max-[900px]:w-44 max-[600px]:w-auto max-[600px]:border-r-0 max-[600px]:border-b max-[600px]:px-4 max-[600px]:py-2"
           aria-label="Settings"
         >
-          {(['appearance', 'hosting', 'agents', 'about'] as const).map((item) => (
+          {sections.map(({ id, label, Icon }) => (
             <button
-              key={item}
-              className={`settings-nav-item ${section === item ? 'active' : ''}`}
-              aria-current={section === item ? 'page' : undefined}
+              key={id}
+              className={`settings-nav-item ${section === id ? 'active' : ''}`}
+              aria-current={section === id ? 'page' : undefined}
               aria-description={
-                item === 'about' && updateAvailable ? 'An update is available.' : undefined
+                id === 'about' && updateAvailable ? 'An update is available.' : undefined
               }
-              onClick={() => onSectionChange(item)}
+              onClick={() => onSectionChange(id)}
             >
-              {item === 'appearance' ? (
-                <Palette size={17} />
-              ) : item === 'hosting' ? (
-                <GitPullRequest size={17} />
-              ) : item === 'agents' ? (
-                <Bot size={17} />
-              ) : (
-                <Info size={17} />
-              )}
-              {item === 'appearance'
-                ? 'Appearance'
-                : item === 'hosting'
-                  ? 'Source Control'
-                  : item === 'agents'
-                    ? 'Agents'
-                    : 'About'}
-              {item === 'about' && updateAvailable && (
+              <Icon size={17} aria-hidden="true" />
+              {label}
+              {id === 'about' && updateAvailable && (
                 <span
                   aria-hidden="true"
                   className="ml-auto size-1.5 shrink-0 rounded-full bg-primary"
@@ -69,7 +65,9 @@ export function SettingsLayout({
           id={section}
         >
           <div className="mx-auto max-w-[848px]">
-            {section === 'hosting' ? (
+            {section === 'languages' ? (
+              <LanguageSettings />
+            ) : section === 'hosting' ? (
               <SourceControlSettings />
             ) : section === 'agents' ? (
               <AgentSettings />

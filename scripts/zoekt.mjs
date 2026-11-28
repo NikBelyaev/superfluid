@@ -15,25 +15,15 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { goVersion, unpackGoToolchain } from './go-toolchain.ts';
 
 const exec = promisify(execFile);
-const version = '1.27.3';
-const targets = {
-  'darwin-arm64': 'dd3908cf20959d798c1e06ebe5b72213f0505ce01373b40ce3110975a6cd99c2',
-  'darwin-x64': 'b6f8e931e4ab497fcde6da8ae4499a58f9d258e55c8a80824a516eae5950a750',
-  'linux-arm64': 'a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49',
-  'linux-x64': '65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40',
-  'win32-arm64': 'c507872ff21f8a7cd3c1c217b059c6f7271a4a9d8e692810ef9dd3e1f601197c',
-  'win32-x64': 'f26081f438319757f8a1b46d7d0b2c5ec7583d4038e485e0aa725cfde7885fff',
-};
 const cache = fileURLToPath(new URL('../node_modules/.cache/superfluid/zoekt/', import.meta.url));
 const source = fileURLToPath(new URL('../packages/zoekt/', import.meta.url));
 const suffix = process.platform === 'win32' ? '.exe' : '';
 
 export async function goToolchain() {
-  const hash = targets[`${process.platform}-${process.arch}`];
-  if (!hash) throw new Error(`No search toolchain for ${process.platform}-${process.arch}.`);
-  const directory = join(cache, `go-${version}-${process.platform}-${process.arch}`);
+  const directory = join(cache, `go-${goVersion}-${process.platform}-${process.arch}`);
   const binary = join(directory, 'go', 'bin', `go${suffix}`);
   try {
     await access(binary);
@@ -42,22 +32,8 @@ export async function goToolchain() {
   await mkdir(cache, { recursive: true });
   const staging = await mkdtemp(join(cache, 'go-download-'));
   try {
-    const os = process.platform === 'win32' ? 'windows' : process.platform;
-    const arch = process.arch === 'x64' ? 'amd64' : process.arch;
-    const archive = `go${version}.${os}-${arch}.${suffix ? 'zip' : 'tar.gz'}`;
-    console.log(`Downloading Go ${version} to build bundled code search…`);
-    const response = await fetch(`https://go.dev/dl/${archive}`, {
-      signal: AbortSignal.timeout(120000),
-    });
-    if (!response.ok)
-      throw new Error(`Downloading search toolchain failed: HTTP ${response.status}.`);
-    const data = Buffer.from(await response.arrayBuffer());
-    if (createHash('sha256').update(data).digest('hex') !== hash)
-      throw new Error('Downloaded search toolchain failed SHA-256 verification.');
-    const path = join(staging, archive);
-    await writeFile(path, data);
-    await exec('tar', ['-xf', path, '-C', staging]);
-    await rm(path);
+    console.log(`Downloading Go ${goVersion} to build bundled code search…`);
+    await unpackGoToolchain(staging);
     await rename(staging, directory);
     return binary;
   } finally {

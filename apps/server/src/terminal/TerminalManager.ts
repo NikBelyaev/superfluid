@@ -1,6 +1,18 @@
 import { Worker } from 'node:worker_threads';
 import type { AppEvent, Run, TerminalServer } from '@superfluid/contracts';
 
+export type TerminalLaunch = {
+  sessionId: string;
+  cwd: string;
+  file: string;
+  args: string[];
+  shellCommand: string;
+  name: string;
+  command: string;
+  previewUrl?: string;
+  env?: Pick<NodeJS.ProcessEnv, 'PATH' | 'GOROOT'>;
+};
+
 export class TerminalManager {
   private worker: Worker;
   private serial = 0;

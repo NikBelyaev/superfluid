@@ -3,6 +3,7 @@ import type { Operation } from './vcs';
 import type { Project } from './project';
 import type { PullRequestRef } from './pullRequest';
 import type { PythonStatus } from './python';
+import type { GoInstallProgress, GoStatus } from './go';
 import type { CodexAgent, CodexIntegration } from './agents/codex';
 import type { T3Agent, T3Integration } from './agents/t3';
 
@@ -18,13 +19,17 @@ export type AppEvent =
   | { type: 'servers'; servers: TerminalServer[] }
   | { type: 'operation'; operation: Operation }
   | { type: 'files.changed'; sessionId: string }
+  | { type: 'go.package'; changed: boolean }
+  | { type: 'go.package.progress'; progress: GoInstallProgress }
   | {
       type: 'diagnostics';
       sessionId: string;
       generation: number;
-      server: 'ty' | 'pyright';
+      server: 'ty' | 'pyright' | 'gopls';
       uri: string;
+      version?: number;
       diagnostics: any[];
     }
   | PythonStatus
+  | GoStatus
   | { type: 'error'; message: string };
